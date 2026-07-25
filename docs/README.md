@@ -5,11 +5,11 @@ Este diretório separa recursos validados, candidatos do trem e funcionalidades 
 ## Estado
 
 - versão estável: `0.3.0` em `main`;
-- candidato atual: `0.7.0` — Capture Engine, LEA-200;
+- candidato atual: `0.8.0` — Recording Engine, LEA-201;
 - Browser e workspaces persistentes: validados;
-- Application, Terminal e PDF Engines: integrados ao trem;
-- Capture Engine: implementado, aguardando CI e aceite;
-- LEA-201–205: etapas seguintes.
+- Application, Terminal, PDF e Capture Engines: integrados ao trem;
+- Recording Engine: implementado, aguardando CI e aceite;
+- LEA-202–205: etapas seguintes.
 
 ## Produto
 
@@ -22,28 +22,23 @@ Este diretório separa recursos validados, candidatos do trem e funcionalidades 
 
 - [Visão arquitetural](architecture/README.md)
 - [Engines](architecture/ENGINES.md)
-- [Migração](migration.md)
 - [Atualização e candidatos](updater.md)
 
-## ADRs
+## ADRs do trem
 
-- [ADR-0001 — Plataforma](decisions/ADR-0001-workspace-platform.md)
-- [ADR-0002 — Documentação](decisions/ADR-0002-documentation-source-of-truth.md)
-- [ADR-0003 — Browser X11](decisions/ADR-0003-browser-x11-reparenting.md)
-- [ADR-0004 — Catálogo versionado](decisions/ADR-0004-versioned-workspace-catalog.md)
 - [ADR-0005 — Panel Runtime](decisions/ADR-0005-application-engine-panel-runtime.md)
 - [ADR-0006 — Terminal e emuladores](decisions/ADR-0006-terminal-engine-emulator-adapters.md)
 - [ADR-0007 — Visualizadores PDF](decisions/ADR-0007-pdf-viewer-runtime.md)
 - [ADR-0008 — Captura por janela](decisions/ADR-0008-panel-window-capture.md)
+- [ADR-0009 — Gravação com FFmpeg](decisions/ADR-0009-panel-region-recording-ffmpeg.md)
 
-## Registros
+## Registros do trem
 
-- [LEA-195](work/LEA-195.md)
-- [LEA-196](work/LEA-196.md)
 - [LEA-197](work/LEA-197.md)
 - [LEA-198](work/LEA-198.md)
 - [LEA-199](work/LEA-199.md)
 - [LEA-200](work/LEA-200.md)
+- [LEA-201](work/LEA-201.md)
 
 ## Fábrica
 
@@ -55,5 +50,5 @@ Este diretório separa recursos validados, candidatos do trem e funcionalidades 
 1. `main` recebe somente marcos aprovados.
 2. Cada candidato usa branch, PR, CI e instalação isolada.
 3. Decisões arquiteturais geram ADR.
-4. Dados pessoais não ficam no código versionado.
+4. Dados pessoais ficam fora do código versionado.
 5. Dependências reprovadas bloqueiam promoções posteriores afetadas.

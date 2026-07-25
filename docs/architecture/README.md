@@ -5,22 +5,22 @@
 
 ## Princípio central
 
-O núcleo gerencia **áreas de trabalho**, não navegadores. Navegadores e aplicações são tipos de painel resolvidos por adaptadores.
+O núcleo gerencia **áreas de trabalho**, não navegadores. Navegadores e aplicações são tipos de painel resolvidos por adaptadores e backends substituíveis.
 
 ## Camadas
 
 ```text
-CLI/UI
-  ↓
+CLI / Interface gráfica
+          ↓
 Workspace Engine
-  ├── Layout Engine
-  └── Panel Registry
-          ├── Browser Adapter
-          ├── Application Adapter
-          ├── Terminal Adapter
+   ├── Layout Engine
+   └── Panel Registry
+          ├── Browser Adapter ──→ Browser Engine ──→ Backend X11
+          ├── Application Adapter                 [planejado]
+          ├── Terminal Adapter                    [planejado]
           └── futuros adaptadores
-  ↓
-Infraestrutura de configuração e persistência
+          ↓
+Configuração, persistência e integrações do sistema operacional
 ```
 
 ## Responsabilidades
@@ -33,9 +33,13 @@ Orquestra a preparação de um workspace, verifica a compatibilidade entre works
 
 Recebe regiões normalizadas entre `0` e `1` e calcula os retângulos em pixels para a dimensão atual da janela. Uma região pode preservar uma proporção visual, como `9:19,5`, sem depender de coordenadas fixas.
 
-### Panel Engine
+### Panel Registry
 
-O `PanelRegistry` desacopla o domínio das tecnologias de incorporação. Adaptadores reais serão adicionados sem modificar os modelos centrais.
+O `PanelRegistry` desacopla o domínio das tecnologias de incorporação. O Browser Adapter já está implementado; adaptadores futuros podem ser adicionados sem modificar os modelos centrais.
+
+### Browser Engine
+
+Gerencia disponibilidade, abertura, redimensionamento e encerramento de sessões web. A implementação inicial utiliza um backend X11 separado, mantendo comandos de Brave/Chromium e `xdotool` fora do domínio, do Layout Engine e do Workspace Engine.
 
 ### Capture Engine
 
@@ -45,9 +49,11 @@ Reservado para uma tarefa posterior. A captura deverá receber a identidade e os
 
 - Workspace Engine: fundação implementada.
 - Layout Engine: implementado e usado pela GUI.
-- Panel Registry: implementado com adaptador placeholder.
-- Interface gráfica: casca funcional implementada na versão `0.1.2`.
-- Browser, Application, Session, Capture e Plugin Engines: planejados.
+- Panel Registry: implementado com Browser Adapter e fallback placeholder.
+- Interface gráfica: Browser Engine inicial integrado na versão `0.2.0`.
+- Browser Engine: implementado inicialmente para sessões X11 compatíveis.
+- Application, Session, Capture e Plugin Engines: planejados.
+- Backend nativo de Wayland: planejado.
 
 Consulte [Responsabilidades dos Engines](ENGINES.md) para a separação completa entre componentes implementados e planejados.
 
@@ -56,6 +62,7 @@ Consulte [Responsabilidades dos Engines](ENGINES.md) para a separação completa
 1. Nenhum painel conhece detalhes do gerenciador de janelas.
 2. Nenhum layout executa aplicações.
 3. Adaptadores não controlam o armazenamento de workspaces.
-4. Captura e gravação serão serviços independentes.
-5. Formatos persistidos devem ser versionados antes de mudanças incompatíveis.
-6. Integrações específicas de X11, Wayland, navegador ou terminal devem permanecer atrás de adaptadores.
+4. Backends de sistema operacional implementam contratos neutros.
+5. Captura e gravação serão serviços independentes.
+6. Formatos persistidos devem ser versionados antes de mudanças incompatíveis.
+7. Integrações específicas de X11, Wayland, navegador ou terminal permanecem atrás de adaptadores ou backends.

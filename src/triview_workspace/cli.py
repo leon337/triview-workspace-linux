@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from triview_workspace.engines import (
+    ApplicationPanelAdapter,
     BrowserPanelAdapter,
     LayoutEngine,
     PanelRegistry,
@@ -75,6 +76,7 @@ def run_diagnostic(
     repository, catalog, workspace, layout = resolve_workspace(workspace_path, data_file)
     registry = PanelRegistry()
     registry.register(BrowserPanelAdapter())
+    registry.register(ApplicationPanelAdapter())
     registry.register(PlaceholderPanelAdapter())
     engine = WorkspaceEngine(LayoutEngine(), registry)
     prepared = engine.prepare(workspace, layout, width, height)
@@ -94,6 +96,7 @@ def run_diagnostic(
                 "title": runtime.panel.title,
                 "kind": runtime.panel.kind.value,
                 "adapter": runtime.adapter_name,
+                "launch_request": dict(runtime.launch_request),
                 "bounds": {
                     "x": runtime.bounds.x,
                     "y": runtime.bounds.y,

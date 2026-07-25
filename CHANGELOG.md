@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 — Workspaces persistentes
+
+- adiciona catálogo JSON com `schema_version` explícito;
+- grava alterações de forma atômica, sem expor arquivo parcial;
+- restaura automaticamente o último workspace utilizado;
+- permite criar uma cópia, renomear, editar e excluir workspaces;
+- permite editar títulos, tipos e destinos dos painéis;
+- permite selecionar layouts disponíveis;
+- preserva ao menos um workspace para impedir catálogo vazio;
+- migra automaticamente o bundle único legado para o catálogo versionado;
+- preserva arquivos corrompidos com sufixo de quarentena e restaura o padrão;
+- adiciona `WorkspaceSessionEngine` desacoplado da interface;
+- adiciona `WorkspaceRepository` em infraestrutura;
+- mantém dados fora dos diretórios versionados do atualizador;
+- estende o diagnóstico com esquema, catálogo e workspace ativo;
+- adiciona testes de persistência, migração, recuperação e ciclo de sessão;
+- atualiza interface, README, arquitetura, roadmap e histórico.
+
 ## 0.2.0 — Primeiro Browser Engine funcional
 
 - adiciona contrato explícito para backends de navegador;

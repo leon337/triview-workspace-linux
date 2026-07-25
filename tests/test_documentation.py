@@ -16,6 +16,8 @@ REQUIRED_DOCUMENTS = (
     "docs/decisions/ADR-0001-workspace-platform.md",
     "docs/decisions/ADR-0002-documentation-source-of-truth.md",
     "docs/decisions/ADR-0003-browser-x11-reparenting.md",
+    "docs/decisions/ADR-0004-versioned-workspace-catalog.md",
+    "docs/work/LEA-196.md",
 )
 LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)")
 
@@ -46,10 +48,11 @@ def test_roadmap_distinguishes_completed_and_planned_capabilities() -> None:
     roadmap = (ROOT / "docs/product/ROADMAP.md").read_text(encoding="utf-8")
     for heading in (
         "Primeiro painel funcional",
+        "Workspaces persistentes",
         "Captura individual de imagem",
         "Gravação individual por painel",
         "Plugins",
     ):
         assert heading in roadmap
-    assert "Browser Engine com contrato de backend substituível" in roadmap
+    assert "catálogo JSON com esquema versionado" in roadmap
     assert roadmap.count("Status: **planejado**") >= 7

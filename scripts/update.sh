@@ -5,6 +5,8 @@ REPO="${TRIVIEW_REPO:-leon337/triview-workspace-linux}"
 CHANNEL="${TRIVIEW_CHANNEL:-main}"
 APP_ROOT="${TRIVIEW_APP_ROOT:-$HOME/.local/share/triview-workspace}"
 BACKUP_ROOT="${TRIVIEW_BACKUP_ROOT:-$HOME/.local/share/triview-workspace-backups}"
+DATA_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}"
+CATALOG_FILE="${TRIVIEW_DATA_FILE:-$DATA_ROOT/triview-workspace/workspaces.json}"
 CURRENT_LINK="$APP_ROOT/current"
 DATA_DIR="$APP_ROOT/data"
 DRY_RUN=0
@@ -32,6 +34,15 @@ if [[ -L "$CURRENT_LINK" ]]; then
     log "[DRY-RUN] copiar versão atual para $backup_dir/current"
   else
     cp -a "$current_target" "$backup_dir/current"
+  fi
+fi
+
+if [[ -f "$CATALOG_FILE" ]]; then
+  run mkdir -p "$backup_dir"
+  if ((DRY_RUN)); then
+    log "[DRY-RUN] copiar catálogo persistente para $backup_dir/workspaces.json"
+  else
+    cp -a "$CATALOG_FILE" "$backup_dir/workspaces.json"
   fi
 fi
 
@@ -71,7 +82,10 @@ cp -a "$tmp_dir/extracted/." "$release_dir/"
 
 export PYTHONPATH="$release_dir/src"
 cd "$release_dir"
-python3 -m triview_workspace.cli --diagnostic --workspace "$release_dir/config/workspaces/three-mobile.json" >/dev/null
+python3 -m triview_workspace.cli \
+  --diagnostic \
+  --workspace "$release_dir/config/workspaces/three-mobile.json" \
+  --data-file "$tmp_dir/diagnostic-workspaces.json" >/dev/null
 
 temp_link="$APP_ROOT/.current-$timestamp"
 ln -s "$release_dir" "$temp_link"
@@ -106,6 +120,7 @@ chmod +x "$APPLICATIONS_DIR/triview-workspace.desktop"
 update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
 
 log "Atualização concluída. Versão ativa: $version"
+log "Catálogo persistente preservado em: $CATALOG_FILE"
 log "Backup: $backup_dir"
 
 if ! command -v xdotool >/dev/null 2>&1; then

@@ -128,4 +128,4 @@ Limites da versão:
 Rastreabilidade:
 
 - Linear: LEA-195;
-- GitHub: pull request da LEA-195.
+- GitHub: PR #5.

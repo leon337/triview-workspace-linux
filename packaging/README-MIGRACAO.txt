@@ -1,4 +1,4 @@
-TRIVIEW WORKSPACE — MIGRAÇÃO SEGURA 0.1.1
+TRIVIEW WORKSPACE — MIGRAÇÃO SEGURA 0.1.2
 
 1. Extraia o ZIP completo.
 2. Abra a pasta extraída.
@@ -13,7 +13,8 @@ O migrador:
 - preserva ~/.config/triview-workspace/config.json, onde ficam as URLs;
 - não apaga a instalação antiga;
 - instala a nova base em ~/.local/share/triview-workspace;
-- cria atalhos no menu para abrir, atualizar e restaurar.
+- cria atalhos no menu para abrir, atualizar e restaurar;
+- configura o atalho principal para abrir uma janela gráfica real.
 
 SIMULAÇÃO SEM ALTERAR O COMPUTADOR
 Abra um terminal nesta pasta e execute:
@@ -25,5 +26,5 @@ Use RESTAURAR.desktop. O backup fica em:
 
   ~/.local/share/triview-workspace-backups/
 
-Observação: esta versão instala a fundação modular e o novo sistema de atualização.
-A interface final com painéis de aplicações e captura individual será entregue nas tarefas seguintes.
+CORREÇÃO 0.1.2
+A versão 0.1.1 executava apenas um diagnóstico em JSON e encerrava. A versão 0.1.2 abre uma janela desktop com três painéis móveis responsivos. Os navegadores, aplicações, prints e gravações ainda serão incorporados nas tarefas seguintes.

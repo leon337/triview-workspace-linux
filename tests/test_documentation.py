@@ -19,11 +19,13 @@ REQUIRED_DOCUMENTS = (
     "docs/decisions/ADR-0007-pdf-viewer-runtime.md",
     "docs/decisions/ADR-0008-panel-window-capture.md",
     "docs/decisions/ADR-0009-panel-region-recording-ffmpeg.md",
+    "docs/decisions/ADR-0010-declarative-plugin-manifests.md",
     "docs/work/LEA-197.md",
     "docs/work/LEA-198.md",
     "docs/work/LEA-199.md",
     "docs/work/LEA-200.md",
     "docs/work/LEA-201.md",
+    "docs/work/LEA-202.md",
 )
 LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)")
 
@@ -63,9 +65,16 @@ def test_roadmap_tracks_the_development_train() -> None:
     ):
         assert heading in roadmap
     assert "train/road-to-1.0" in roadmap
-    for identifier in ("LEA-197", "LEA-198", "LEA-199", "LEA-200", "LEA-201"):
+    for identifier in (
+        "LEA-197",
+        "LEA-198",
+        "LEA-199",
+        "LEA-200",
+        "LEA-201",
+        "LEA-202",
+    ):
         assert identifier in roadmap
-    assert roadmap.count("Status: **planejado**") >= 4
+    assert roadmap.count("Status: **planejado**") >= 3
 
 
 def test_candidate_documentation_distinguishes_stable_and_candidate() -> None:
@@ -74,4 +83,4 @@ def test_candidate_documentation_distinguishes_stable_and_candidate() -> None:
     assert "versão estável" in index
     assert "candidato atual" in index
     assert "`main`: estável" in readme
-    assert "TriView Workspace — LEA-201" in readme
+    assert "TriView Workspace — LEA-202" in readme

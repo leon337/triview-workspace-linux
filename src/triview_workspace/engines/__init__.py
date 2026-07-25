@@ -1,9 +1,4 @@
-from .application import (
-    ApplicationEngine,
-    ApplicationEngineError,
-    ApplicationPanelAdapter,
-    X11ApplicationBackend,
-)
+from .application import ApplicationEngine, ApplicationEngineError, ApplicationPanelAdapter, X11ApplicationBackend
 from .browser import (
     BrowserBackendAvailability,
     BrowserBackendUnavailable,
@@ -30,64 +25,25 @@ from .panel_runtime import (
     split_command,
 )
 from .panels import PanelAdapter, PanelRegistry, PlaceholderPanelAdapter
+from .pdf import (
+    PdfAvailability,
+    PdfEngine,
+    PdfEngineError,
+    PdfPanelAdapter,
+    X11PdfBackend,
+    normalize_pdf_path,
+)
 from .runtime_controllers import (
     ApplicationRuntimeController,
     BrowserRuntimeController,
+    PdfRuntimeController,
     RuntimeController,
     RuntimeControllerRegistry,
     RuntimeOpenResult,
     TerminalRuntimeController,
 )
 from .session import WorkspaceSessionEngine
-from .terminal import (
-    TerminalAvailability,
-    TerminalEngine,
-    TerminalEngineError,
-    TerminalPanelAdapter,
-    X11TerminalBackend,
-)
+from .terminal import TerminalAvailability, TerminalEngine, TerminalEngineError, TerminalPanelAdapter, X11TerminalBackend
 from .workspace import WorkspaceEngine
 
-__all__ = [
-    "ApplicationEngine",
-    "ApplicationEngineError",
-    "ApplicationPanelAdapter",
-    "ApplicationRuntimeController",
-    "BrowserBackendAvailability",
-    "BrowserBackendUnavailable",
-    "BrowserEngine",
-    "BrowserEngineError",
-    "BrowserLaunchError",
-    "BrowserPanelAdapter",
-    "BrowserRuntimeController",
-    "BrowserSession",
-    "LayoutEngine",
-    "PanelAdapter",
-    "PanelBackendUnavailable",
-    "PanelLaunchError",
-    "PanelRegistry",
-    "PanelRuntimeAvailability",
-    "PanelRuntimeError",
-    "PanelRuntimeLaunchRequest",
-    "PanelRuntimeSession",
-    "PlaceholderPanelAdapter",
-    "RuntimeController",
-    "RuntimeControllerRegistry",
-    "RuntimeOpenResult",
-    "TerminalAvailability",
-    "TerminalEngine",
-    "TerminalEngineError",
-    "TerminalPanelAdapter",
-    "TerminalRuntimeController",
-    "WorkspaceEngine",
-    "WorkspaceSessionEngine",
-    "X11ApplicationBackend",
-    "X11BraveBrowserBackend",
-    "X11PanelRuntimeBackend",
-    "X11TerminalBackend",
-    "normalize_browser_url",
-    "normalize_command",
-    "resolve_command",
-    "safe_panel_token",
-    "split_command",
-]
+__all__ = [name for name in globals() if not name.startswith("_")]

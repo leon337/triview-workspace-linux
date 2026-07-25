@@ -1,6 +1,6 @@
 # Responsabilidades dos Engines
 
-Este documento separa componentes implementados de componentes planejados.
+Este documento separa componentes validados, candidatos e planejados.
 
 ## Visão geral
 
@@ -8,213 +8,189 @@ Este documento separa componentes implementados de componentes planejados.
 Interface gráfica / CLI
           ↓
 Workspace Session Engine ── Workspace Repository
-          ↓                         ↓
-Workspace Engine          catálogo JSON versionado
+          ↓
+Workspace Engine
    ├── Layout Engine
-   ├── Panel Registry / adapters
-   │      ├── Browser Adapter     [implementado]
-   │      └── demais adapters     [planejados]
-   ├── Browser Engine             [implementado em X11]
-   ├── Capture Engine             [planejado]
-   └── Plugin Engine              [planejado]
+   ├── Panel Registry
+   │      ├── Browser Adapter       [validado]
+   │      ├── Application Adapter   [candidato]
+   │      └── demais adapters       [planejados]
+   ├── Browser Engine               [validado X11]
+   ├── Application Engine           [candidato]
+   │      └── Panel Runtime         [candidato]
+   ├── Capture / Recording          [planejados]
+   └── Plugin Engine                [planejado]
 ```
 
 ## Workspace Engine
 
-Status: **implementado**
+Status: **validado**
 
-Responsabilidades:
-
-- receber um workspace e um layout;
-- verificar compatibilidade entre painéis e slots;
-- solicitar limites ao Layout Engine;
-- localizar o adaptador de cada painel;
-- produzir a representação preparada para execução.
-
-Não persiste sessões, não desenha a interface e não executa comandos específicos de navegador.
+- combina workspace e layout;
+- verifica compatibilidade entre painéis e slots;
+- resolve cada painel no Panel Registry;
+- produz `RuntimePanel` sem executar processos.
 
 ## Workspace Session Engine
 
-Status: **implementado na versão 0.3.0**
+Status: **validado na versão 0.3.0**
 
-Responsabilidades:
-
-- manter o workspace ativo da sessão;
-- alternar entre workspaces persistidos;
-- criar cópias com identificadores seguros;
-- renomear o workspace atual;
-- atualizar os painéis;
-- alterar o layout quando compatível;
-- excluir o workspace atual sem permitir catálogo vazio;
-- delegar gravação ao `WorkspaceRepository`.
-
-O Engine não conhece widgets Tkinter nem o formato físico do arquivo JSON.
+- mantém e alterna o workspace ativo;
+- cria cópias, renomeia, edita e exclui;
+- troca layouts compatíveis;
+- delega persistência ao Repository.
 
 ## Workspace Repository
 
-Status: **implementado na versão 0.3.0**
+Status: **validado na versão 0.3.0**
 
-Local padrão:
-
-```text
-$XDG_DATA_HOME/triview-workspace/workspaces.json
-```
-
-Quando `XDG_DATA_HOME` não existe:
-
-```text
-~/.local/share/triview-workspace/workspaces.json
-```
-
-Responsabilidades:
-
-- manter `schema_version` explícito;
-- armazenar layouts, workspaces e `active_workspace_id`;
-- gravar por arquivo temporário e substituição atômica;
-- restaurar o último workspace utilizado;
-- migrar o bundle único legado;
-- validar referências entre workspace e layout;
-- preservar JSON corrompido em arquivo de quarentena;
-- restaurar o workspace padrão após corrupção recuperável;
-- manter os dados separados dos diretórios versionados do código.
-
-Formato resumido:
-
-```json
-{
-  "schema_version": 1,
-  "active_workspace_id": "development-demo",
-  "layouts": [],
-  "workspaces": []
-}
-```
+- catálogo JSON com `schema_version`;
+- gravação atômica;
+- restauração do último workspace;
+- migração e recuperação de corrupção;
+- dados em `XDG_DATA_HOME`.
 
 ## Layout Engine
 
-Status: **implementado**
+Status: **validado na fundação**
 
-Responsabilidades:
+- converte regiões normalizadas em pixels;
+- reage ao redimensionamento;
+- preserva proporções opcionais;
+- não executa aplicações.
 
-- converter regiões normalizadas em retângulos de pixels;
-- recalcular o layout para a área útil atual;
-- preservar proporção visual opcional;
-- manter layouts independentes de resolução fixa.
+Editor avançado e breakpoints pertencem à LEA-203.
 
-A versão 0.3.0 permite selecionar layouts já registrados no catálogo. A criação e edição gráfica completa de layouts permanece planejada.
+## Panel Registry
 
-## Panel Registry e adaptadores
+Status: **Browser Adapter validado; Application Adapter em candidato**
 
-Status: **registro e Browser Adapter implementados**
-
-Responsabilidades:
-
-- associar um tipo de painel ao adaptador compatível;
-- proteger o domínio de detalhes de Brave, terminal, X11 ou Wayland;
-- produzir solicitações de abertura;
-- informar indisponibilidade de forma controlada.
+- associa `PanelKind` a adaptadores;
+- mantém o domínio independente de X11, Brave e programas Linux;
+- produz solicitações neutras de abertura;
+- usa placeholder para tipos ainda não implementados.
 
 Adaptadores:
 
-- Browser Adapter: **implementado**;
-- Application Adapter: **planejado**;
-- Terminal Adapter: **planejado**;
-- PDF Adapter: **planejado**;
-- Custom/Plugin Adapter: **planejado**.
-
-## Interface gráfica
-
-Status: **implementada com Browser Engine e gerenciamento persistente na versão 0.3.0**
-
-Responsabilidades atuais:
-
-- exibir painéis responsivos;
-- abrir painéis navegador compatíveis;
-- selecionar workspaces e layouts;
-- criar uma cópia do workspace atual;
-- renomear e excluir workspaces;
-- editar título, tipo e destino dos painéis;
-- apresentar recuperação de catálogo corrompido;
-- encerrar navegadores ao trocar de workspace ou fechar a janela.
-
-Limites atuais:
-
-- aplicações, terminal e PDF continuam como placeholders;
-- print e gravação permanecem desativados;
-- não existe editor completo de slots de layout;
-- a incorporação do navegador usa o backend X11 inicial.
+- Browser: validado;
+- Application: implementado na LEA-197, aguardando aceite;
+- Terminal: LEA-198;
+- PDF: LEA-199;
+- Custom/Plugin: LEA-202.
 
 ## Browser Engine
 
-Status: **implementado e validado em X11 na versão 0.2.0**
+Status: **validado no Linux Mint/X11**
 
-Componentes:
+- normaliza URLs HTTP/HTTPS;
+- cria perfis separados;
+- inicia Brave/Chromium;
+- incorpora com `xdotool`;
+- redimensiona, reabre e encerra.
 
-- `BrowserEngine`;
-- `BrowserBackend`;
-- `BrowserPanelAdapter`;
-- `X11BraveBrowserBackend`;
-- `BrowserBackendAvailability`;
-- normalizador de URLs HTTP/HTTPS.
+Decisão: [ADR-0003](../decisions/ADR-0003-browser-x11-reparenting.md).
+
+## Panel Runtime
+
+Status: **implementado no candidato LEA-197**
+
+Fundação comum para painéis baseados em processos e janelas.
+
+Responsabilidades:
+
+- dividir comandos sem shell;
+- resolver e validar executáveis;
+- iniciar processo em sessão própria;
+- localizar janela X11 por PID, classe ou nome;
+- incorporar com `windowreparent`;
+- redimensionar e encerrar;
+- manter fallback externo explícito.
+
+O runtime não conhece Tkinter, workspaces persistidos ou tipos específicos de aplicação.
+
+## Application Engine
+
+Status: **implementado no candidato 0.4.0; aguardando Linux Mint**
+
+- valida disponibilidade por comando;
+- abre aplicações configuradas pelo usuário;
+- mantém uma sessão por painel;
+- substitui sessão anterior ao reabrir;
+- usa Panel Runtime para incorporação ou fallback;
+- comunica estado incorporado ou externo à GUI.
 
 Fluxo:
 
 ```text
-Painel Tkinter
-     ↓ fornece winfo_id()
-Browser Engine
-     ↓ inicia Brave/Chromium --app
-xdotool search
-     ↓ localiza a janela X11
-xdotool windowreparent
-     ↓
-Janela incorporada no painel
+PanelSpec(application)
+        ↓
+Application Adapter
+        ↓
+Application Engine
+        ↓
+Panel Runtime X11
+   ├── janela incorporada
+   └── fallback externo
 ```
 
-Requisitos:
+Decisão: [ADR-0005](../decisions/ADR-0005-application-engine-panel-runtime.md).
 
-- `DISPLAY` disponível;
-- navegador Chromium compatível;
-- `xdotool`.
+## Interface gráfica
 
-Limite: não existe backend nativo de Wayland.
+Status: **Application Engine integrado no candidato**
 
-A decisão está registrada na [ADR-0003](../decisions/ADR-0003-browser-x11-reparenting.md).
+Estados suportados:
 
-## Application Engine
+- `DISPONÍVEL`;
+- `ABRINDO`;
+- `ATIVO`;
+- `EXTERNO`;
+- `INDISPONÍVEL`;
+- `ERRO`;
+- `PLANEJADO`.
 
-Status: **planejado**
+Ao trocar de workspace ou fechar a janela, Browser e Application Engines encerram as sessões que iniciaram.
 
-- iniciar aplicações Linux;
-- avaliar incorporação;
-- controlar fallback para janela externa;
-- acompanhar processo e encerramento;
-- comunicar estado ao painel.
+## Engines planejados
 
-## Capture Engine
+### Terminal Engine — LEA-198
 
-Status: **planejado**
+Reutilizará o Panel Runtime com shell configurável.
 
-- capturar apenas a área ou superfície do painel;
-- produzir metadados;
-- organizar arquivos por workspace, painel e data;
-- selecionar backend X11 ou Wayland.
+### PDF Engine — LEA-199
 
-## Plugin Engine
+Validará arquivos e reutilizará o Panel Runtime para visualizadores compatíveis.
 
-Status: **planejado**
+### Capture Engine — LEA-200
 
-- descobrir plugins permitidos;
-- verificar versão e compatibilidade;
-- registrar adaptadores;
-- isolar falhas;
-- impedir carregamento silencioso de componentes não confiáveis.
+Capturará somente o alvo do painel e organizará arquivos por workspace, painel e data.
+
+### Recording Engine — LEA-201
+
+Controlará gravação individual e processos de backend.
+
+### Plugin Engine — LEA-202
+
+Usará API versionada, diretórios permitidos e isolamento de falhas.
+
+### Layout Engine avançado — LEA-203
+
+Adicionará breakpoints, modelos predefinidos e editor visual.
+
+### Session Engine completo — LEA-204
+
+Persistirá estado operacional suportado por tipo de painel.
+
+### Workspace Hub — LEA-205
+
+Organizará templates, importação, exportação, busca e favoritos.
 
 ## Regras de dependência
 
-1. A interface chama Engines, não o contrário.
-2. O Session Engine usa o Repository por contrato, sem conhecer JSON.
-3. Persistência não conhece widgets gráficos.
-4. Layout não executa aplicações.
-5. Adaptadores não definem o modelo persistente.
-6. Backends do sistema operacional implementam contratos neutros.
-7. Captura não altera layout nem sessão.
+1. A interface chama Engines, nunca o contrário.
+2. Adaptadores preparam solicitações e não iniciam processos.
+3. Panel Runtime não conhece modelos persistidos nem widgets.
+4. Comandos não são executados através de shell.
+5. Persistência não conhece X11 ou processos.
+6. Backends específicos implementam contratos neutros.
+7. Candidatos não usam os dados da versão principal.

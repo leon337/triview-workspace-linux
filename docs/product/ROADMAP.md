@@ -49,37 +49,34 @@ Status: **concluído**
 
 Status: **concluído e validado no Linux Mint**
 
-Objetivo entregue: provar a execução real dentro da arquitetura de painéis.
-
-Entregas:
-
 - Browser Engine com contrato de backend substituível;
 - Browser Adapter integrado ao Panel Registry;
 - URL HTTP/HTTPS validada e normalizada;
-- Brave/Chromium iniciado em modo aplicativo;
-- incorporação da janela no host do painel através de X11 e `xdotool`;
+- Brave/Chromium incorporado com X11 e `xdotool`;
 - perfis locais separados por painel;
-- redimensionamento da janela incorporada;
-- estados visuais de disponibilidade, abertura, atividade e erro;
-- fallback controlado quando navegador, `DISPLAY` ou `xdotool` não estão disponíveis;
-- preservação do modo `--diagnostic`;
-- testes headless e documentação arquitetural;
-- validação real de ChatGPT e GitHub executando simultaneamente em painéis independentes;
-- validação com janela maximizada, restaurada e redimensionada.
+- redimensionamento e estados visuais;
+- fallback controlado;
+- validação real de ChatGPT e GitHub simultâneos.
 
 Limite conhecido: o backend inicial é validado em X11, mas ainda não oferece incorporação nativa em Wayland.
 
-## Próximos marcos recomendados
-
 ### `0.3.0` — Workspaces persistentes
 
-Status: **planejado**
+Status: **concluído tecnicamente; aguardando validação visual no Linux Mint**
 
-- criar, editar, salvar e excluir workspaces;
-- selecionar layouts;
-- restaurar o workspace usado anteriormente;
-- versionar o esquema persistido;
-- preservar configurações durante atualizações.
+- catálogo JSON com esquema versionado;
+- gravação atômica e recuperação de arquivo corrompido;
+- migração do bundle único legado;
+- restauração automática do último workspace;
+- criação por cópia do workspace atual;
+- renomeação e exclusão controlada;
+- edição de títulos, tipos e destinos dos painéis;
+- seleção de layouts disponíveis;
+- Session Engine desacoplado da interface;
+- dados persistentes fora dos diretórios versionados da aplicação;
+- testes de persistência, migração, recuperação e sessão.
+
+## Próximos marcos recomendados
 
 ### `0.4.0` — Captura individual de imagem
 
@@ -109,14 +106,14 @@ Status: **planejado**
 - validação de aplicações que aceitam ou não incorporação;
 - fallback para execução externa controlada.
 
-### `0.7.0` — Sessões e perfis
+### `0.7.0` — Sessões e perfis de navegador
 
 Status: **planejado**
 
-- sessões independentes persistentes por painel quando suportadas;
+- cookies e autenticação persistentes por painel quando suportados;
 - gerenciamento de perfis de navegador;
 - isolamento de configurações;
-- recuperação após encerramento inesperado.
+- recuperação de processos após encerramento inesperado.
 
 ### `0.8.0` — Layouts e refinamento visual
 
@@ -125,7 +122,7 @@ Status: **planejado**
 - painéis ocupando maior percentual da tela maximizada;
 - margens e espaçamentos responsivos;
 - breakpoints para três colunas, duas mais uma e coluna única;
-- editor ou seletor de layouts;
+- editor completo de layouts;
 - acessibilidade e conforto de leitura.
 
 ### `0.9.0` — Plugins e preparação de estabilidade
@@ -162,8 +159,6 @@ Critérios mínimos esperados:
 - testes de regressão e restauração.
 
 ## Itens transversais
-
-Estes itens acompanham todos os marcos:
 
 - testes automatizados;
 - CI;

@@ -34,13 +34,16 @@ from .panel_runtime import (
     split_command,
 )
 from .panels import PanelAdapter, PanelRegistry, PlaceholderPanelAdapter
-from .pdf import (
-    PdfAvailability,
-    PdfEngine,
-    PdfEngineError,
-    PdfPanelAdapter,
-    X11PdfBackend,
-    normalize_pdf_path,
+from .pdf import PdfAvailability, PdfEngine, PdfEngineError, PdfPanelAdapter, X11PdfBackend, normalize_pdf_path
+from .recording import (
+    RecordingAvailability,
+    RecordingBackend,
+    RecordingEngine,
+    RecordingEngineError,
+    RecordingRequest,
+    RecordingResult,
+    RecordingSession,
+    X11FfmpegRecordingBackend,
 )
 from .runtime_controllers import (
     ApplicationRuntimeController,

@@ -6,11 +6,11 @@ O produto deixa de ser um simples organizador de três navegadores e passa a ger
 
 ## Estado
 
-- Tarefa atual: [LEA-191](https://linear.app/leandro-carlos/issue/LEA-191/fundacao-modular-da-plataforma-workspace)
-- Versão de fundação: `0.1.0`
+- Tarefa atual: [LEA-192](https://linear.app/leandro-carlos/issue/LEA-192/criar-migrador-seguro-da-versao-legada-e-atualizador-oficial)
+- Versão: `0.1.1`
 - Repositório: `leon337/triview-workspace-linux`
 
-## O que esta fundação entrega
+## Fundação disponível
 
 - modelos independentes de workspace, layout e painel;
 - Layout Engine baseado em proporções normalizadas;
@@ -40,15 +40,23 @@ src/triview_workspace/
 ├── domain/
 ├── engines/
 ├── infrastructure/
+├── migration.py
 └── cli.py
 
 config/workspaces/
 docs/architecture/
 docs/decisions/
+packaging/
 scripts/
 tests/
 ```
 
+## Migração da versão V0.1.0
+
+A instalação antiga usa `~/.local/share/triview-workspace-linux`, enquanto as URLs ficam em `~/.config/triview-workspace/config.json`. Execute o pacote `TriView-Workspace-Migrador-0.1.1.zip` para criar backup, preservar as URLs e instalar a arquitetura modular em `~/.local/share/triview-workspace`.
+
+O migrador suporta `--dry-run`, não apaga a versão antiga e inclui restauração do backup mais recente. Consulte [`docs/migration.md`](docs/migration.md).
+
 ## Atualizações
 
-A estratégia está documentada em [`docs/updater.md`](docs/updater.md). O atualizador da primeira distribuição ZIP não deve ser considerado compatível automaticamente enquanto seu conteúdo e seu endereço de origem não forem validados. Esta fundação inclui um novo atualizador preparado para instalações Git e para futuras releases do GitHub.
+Após a primeira migração, o novo atualizador instala versões em diretórios separados, valida o código antes de ativá-lo e troca o link `current` somente após sucesso. Consulte [`docs/updater.md`](docs/updater.md).

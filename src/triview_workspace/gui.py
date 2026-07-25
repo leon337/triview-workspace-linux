@@ -1,4 +1,4 @@
-"""Tkinter desktop shell for TriView Workspace."""
+"""Tkinter desktop shell with persistent workspace management."""
 
 from __future__ import annotations
 
@@ -9,8 +9,9 @@ import threading
 import tkinter as tk
 from collections.abc import Callable
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 
+from triview_workspace.domain import PanelKind, PanelSpec
 from triview_workspace.engines import (
     BrowserEngine,
     BrowserEngineError,
@@ -19,14 +20,111 @@ from triview_workspace.engines import (
     PanelRegistry,
     PlaceholderPanelAdapter,
     WorkspaceEngine,
+    WorkspaceSessionEngine,
     X11BraveBrowserBackend,
+    normalize_browser_url,
 )
 from triview_workspace.gui_model import PanelViewModel, build_panel_view_models
-from triview_workspace.infrastructure import load_workspace_bundle
+from triview_workspace.infrastructure import (
+    WorkspaceRepository,
+    WorkspaceStorageError,
+    load_workspace_bundle,
+)
 
 APP_TITLE = "TriView Workspace"
 DEFAULT_WORKSPACE = Path("config/workspaces/three-mobile.json")
 CONTENT_PADDING = 12
+
+
+class PanelEditorDialog:
+    """Small modal editor for panel titles, kinds and targets."""
+
+    def __init__(self, parent: tk.Misc, panels: tuple[PanelSpec, ...]) -> None:
+        self.result: tuple[PanelSpec, ...] | None = None
+        self.window = tk.Toplevel(parent)
+        self.window.title("Editar painéis do workspace")
+        self.window.configure(background="#0f172a")
+        self.window.transient(parent)
+        self.window.grab_set()
+        self._rows: list[tuple[PanelSpec, tk.StringVar, tk.StringVar, tk.StringVar]] = []
+
+        tk.Label(
+            self.window,
+            text="Edite os títulos, tipos e destinos dos painéis",
+            background="#0f172a",
+            foreground="#f8fafc",
+            font=("Sans", 12, "bold"),
+        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=14, pady=(14, 10))
+
+        for column, label in enumerate(("Painel", "Título", "Tipo", "Destino")):
+            tk.Label(
+                self.window,
+                text=label,
+                background="#0f172a",
+                foreground="#94a3b8",
+                font=("Sans", 9, "bold"),
+            ).grid(row=1, column=column, sticky="w", padx=8, pady=4)
+
+        for index, panel in enumerate(panels, start=2):
+            title = tk.StringVar(value=panel.title)
+            kind = tk.StringVar(value=panel.kind.value)
+            target = tk.StringVar(value=panel.target)
+            self._rows.append((panel, title, kind, target))
+            tk.Label(
+                self.window,
+                text=panel.id,
+                background="#0f172a",
+                foreground="#cbd5e1",
+            ).grid(row=index, column=0, sticky="w", padx=8, pady=5)
+            tk.Entry(self.window, textvariable=title, width=22).grid(
+                row=index, column=1, sticky="ew", padx=8, pady=5
+            )
+            ttk.Combobox(
+                self.window,
+                textvariable=kind,
+                values=[item.value for item in PanelKind],
+                state="readonly",
+                width=14,
+            ).grid(row=index, column=2, sticky="ew", padx=8, pady=5)
+            tk.Entry(self.window, textvariable=target, width=48).grid(
+                row=index, column=3, sticky="ew", padx=8, pady=5
+            )
+
+        actions = tk.Frame(self.window, background="#0f172a")
+        actions.grid(row=len(panels) + 2, column=0, columnspan=4, sticky="e", padx=14, pady=14)
+        tk.Button(actions, text="Cancelar", command=self.window.destroy).pack(side="right", padx=4)
+        tk.Button(actions, text="Salvar", command=self._save).pack(side="right", padx=4)
+        self.window.columnconfigure(3, weight=1)
+        self.window.protocol("WM_DELETE_WINDOW", self.window.destroy)
+        self.window.wait_window()
+
+    def _save(self) -> None:
+        updated: list[PanelSpec] = []
+        try:
+            for original, title_var, kind_var, target_var in self._rows:
+                title = title_var.get().strip()
+                target = target_var.get().strip()
+                if not title:
+                    raise ValueError(f"O painel {original.id} precisa de um título.")
+                if not target:
+                    raise ValueError(f"O painel {original.id} precisa de um destino.")
+                kind = PanelKind(kind_var.get())
+                if kind is PanelKind.BROWSER:
+                    target = normalize_browser_url(target)
+                updated.append(
+                    PanelSpec(
+                        id=original.id,
+                        title=title,
+                        kind=kind,
+                        target=target,
+                        metadata=original.metadata,
+                    )
+                )
+        except ValueError as exc:
+            messagebox.showerror("Dados inválidos", str(exc), parent=self.window)
+            return
+        self.result = tuple(updated)
+        self.window.destroy()
 
 
 class PanelCard:
@@ -36,7 +134,7 @@ class PanelCard:
         self,
         parent: tk.Misc,
         panel: PanelViewModel,
-        on_open: Callable[[PanelViewModel, PanelCard], None] | None = None,
+        on_open: Callable[[PanelViewModel, "PanelCard"], None] | None = None,
     ) -> None:
         self.panel = panel
         self._on_open = on_open
@@ -51,7 +149,6 @@ class PanelCard:
         header = tk.Frame(self.frame, background="#172033", height=46)
         header.pack(fill="x")
         header.pack_propagate(False)
-
         tk.Label(
             header,
             text=self._icon_for(panel.kind),
@@ -59,7 +156,6 @@ class PanelCard:
             foreground="#f8fafc",
             font=("Sans", 16),
         ).pack(side="left", padx=(12, 8))
-
         tk.Label(
             header,
             text=panel.title,
@@ -68,7 +164,6 @@ class PanelCard:
             font=("Sans", 11, "bold"),
             anchor="w",
         ).pack(side="left", fill="x", expand=True)
-
         self.badge = tk.Label(
             header,
             text="PLANEJADO",
@@ -82,7 +177,6 @@ class PanelCard:
 
         body = tk.Frame(self.frame, background="#0f172a")
         body.pack(fill="both", expand=True, padx=1, pady=1)
-
         target_bar = tk.Frame(body, background="#1e293b", height=36)
         target_bar.pack(fill="x", padx=12, pady=(12, 0))
         target_bar.pack_propagate(False)
@@ -98,7 +192,6 @@ class PanelCard:
 
         self.content_stack = tk.Frame(body, background="#0f172a")
         self.content_stack.pack(fill="both", expand=True, padx=12, pady=12)
-
         self.placeholder = tk.Frame(self.content_stack, background="#0f172a")
         self.placeholder.pack(fill="both", expand=True)
         tk.Label(
@@ -115,7 +208,6 @@ class PanelCard:
             foreground="#f8fafc",
             font=("Sans", 15, "bold"),
         ).pack()
-
         self.status_message = tk.StringVar(value=panel.status)
         tk.Label(
             self.placeholder,
@@ -126,7 +218,6 @@ class PanelCard:
             wraplength=240,
             justify="center",
         ).pack(pady=(8, 0))
-
         self.browser_host = tk.Frame(
             self.content_stack,
             background="#020617",
@@ -138,7 +229,6 @@ class PanelCard:
         footer = tk.Frame(self.frame, background="#172033", height=48)
         footer.pack(fill="x")
         footer.pack_propagate(False)
-
         self.open_button = tk.Button(
             footer,
             text="Abrir",
@@ -155,7 +245,6 @@ class PanelCard:
             padx=8,
         )
         self.open_button.pack(side="left", padx=(8, 0), pady=9)
-
         for label in ("Print", "Gravar"):
             tk.Button(
                 footer,
@@ -207,10 +296,7 @@ class PanelCard:
 
     def host_dimensions(self) -> tuple[int, int]:
         self.browser_host.update_idletasks()
-        return (
-            max(1, self.browser_host.winfo_width()),
-            max(1, self.browser_host.winfo_height()),
-        )
+        return max(1, self.browser_host.winfo_width()), max(1, self.browser_host.winfo_height())
 
     @staticmethod
     def _icon_for(kind: str) -> str:
@@ -224,14 +310,24 @@ class PanelCard:
     def place(self, *, x: int, y: int, width: int, height: int) -> None:
         self.frame.place(x=x, y=y, width=max(1, width), height=max(1, height))
 
+    def destroy(self) -> None:
+        self.frame.destroy()
+
 
 class WorkspaceWindow:
-    """Responsive desktop window backed by the modular workspace engines."""
+    """Responsive window backed by Browser, Layout and Session Engines."""
 
-    def __init__(self, root: tk.Tk, workspace_path: Path) -> None:
+    def __init__(
+        self,
+        root: tk.Tk,
+        repository: WorkspaceRepository,
+        session_engine: WorkspaceSessionEngine,
+    ) -> None:
         self.root = root
-        self.workspace_path = workspace_path
-        self.workspace, self.layout = load_workspace_bundle(workspace_path)
+        self.repository = repository
+        self.session_engine = session_engine
+        self.workspace = session_engine.current_workspace
+        self.layout = session_engine.current_layout
         self.browser_engine = BrowserEngine(X11BraveBrowserBackend())
         self.browser_availability = self.browser_engine.availability()
         self.registry = PanelRegistry()
@@ -240,24 +336,22 @@ class WorkspaceWindow:
         self.engine = WorkspaceEngine(LayoutEngine(), self.registry)
         self._resize_job: str | None = None
         self._launching: set[str] = set()
-        self._browser_results: queue.SimpleQueue[tuple[str, str, str | None]] = (
-            queue.SimpleQueue()
-        )
+        self._browser_results: queue.SimpleQueue[tuple[str, str, str | None, int]] = queue.SimpleQueue()
         self._closed = False
+        self._workspace_generation = 0
+        self._updating_controls = False
+        self.cards: list[PanelCard] = []
+        self.cards_by_id: dict[str, PanelCard] = {}
 
-        root.title(f"{APP_TITLE} — {self.workspace.name}")
         root.geometry("1280x760")
-        root.minsize(820, 540)
+        root.minsize(900, 560)
         root.configure(background="#020617")
         root.protocol("WM_DELETE_WINDOW", self._close)
-
         self._configure_style()
         self._build_header()
-
         self.content = tk.Frame(root, background="#020617")
         self.content.pack(fill="both", expand=True)
-
-        self.status_text = tk.StringVar(value="Workspace carregado")
+        self.status_text = tk.StringVar(value="Workspace persistente carregado")
         tk.Label(
             root,
             textvariable=self.status_text,
@@ -268,16 +362,11 @@ class WorkspaceWindow:
             padx=12,
             height=1,
         ).pack(fill="x", side="bottom")
-
-        prepared = self.engine.prepare(self.workspace, self.layout, 1200, 650)
-        views = build_panel_view_models(prepared)
-        self.cards = [PanelCard(self.content, view, self._open_browser) for view in views]
-        self.cards_by_id = {card.panel.id: card for card in self.cards}
-        self._configure_panel_states()
-
         self.content.bind("<Configure>", self._schedule_layout)
-        root.after(60, self._render_layout)
+        self._load_workspace_view("Workspace restaurado automaticamente")
         root.after(80, self._drain_browser_results)
+        if repository.last_recovery_message:
+            root.after(150, self._show_recovery_warning)
 
     @staticmethod
     def _configure_style() -> None:
@@ -288,12 +377,12 @@ class WorkspaceWindow:
             pass
 
     def _build_header(self) -> None:
-        header = tk.Frame(self.root, background="#0f172a", height=66)
+        header = tk.Frame(self.root, background="#0f172a", height=104)
         header.pack(fill="x", side="top")
         header.pack_propagate(False)
 
         left = tk.Frame(header, background="#0f172a")
-        left.pack(side="left", fill="y", padx=18)
+        left.pack(side="left", fill="both", expand=True, padx=18, pady=8)
         tk.Label(
             left,
             text=APP_TITLE,
@@ -301,27 +390,187 @@ class WorkspaceWindow:
             foreground="#f8fafc",
             font=("Sans", 16, "bold"),
             anchor="w",
-        ).pack(anchor="w", pady=(11, 0))
+        ).grid(row=0, column=0, sticky="w")
+        self.workspace_name_text = tk.StringVar()
         tk.Label(
             left,
-            text=f"Workspace: {self.workspace.name}",
+            textvariable=self.workspace_name_text,
             background="#0f172a",
             foreground="#94a3b8",
             font=("Sans", 9),
             anchor="w",
-        ).pack(anchor="w")
+        ).grid(row=1, column=0, sticky="w", pady=(0, 6))
+
+        controls = tk.Frame(left, background="#0f172a")
+        controls.grid(row=2, column=0, sticky="w")
+        self.workspace_selector = ttk.Combobox(controls, state="readonly", width=30)
+        self.workspace_selector.pack(side="left", padx=(0, 6))
+        self.workspace_selector.bind("<<ComboboxSelected>>", self._select_workspace)
+        self.layout_selector = ttk.Combobox(controls, state="readonly", width=22)
+        self.layout_selector.pack(side="left", padx=(0, 8))
+        self.layout_selector.bind("<<ComboboxSelected>>", self._select_layout)
+        for label, command in (
+            ("Novo", self._duplicate_workspace),
+            ("Renomear", self._rename_workspace),
+            ("Editar painéis", self._edit_panels),
+            ("Excluir", self._delete_workspace),
+        ):
+            tk.Button(
+                controls,
+                text=label,
+                command=command,
+                background="#1e293b",
+                foreground="#e2e8f0",
+                activebackground="#334155",
+                activeforeground="#f8fafc",
+                relief="flat",
+                bd=0,
+                padx=8,
+                pady=4,
+            ).pack(side="left", padx=3)
 
         right = tk.Frame(header, background="#0f172a")
         right.pack(side="right", fill="y", padx=16)
         tk.Label(
             right,
-            text="BROWSER ENGINE 0.2.0",
+            text="WORKSPACES 0.3.0",
             background="#1d4ed8",
             foreground="#eff6ff",
             font=("Sans", 8, "bold"),
             padx=10,
             pady=5,
-        ).pack(side="right", pady=20)
+        ).pack(side="right", pady=32)
+
+    def _workspace_display(self, workspace_id: str) -> str:
+        workspace = self.session_engine.catalog.workspace_by_id(workspace_id)
+        return f"{workspace.name} [{workspace.id}]"
+
+    def _layout_display(self, layout_id: str) -> str:
+        layout = self.session_engine.catalog.layout_by_id(layout_id)
+        return f"{layout.name} [{layout.id}]"
+
+    @staticmethod
+    def _id_from_display(value: str) -> str:
+        if value.endswith("]") and "[" in value:
+            return value.rsplit("[", 1)[1][:-1]
+        return value
+
+    def _refresh_controls(self) -> None:
+        self._updating_controls = True
+        try:
+            workspace_values = [
+                self._workspace_display(item.id) for item in self.session_engine.catalog.workspaces
+            ]
+            layout_values = [
+                self._layout_display(item.id) for item in self.session_engine.catalog.layouts
+            ]
+            self.workspace_selector.configure(values=workspace_values)
+            self.layout_selector.configure(values=layout_values)
+            self.workspace_selector.set(self._workspace_display(self.workspace.id))
+            self.layout_selector.set(self._layout_display(self.layout.id))
+            self.workspace_name_text.set(
+                f"Workspace: {self.workspace.name} · catálogo: {self.repository.path}"
+            )
+            self.root.title(f"{APP_TITLE} — {self.workspace.name}")
+        finally:
+            self._updating_controls = False
+
+    def _select_workspace(self, _event: tk.Event[tk.Misc]) -> None:
+        if self._updating_controls:
+            return
+        workspace_id = self._id_from_display(self.workspace_selector.get())
+        try:
+            self.workspace, self.layout = self.session_engine.switch(workspace_id)
+        except (KeyError, WorkspaceStorageError) as exc:
+            messagebox.showerror("Não foi possível abrir", str(exc), parent=self.root)
+            self._refresh_controls()
+            return
+        self._load_workspace_view("Workspace selecionado e salvo como último utilizado")
+
+    def _select_layout(self, _event: tk.Event[tk.Misc]) -> None:
+        if self._updating_controls:
+            return
+        layout_id = self._id_from_display(self.layout_selector.get())
+        try:
+            self.workspace, self.layout = self.session_engine.change_layout(layout_id)
+        except (KeyError, ValueError, WorkspaceStorageError) as exc:
+            messagebox.showerror("Layout incompatível", str(exc), parent=self.root)
+            self._refresh_controls()
+            return
+        self._load_workspace_view("Layout selecionado e persistido")
+
+    def _duplicate_workspace(self) -> None:
+        name = simpledialog.askstring(
+            "Novo workspace",
+            "Nome do novo workspace (será criado como cópia do atual):",
+            parent=self.root,
+        )
+        if name is None:
+            return
+        try:
+            self.workspace, self.layout = self.session_engine.duplicate_current(name)
+        except (ValueError, WorkspaceStorageError) as exc:
+            messagebox.showerror("Não foi possível criar", str(exc), parent=self.root)
+            return
+        self._load_workspace_view("Novo workspace criado e salvo")
+
+    def _rename_workspace(self) -> None:
+        name = simpledialog.askstring(
+            "Renomear workspace",
+            "Novo nome:",
+            initialvalue=self.workspace.name,
+            parent=self.root,
+        )
+        if name is None:
+            return
+        try:
+            self.workspace, self.layout = self.session_engine.rename_current(name)
+        except (ValueError, WorkspaceStorageError) as exc:
+            messagebox.showerror("Não foi possível renomear", str(exc), parent=self.root)
+            return
+        self._load_workspace_view("Workspace renomeado e salvo")
+
+    def _edit_panels(self) -> None:
+        dialog = PanelEditorDialog(self.root, self.workspace.panels)
+        if dialog.result is None:
+            return
+        try:
+            self.workspace, self.layout = self.session_engine.update_panels(dialog.result)
+        except (ValueError, WorkspaceStorageError) as exc:
+            messagebox.showerror("Não foi possível salvar", str(exc), parent=self.root)
+            return
+        self._load_workspace_view("Painéis editados e persistidos")
+
+    def _delete_workspace(self) -> None:
+        if not messagebox.askyesno(
+            "Excluir workspace",
+            f"Excluir o workspace '{self.workspace.name}'?",
+            parent=self.root,
+        ):
+            return
+        try:
+            self.workspace, self.layout = self.session_engine.delete_current()
+        except WorkspaceStorageError as exc:
+            messagebox.showerror("Não foi possível excluir", str(exc), parent=self.root)
+            return
+        self._load_workspace_view("Workspace excluído; workspace anterior restaurado")
+
+    def _load_workspace_view(self, message: str) -> None:
+        self._workspace_generation += 1
+        self.browser_engine.close_all()
+        self._launching.clear()
+        for card in self.cards:
+            card.destroy()
+        self.cards.clear()
+        self.cards_by_id.clear()
+        prepared = self.engine.prepare(self.workspace, self.layout, 1200, 650)
+        views = build_panel_view_models(prepared)
+        self.cards = [PanelCard(self.content, view, self._open_browser) for view in views]
+        self.cards_by_id = {card.panel.id: card for card in self.cards}
+        self._configure_panel_states()
+        self._refresh_controls()
+        self.status_text.set(message)
+        self.root.after_idle(self._render_layout)
 
     def _configure_panel_states(self) -> None:
         for card in self.cards:
@@ -342,7 +591,7 @@ class WorkspaceWindow:
         if not self.browser_availability.available:
             card.configure_browser(available=False, message=self.browser_availability.reason)
             return
-
+        generation = self._workspace_generation
         self._launching.add(panel.id)
         card.show_browser_host()
         card.set_open_enabled(False, "Abrindo…")
@@ -365,13 +614,12 @@ class WorkspaceWindow:
                     height,
                 )
             except Exception as exc:  # noqa: BLE001
-                self._browser_results.put(("error", panel.id, str(exc)))
+                self._browser_results.put(("error", panel.id, str(exc), generation))
                 return
-
-            if self._closed:
+            if self._closed or generation != self._workspace_generation:
                 self.browser_engine.close(panel.id)
                 return
-            self._browser_results.put(("opened", panel.id, None))
+            self._browser_results.put(("opened", panel.id, None, generation))
 
         threading.Thread(
             target=launch,
@@ -382,18 +630,17 @@ class WorkspaceWindow:
     def _drain_browser_results(self) -> None:
         if self._closed:
             return
-
         while True:
             try:
-                result, panel_id, message = self._browser_results.get_nowait()
+                result, panel_id, message, generation = self._browser_results.get_nowait()
             except queue.Empty:
                 break
-
+            if generation != self._workspace_generation or panel_id not in self.cards_by_id:
+                continue
             if result == "opened":
                 self._browser_opened(panel_id)
             else:
                 self._browser_failed(panel_id, message or "Falha desconhecida ao abrir o painel.")
-
         self.root.after(80, self._drain_browser_results)
 
     def _browser_opened(self, panel_id: str) -> None:
@@ -401,11 +648,7 @@ class WorkspaceWindow:
         card = self.cards_by_id[panel_id]
         card.show_browser_host()
         card.set_open_enabled(True, "Reabrir")
-        card.set_status(
-            "ATIVO",
-            f"{card.panel.title} está executando dentro do painel.",
-            "#15803d",
-        )
+        card.set_status("ATIVO", f"{card.panel.title} está executando dentro do painel.", "#15803d")
         self.status_text.set(f"Painel {card.panel.title} aberto com Browser Engine X11")
         self._resize_browsers()
 
@@ -424,12 +667,13 @@ class WorkspaceWindow:
         self._resize_job = self.root.after(30, self._render_layout)
 
     def _render_layout(self) -> None:
+        if self._closed:
+            return
         self._resize_job = None
         width = max(1, self.content.winfo_width() - CONTENT_PADDING * 2)
         height = max(1, self.content.winfo_height() - CONTENT_PADDING * 2)
         runtime_panels = self.engine.prepare(self.workspace, self.layout, width, height)
         views = build_panel_view_models(runtime_panels)
-
         for card, view in zip(self.cards, views, strict=False):
             bounds = view.bounds
             card.place(
@@ -438,14 +682,12 @@ class WorkspaceWindow:
                 width=bounds.width,
                 height=bounds.height,
             )
-
-        if self.browser_availability.available:
-            backend_state = "browser disponível"
-        else:
-            backend_state = "browser indisponível"
+        backend_state = (
+            "browser disponível" if self.browser_availability.available else "browser indisponível"
+        )
         self.status_text.set(
             f"{self.workspace.name} · {len(views)} painéis · {backend_state} · "
-            f"área útil {width} × {height}"
+            f"estado salvo · área útil {width} × {height}"
         )
         self.root.after_idle(self._resize_browsers)
 
@@ -460,6 +702,14 @@ class WorkspaceWindow:
                 self.browser_engine.resize(card.panel.id, width, height)
             except (BrowserEngineError, OSError) as exc:
                 logging.warning("Unable to resize browser panel %s: %s", card.panel.id, exc)
+
+    def _show_recovery_warning(self) -> None:
+        if self.repository.last_recovery_message:
+            messagebox.showwarning(
+                "Catálogo recuperado",
+                self.repository.last_recovery_message,
+                parent=self.root,
+            )
 
     def _close(self) -> None:
         if self._closed:
@@ -482,14 +732,28 @@ def _configure_logging() -> Path:
     return log_path
 
 
-def main(workspace_path: Path = DEFAULT_WORKSPACE) -> int:
-    """Start the desktop window and keep it alive until the user closes it."""
+def main(
+    workspace_path: Path | None = None,
+    data_file: Path | None = None,
+) -> int:
+    """Start the persistent desktop window until the user closes it."""
 
     log_path = _configure_logging()
     try:
+        seed_workspace, seed_layout = load_workspace_bundle(DEFAULT_WORKSPACE)
+        repository = WorkspaceRepository(data_file)
+        catalog = repository.load_or_bootstrap(seed_workspace, seed_layout)
+        if workspace_path is not None:
+            workspace, layout = load_workspace_bundle(workspace_path)
+            catalog = repository.save_workspace(catalog, workspace, layout, make_active=True)
+        session_engine = WorkspaceSessionEngine(repository, catalog)
         root = tk.Tk()
-        WorkspaceWindow(root, workspace_path)
-        logging.info("TriView Workspace GUI started with %s", workspace_path)
+        WorkspaceWindow(root, repository, session_engine)
+        logging.info(
+            "TriView Workspace GUI started with active workspace %s from %s",
+            session_engine.current_workspace.id,
+            repository.path,
+        )
         root.mainloop()
         return 0
     except Exception as exc:  # noqa: BLE001

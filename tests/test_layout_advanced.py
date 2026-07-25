@@ -33,12 +33,8 @@ def test_layout_validation_rejects_overlap_and_out_of_bounds() -> None:
                 NormalizedRect(0.6, 0, 0.4, 1),
             ),
         )
-    with pytest.raises(LayoutValidationError, match="ultrapassa"):
-        create_layout(
-            "outside-layout",
-            "Outside",
-            (NormalizedRect(0.8, 0, 0.3, 1),),
-        )
+    with pytest.raises(ValueError, match="fit inside the viewport"):
+        NormalizedRect(0.8, 0, 0.3, 1)
 
 
 def test_presets_cover_columns_stack_grid_and_focus() -> None:

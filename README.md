@@ -2,60 +2,56 @@
 
 Plataforma modular de áreas de trabalho para Linux.
 
-O produto gerencia **workspaces compostos por painéis independentes**. Navegadores, aplicações, terminais, PDFs e plugins são resolvidos por adaptadores e Engines separados.
+## Estado deste candidato
 
-## Estado atual deste candidato
+- versão candidata: `0.5.0`;
+- `main`: estável em `0.3.0`;
+- Browser Engine: validado;
+- workspaces persistentes: validados;
+- Application Engine: candidato LEA-197;
+- Terminal Engine: candidato LEA-198;
+- PDF, captura, gravação, plugins, layouts avançados, sessões e Hub: LEA-199–205.
 
-- Versão: `0.4.0`.
-- Browser Engine: validado no Linux Mint/X11.
-- Workspaces persistentes: validados no Linux Mint.
-- Application Engine: implementado na LEA-197 e aguardando teste real.
-- Panel Runtime comum: disponível para Application, Terminal e PDF Engines.
-- Terminal, PDF, captura, gravação, plugins, layouts avançados, sessões completas e Hub: planejados nas LEAs 198–205.
+## Painéis executáveis
 
-A branch `main` permanece estável em `0.3.0`. Este código pertence ao trem `train/road-to-1.0` e possui instalador isolado para não alterar a versão principal.
+### Browser
 
-## Application Engine
+Abre conteúdo HTTP/HTTPS em Brave ou Chromium incorporado por X11.
 
-Um painel do tipo `application` recebe um comando, por exemplo:
+### Application
+
+Executa um programa Linux configurado, por exemplo `xed` ou `libreoffice --writer`. A janela é incorporada quando compatível ou mantida externamente com estado **EXTERNO**.
+
+### Terminal
+
+O destino representa o shell, por exemplo:
 
 ```text
-xterm
-xed
-libreoffice --writer
+bash
+bash --noprofile
+zsh
 ```
 
-O comando é dividido em argumentos e executado sem shell. O backend tenta localizar e incorporar a janela por X11. Quando o programa não aceita incorporação, ele permanece em uma janela externa e o painel mostra o estado **EXTERNO**.
+O Terminal Engine detecta `xterm`, `xfce4-terminal`, `gnome-terminal`, `kitty`, `alacritty` ou `konsole`. A variável `TRIVIEW_TERMINAL` pode priorizar um deles.
 
-Requisitos para incorporação:
+## Requisitos X11
 
-- sessão X11 com `DISPLAY`;
-- programa instalado;
-- `xdotool`.
+```bash
+sudo apt update
+sudo apt install xdotool
+```
 
-Sem `xdotool`, aplicações ainda podem abrir externamente.
+Um emulador de terminal também precisa estar instalado. Sem incorporação, Application e Terminal Engines usam fallback externo controlado.
 
-## Instalar candidato isolado
-
-O script abaixo instala a LEA-197 em diretórios separados da versão principal:
+## Instalar o candidato LEA-198
 
 ```bash
 bash scripts/install-candidate.sh \
-  LEA-197 \
-  leonpcsn/lea-197-implementar-application-engine-e-panel-runtime-comum
+  LEA-198 \
+  leonpcsn/lea-198-implementar-terminal-engine-incorporado
 ```
 
-O atalho criado se chama **TriView Workspace — LEA-197**.
-
-Dados do candidato:
-
-```text
-~/.local/share/triview-workspace-candidate-data/lea-197
-```
-
-## Gerenciar workspaces
-
-A barra superior permite selecionar, copiar, renomear, editar e excluir workspaces, além de restaurar automaticamente o último utilizado.
+O atalho criado é **TriView Workspace — LEA-198** e usa dados separados da versão principal.
 
 ## Executar localmente
 
@@ -67,43 +63,18 @@ python -m pip install -e '.[dev]'
 triview-workspace
 ```
 
-Diagnóstico sem abrir a interface:
-
-```bash
-triview-workspace --diagnostic
-```
-
 ## Documentação
 
 - [Índice central](docs/README.md)
 - [Roadmap](docs/product/ROADMAP.md)
-- [Histórico de versões](docs/product/RELEASE_HISTORY.md)
 - [Arquitetura](docs/architecture/README.md)
-- [Responsabilidades dos Engines](docs/architecture/ENGINES.md)
 - [Trem LEA-197–205](docs/factory/DEVELOPMENT_TRAIN_LEA-197-205.md)
-- [Registro da LEA-197](docs/work/LEA-197.md)
-
-## Estrutura principal
-
-```text
-src/triview_workspace/
-├── domain/
-├── engines/
-│   ├── application.py
-│   ├── browser.py
-│   ├── panel_runtime.py
-│   ├── layout.py
-│   ├── panels.py
-│   ├── session.py
-│   └── workspace.py
-├── infrastructure/
-├── gui.py
-├── gui_model.py
-└── cli.py
-```
+- [LEA-197](docs/work/LEA-197.md)
+- [LEA-198](docs/work/LEA-198.md)
 
 ## Rastreabilidade
 
-- LEA-191 a LEA-196: fundação, atualização, GUI, documentação, Browser e persistência.
-- LEA-197: Application Engine e Panel Runtime comum.
-- LEA-198 a LEA-205: branches e tarefas preparadas no trem de desenvolvimento.
+- LEA-191–196: base validada;
+- LEA-197: Application Engine e Panel Runtime;
+- LEA-198: Terminal Engine e shell gráfico genérico;
+- LEA-199–205: etapas seguintes do trem.

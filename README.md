@@ -2,26 +2,30 @@
 
 Plataforma modular de áreas de trabalho para Linux.
 
-O produto deixa de ser um simples organizador de três navegadores e passa a gerenciar **workspaces compostos por painéis independentes**. Um painel poderá representar navegador, aplicação, terminal, PDF ou outro tipo acrescentado por adaptadores.
+O produto gerencia **workspaces compostos por painéis independentes**. Navegadores, aplicações, terminais, PDFs e componentes futuros serão resolvidos por adaptadores, sem limitar o núcleo ao caso inicial de três janelas.
 
-## Estado
+## Estado atual
 
-- Tarefa atual: [LEA-193](https://linear.app/leandro-carlos/issue/LEA-193/abrir-interface-grafica-real-apos-a-migracao)
-- Versão: `0.1.2`
-- Repositório: `leon337/triview-workspace-linux`
+- Versão funcional: `0.1.2`.
+- Interface gráfica inicial: disponível.
+- Três painéis responsivos: disponíveis.
+- Migração, backup, restauração e atualização versionada: disponíveis.
+- Navegadores e aplicações incorporados: planejados.
+- Print e gravação individual por painel: planejados.
+- Consolidação estratégica: LEA-194.
 
-## Interface gráfica inicial
+A versão atual é uma **casca gráfica funcional**. Os painéis ainda exibem placeholders e não incorporam Brave, GitHub ou Terminal.
 
-A versão 0.1.2 corrige o comportamento em que o atalho executava apenas o diagnóstico em JSON e encerrava. O comando principal agora abre uma janela desktop real que permanece visível.
+## Documentação
 
-A janela inicial apresenta:
+A referência principal do projeto está em:
 
-- três painéis móveis responsivos;
-- redimensionamento ao maximizar, restaurar ou alterar a janela;
-- cabeçalho do workspace e estado de cada painel;
-- ações provisórias de abrir, print e gravação, ainda desativadas até seus engines serem implementados.
-
-A incorporação real de Brave, aplicações Linux, captura de imagem e gravação por painel pertence às tarefas seguintes.
+- [Índice central da documentação](docs/README.md)
+- [Visão do produto](docs/product/VISION.md)
+- [Roadmap](docs/product/ROADMAP.md)
+- [Arquitetura](docs/architecture/README.md)
+- [Responsabilidades dos Engines](docs/architecture/ENGINES.md)
+- [Manual da Fábrica de Softwares](docs/factory/SOFTWARE_FACTORY_WORKFLOW.md)
 
 ## Executar localmente
 
@@ -60,6 +64,18 @@ tests/
 
 ## Migração e atualização
 
-A instalação antiga usa `~/.local/share/triview-workspace-linux`, enquanto as URLs ficam em `~/.config/triview-workspace/config.json`. O pacote `TriView-Workspace-Migrador-0.1.2.zip` cria backup, preserva as URLs e instala a aplicação em `~/.local/share/triview-workspace`.
+A instalação antiga usa `~/.local/share/triview-workspace-linux`, enquanto as URLs ficam em `~/.config/triview-workspace/config.json`.
 
-Após a migração, o atalho **Atualizar TriView Workspace** obtém a versão validada do GitHub, mantém backup da versão anterior e atualiza o atalho gráfico principal.
+O pacote de migração cria backup, preserva as URLs e instala a aplicação em `~/.local/share/triview-workspace`. Após a migração, o atalho **Atualizar TriView Workspace** obtém a versão validada do GitHub, mantém backup da versão anterior e atualiza o atalho gráfico principal.
+
+Consulte:
+
+- [Migração](docs/migration.md)
+- [Estratégia de atualização](docs/updater.md)
+
+## Rastreabilidade
+
+- Fundação modular: LEA-191 / PR #1.
+- Migração segura: LEA-192 / PR #2.
+- Interface gráfica inicial: LEA-193 / PR #3.
+- Documentação estratégica: LEA-194.

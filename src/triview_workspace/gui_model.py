@@ -9,8 +9,6 @@ from triview_workspace.domain import PixelRect, RuntimePanel
 
 @dataclass(frozen=True, slots=True)
 class PanelViewModel:
-    """Data required by the desktop shell to render one panel."""
-
     id: str
     title: str
     kind: str
@@ -21,17 +19,16 @@ class PanelViewModel:
 
 
 def panel_status(kind: str, adapter_name: str = "placeholder") -> str:
-    """Return the integration status shown in the shell."""
-
     if adapter_name == "browser":
         return "Navegador pronto para abertura dentro deste painel"
     if adapter_name == "application":
         return "Aplicação Linux pronta para abertura dentro ou fora deste painel"
-
+    if adapter_name == "terminal":
+        return "Terminal Linux pronto para abertura dentro ou fora deste painel"
     labels = {
         "browser": "Navegador ainda não possui backend funcional neste painel",
         "application": "Aplicação ainda não possui backend funcional neste painel",
-        "terminal": "Terminal será incorporado em uma etapa posterior",
+        "terminal": "Terminal ainda não possui backend funcional neste painel",
         "pdf": "Visualizador de PDF será incorporado em uma etapa posterior",
     }
     return labels.get(kind, "Painel preparado para adaptador futuro")
@@ -40,8 +37,6 @@ def panel_status(kind: str, adapter_name: str = "placeholder") -> str:
 def build_panel_view_models(
     runtime_panels: tuple[RuntimePanel, ...],
 ) -> tuple[PanelViewModel, ...]:
-    """Convert runtime panels into immutable GUI-ready values."""
-
     return tuple(
         PanelViewModel(
             id=runtime.panel.id,

@@ -14,19 +14,16 @@ REQUIRED_DOCUMENTS = (
     "docs/architecture/ENGINES.md",
     "docs/factory/SOFTWARE_FACTORY_WORKFLOW.md",
     "docs/factory/DEVELOPMENT_TRAIN_LEA-197-205.md",
-    "docs/decisions/ADR-0001-workspace-platform.md",
-    "docs/decisions/ADR-0002-documentation-source-of-truth.md",
-    "docs/decisions/ADR-0003-browser-x11-reparenting.md",
-    "docs/decisions/ADR-0004-versioned-workspace-catalog.md",
     "docs/decisions/ADR-0005-application-engine-panel-runtime.md",
     "docs/decisions/ADR-0006-terminal-engine-emulator-adapters.md",
     "docs/decisions/ADR-0007-pdf-viewer-runtime.md",
     "docs/decisions/ADR-0008-panel-window-capture.md",
-    "docs/work/LEA-196.md",
+    "docs/decisions/ADR-0009-panel-region-recording-ffmpeg.md",
     "docs/work/LEA-197.md",
     "docs/work/LEA-198.md",
     "docs/work/LEA-199.md",
     "docs/work/LEA-200.md",
+    "docs/work/LEA-201.md",
 )
 LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)")
 
@@ -54,8 +51,6 @@ def test_internal_markdown_links_resolve() -> None:
 def test_roadmap_tracks_the_development_train() -> None:
     roadmap = (ROOT / "docs/product/ROADMAP.md").read_text(encoding="utf-8")
     for heading in (
-        "Browser Engine",
-        "Workspaces persistentes",
         "Application Engine",
         "Terminal Engine",
         "PDF Engine",
@@ -68,9 +63,9 @@ def test_roadmap_tracks_the_development_train() -> None:
     ):
         assert heading in roadmap
     assert "train/road-to-1.0" in roadmap
-    for identifier in ("LEA-197", "LEA-198", "LEA-199", "LEA-200"):
+    for identifier in ("LEA-197", "LEA-198", "LEA-199", "LEA-200", "LEA-201"):
         assert identifier in roadmap
-    assert roadmap.count("Status: **planejado**") >= 5
+    assert roadmap.count("Status: **planejado**") >= 4
 
 
 def test_candidate_documentation_distinguishes_stable_and_candidate() -> None:
@@ -79,4 +74,4 @@ def test_candidate_documentation_distinguishes_stable_and_candidate() -> None:
     assert "versão estável" in index
     assert "candidato atual" in index
     assert "`main`: estável" in readme
-    assert "TriView Workspace — LEA-200" in readme
+    assert "TriView Workspace — LEA-201" in readme

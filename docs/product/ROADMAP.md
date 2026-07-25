@@ -1,51 +1,39 @@
 # Roadmap do produto
 
-Este roadmap registra direção e sequência. Uma funcionalidade só é concluída após implementação, CI, integração no trem e teste de aceite no Linux Mint.
+Uma funcionalidade só é concluída após implementação, CI, integração no trem e teste de aceite no Linux Mint.
 
-## Marcos concluídos
+## Marcos validados
 
-### `0.1.0` — Fundação modular
-Status: **concluído**
+- `0.1.0` Fundação modular — **concluído**;
+- `0.1.1` Migração segura — **concluído**;
+- `0.1.2` Interface gráfica — **concluído**;
+- LEA-194 Documentação — **concluído**;
+- `0.2.0` Browser Engine — **validado no Linux Mint**;
+- `0.3.0` Workspaces persistentes — **validado no Linux Mint**.
 
-### `0.1.1` — Migração e atualização segura
-Status: **concluído**
+## Trem LEA-197–205
 
-### `0.1.2` — Primeira interface gráfica
-Status: **concluído**
-
-### LEA-194 — Consolidação documental
-Status: **concluído**
-
-### `0.2.0` — Browser Engine
-Status: **concluído e validado no Linux Mint**
-
-### `0.3.0` — Workspaces persistentes
-Status: **concluído e validado no Linux Mint**
-
-## Trem de desenvolvimento LEA-197–205
-
-A branch `main` permanece estável. O trem é integrado em `train/road-to-1.0`. Cada LEA usa branch, PR, CI e candidato isolado antes da promoção.
+A branch `main` permanece estável. A integração ocorre em `train/road-to-1.0`.
 
 ### `0.4.0` — Application Engine — LEA-197
-Status: **integrado ao trem; aguardando teste no Linux Mint**
+Status: **integrado ao trem; aguardando teste**
 
 ### `0.5.0` — Terminal Engine — LEA-198
-Status: **integrado ao trem; aguardando teste no Linux Mint**
+Status: **integrado ao trem; aguardando teste**
 
 ### `0.6.0` — PDF Engine — LEA-199
-Status: **integrado ao trem; aguardando teste no Linux Mint**
+Status: **integrado ao trem; aguardando teste**
 
 ### `0.7.0` — Capture Engine — LEA-200
-Status: **implementado no candidato; aguardando CI e teste no Linux Mint**
-
-- captura por janela do painel;
-- backends maim e ImageMagick;
-- botão Print habilitado;
-- PNGs organizados e histórico JSONL;
-- candidato isolado.
+Status: **integrado ao trem; aguardando teste**
 
 ### `0.8.0` — Recording Engine — LEA-201
-Status: **planejado**
+Status: **implementado no candidato; aguardando CI e teste**
+
+- FFmpeg x11grab;
+- gravação da região do painel;
+- botão Gravar/Parar e indicador;
+- MP4 e histórico auditável.
 
 ### `0.9.0` — Plugin Engine — LEA-202
 Status: **planejado**
@@ -59,19 +47,10 @@ Status: **planejado**
 ### `1.0.0` — Workspace Hub — LEA-205
 Status: **planejado**
 
-## Evoluções posteriores
+## Posterior
 
-- backend nativo ou híbrido para Wayland;
+- Wayland nativo;
 - múltiplos monitores;
 - sincronização opcional;
 - marketplace e assinatura de plugins;
-- automações e agentes de IA.
-
-## Itens transversais
-
-- testes automatizados e CI;
-- logs e mensagens de erro;
-- documentação e ADRs;
-- backup e compatibilidade de dados;
-- candidatos isolados;
-- rastreabilidade Linear ↔ GitHub.
+- agentes de IA.

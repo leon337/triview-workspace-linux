@@ -1,58 +1,48 @@
 # Changelog
 
+## 0.8.0 — Recording Engine
+
+- implementa gravação individual por painel com FFmpeg x11grab;
+- grava a geometria absoluta do painel em MP4/H.264;
+- adiciona início, pausa, retomada e encerramento;
+- alterna o botão Gravar para Parar;
+- adiciona indicador GRAVANDO;
+- finaliza o contêiner com SIGINT e evita processos órfãos;
+- organiza vídeos e histórico por workspace, painel e data;
+- adiciona testes e ADR-0009.
+
 ## 0.7.0 — Capture Engine
 
-- implementa captura individual por painel;
-- usa `maim` ou ImageMagick `import` em X11;
-- habilita o botão Print para todos os tipos de painel;
-- grava primeiro em arquivo parcial e promove somente após sucesso;
-- organiza PNGs por workspace, painel e data;
-- adiciona histórico JSONL auditável;
-- executa captura sem bloquear a interface;
-- adiciona testes e ADR-0008.
+- captura individual com maim ou ImageMagick;
+- botão Print, PNGs organizados e histórico JSONL;
+- ADR-0008.
 
 ## 0.6.0 — PDF Engine
 
 - PDF Adapter e Engine;
-- visualizadores do sistema;
-- validação, incorporação e fallback externo;
+- visualizadores do sistema e fallback externo;
 - ADR-0007.
 
 ## 0.5.0 — Terminal Engine
 
 - Terminal Adapter e Engine;
 - shell configurável e emuladores adaptados;
-- shell gráfico genérico;
 - ADR-0006.
 
 ## 0.4.0 — Application Engine e Panel Runtime
 
-- Panel Runtime comum;
-- execução sem shell;
-- Application Engine e fallback externo;
+- Panel Runtime comum e Application Engine;
+- incorporação X11 e fallback externo;
 - ADR-0005.
 
 ## 0.3.0 — Workspaces persistentes
 
-- catálogo versionado e atômico;
-- criação, edição, alternância e restauração.
+- catálogo versionado, atômico e restaurável.
 
 ## 0.2.0 — Browser Engine
 
-- navegador incorporado, perfis separados e ciclo de vida.
+- navegador incorporado e ciclo de vida.
 
-## Consolidação documental — LEA-194
+## 0.1.x — Fundação
 
-- visão, roadmap, arquitetura e manual da Fábrica.
-
-## 0.1.2 — Interface gráfica inicial
-
-- janela responsiva e diagnóstico separado.
-
-## 0.1.1 — Migração segura
-
-- backup, restauração e atualizador.
-
-## 0.1.0 — Fundação
-
-- modelos, Engines básicos, adaptadores, testes e CI.
+- arquitetura modular, migração e interface gráfica.

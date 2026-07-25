@@ -1,22 +1,23 @@
 # Changelog
 
-Todas as mudanças relevantes deste projeto serão registradas neste arquivo.
+## 0.1.1 — Migração segura
 
-## [0.1.0] - 2026-07-24
+- adiciona migrador da instalação legada V0.1.0;
+- confirma e preserva as URLs em `~/.config/triview-workspace/config.json`;
+- cria backup integral antes de qualquer alteração;
+- mantém a aplicação antiga intacta;
+- instala versões em diretórios versionados com troca atômica do link `current`;
+- adiciona restaurador do backup mais recente;
+- adiciona atualizador com fallback para a branch `main` enquanto não houver release estável;
+- adiciona atalhos de abertura, atualização e restauração;
+- adiciona pacote gráfico executável por duplo clique no Linux Mint;
+- adiciona testes do plano de migração.
 
-### Adicionado
+## 0.1.0 — Fundação
 
-- fundação modular da plataforma Workspace;
-- modelos de domínio para workspace, layout e painel;
-- Layout Engine proporcional com suporte a proporção visual;
-- Panel Engine extensível por adaptadores;
-- Workspace Engine de orquestração;
+- estrutura modular inicial;
+- modelos de workspace, layout e painel;
+- Layout Engine proporcional;
+- registro extensível de adaptadores;
 - configuração de exemplo com três painéis móveis;
-- testes automatizados e integração contínua;
-- documentação arquitetural, ADR inicial e estratégia do atualizador.
-
-### Limites conhecidos
-
-- painéis ainda não incorporam navegadores ou aplicações reais;
-- captura e gravação individual serão implementadas em tarefas posteriores;
-- o atualizador legado da primeira distribuição ainda precisa ser validado antes da migração.
+- testes automatizados e documentação arquitetural.

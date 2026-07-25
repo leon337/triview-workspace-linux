@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Restaurar TriView Workspace
+Comment=Restaura o backup mais recente da versão anterior
+Exec=sh -c 'cd "$(dirname "$1")" && chmod +x ./restaurar.sh && ./restaurar.sh; status=$?; printf "\nPressione Enter para fechar..."; read _; exit $status' dummy %k
+Icon=document-revert
+Terminal=true
+Categories=Utility;Development;

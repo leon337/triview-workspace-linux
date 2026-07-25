@@ -1,30 +1,32 @@
 # Estratégia de atualização
 
-## Resposta operacional
+## Situação da versão legada
 
-O usuário não deverá baixar um ZIP completo a cada tarefa. A meta é executar um atualizador que obtenha uma release validada do GitHub.
+O atualizador da V0.1.0 foi recuperado e analisado. Ele instala em `~/.local/share/triview-workspace-linux`, clona o repositório e exige arquivos monolíticos na raiz (`app.py`, `launcher.sh`, `update.sh`, `uninstall.sh`, `VERSION`). Esse contrato é incompatível com a nova arquitetura em `src/triview_workspace/`.
 
-Entretanto, o atualizador enviado na primeira distribuição ZIP **não foi validado dentro deste repositório**. Portanto, não é seguro afirmar que ele já consegue migrar para esta nova arquitetura. Sua compatibilidade depende do endereço do repositório, da estrutura de diretórios e do formato de release que ele espera.
+## Migração oficial
 
-## Modos suportados por `scripts/update.sh`
+A primeira passagem para a arquitetura modular deve ser feita com o pacote `TriView-Workspace-Migrador-0.1.1`. Ele:
 
-1. **Instalação Git:** faz `fetch` e `pull --ff-only` da branch configurada.
-2. **Instalação empacotada:** baixa o `tar.gz` da release mais recente, preserva o diretório `data/` e substitui os arquivos da aplicação.
+- cria backup da instalação antiga;
+- preserva `~/.config/triview-workspace/config.json`;
+- instala em `~/.local/share/triview-workspace/releases/<versão>`;
+- mantém um link atômico `current`;
+- não apaga a versão antiga;
+- cria comandos e atalhos novos.
 
-## Migração do atualizador legado
+## Atualizações posteriores
 
-Antes da primeira release instalável:
+Após a migração, `scripts/update.sh`:
 
-- recuperar o `update.sh` do primeiro ZIP;
-- comparar a origem, os caminhos e as permissões;
-- criar backup automático;
-- testar migração em uma cópia da instalação;
-- somente então declarar atualização direta como compatível.
+1. tenta baixar a release estável mais recente;
+2. enquanto não houver release, usa a branch `main`;
+3. valida o pacote e o código Python;
+4. instala em um novo diretório versionado;
+5. valida o workspace de exemplo;
+6. troca o link `current` somente depois do sucesso;
+7. mantém dados e backups separados do código.
 
-## Política de segurança
+## Restauração
 
-- nunca atualizar com alterações locais não salvas;
-- fazer backup antes de substituir uma instalação empacotada;
-- usar somente HTTPS;
-- interromper em qualquer falha;
-- não apagar dados, capturas ou gravações do usuário.
+`scripts/restore-latest.sh` restaura a cópia mais recente da aplicação e das configurações legadas. A nova instalação permanece disponível para inspeção.

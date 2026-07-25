@@ -71,11 +71,39 @@ cp -a "$tmp_dir/extracted/." "$release_dir/"
 
 export PYTHONPATH="$release_dir/src"
 cd "$release_dir"
-python3 -m triview_workspace.cli --workspace "$release_dir/config/workspaces/three-mobile.json" >/dev/null
+python3 -m triview_workspace.cli --diagnostic --workspace "$release_dir/config/workspaces/three-mobile.json" >/dev/null
 
 temp_link="$APP_ROOT/.current-$timestamp"
 ln -s "$release_dir" "$temp_link"
 mv -Tf "$temp_link" "$CURRENT_LINK"
 printf '%s\n' "$version" > "$APP_ROOT/VERSION"
+
+BIN_DIR="$HOME/.local/bin"
+APPLICATIONS_DIR="$HOME/.local/share/applications"
+mkdir -p "$BIN_DIR" "$APPLICATIONS_DIR"
+cat > "$BIN_DIR/triview-workspace" <<EOF
+#!/usr/bin/env bash
+set -Eeuo pipefail
+APP_ROOT="$APP_ROOT"
+CURRENT="\$APP_ROOT/current"
+export PYTHONPATH="\$CURRENT/src\${PYTHONPATH:+:\$PYTHONPATH}"
+cd "\$CURRENT"
+exec python3 -m triview_workspace.cli "\$@"
+EOF
+chmod +x "$BIN_DIR/triview-workspace"
+cat > "$APPLICATIONS_DIR/triview-workspace.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=TriView Workspace
+Comment=Plataforma modular de áreas de trabalho
+Exec=$BIN_DIR/triview-workspace
+Icon=preferences-desktop-display
+Terminal=false
+Categories=Utility;Development;
+StartupNotify=true
+EOF
+chmod +x "$APPLICATIONS_DIR/triview-workspace.desktop"
+update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
+
 log "Atualização concluída. Versão ativa: $version"
 log "Backup: $backup_dir"

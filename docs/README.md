@@ -5,11 +5,11 @@ Este diretório separa recursos validados, candidatos do trem e funcionalidades 
 ## Estado
 
 - versão estável: `0.3.0` em `main`;
-- candidato atual: `0.6.0` — PDF Engine, LEA-199;
+- candidato atual: `0.7.0` — Capture Engine, LEA-200;
 - Browser e workspaces persistentes: validados;
-- Application e Terminal Engines: integrados ao trem;
-- PDF Engine: implementado, aguardando CI e aceite;
-- LEA-200–205: etapas seguintes.
+- Application, Terminal e PDF Engines: integrados ao trem;
+- Capture Engine: implementado, aguardando CI e aceite;
+- LEA-201–205: etapas seguintes.
 
 ## Produto
 
@@ -34,6 +34,7 @@ Este diretório separa recursos validados, candidatos do trem e funcionalidades 
 - [ADR-0005 — Panel Runtime](decisions/ADR-0005-application-engine-panel-runtime.md)
 - [ADR-0006 — Terminal e emuladores](decisions/ADR-0006-terminal-engine-emulator-adapters.md)
 - [ADR-0007 — Visualizadores PDF](decisions/ADR-0007-pdf-viewer-runtime.md)
+- [ADR-0008 — Captura por janela](decisions/ADR-0008-panel-window-capture.md)
 
 ## Registros
 
@@ -42,6 +43,7 @@ Este diretório separa recursos validados, candidatos do trem e funcionalidades 
 - [LEA-197](work/LEA-197.md)
 - [LEA-198](work/LEA-198.md)
 - [LEA-199](work/LEA-199.md)
+- [LEA-200](work/LEA-200.md)
 
 ## Fábrica
 

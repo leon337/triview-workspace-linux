@@ -5,6 +5,7 @@ from .models import (
     PanelSpec,
     PixelRect,
     RuntimePanel,
+    Viewport,
     WorkspaceSpec,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "PanelSpec",
     "PixelRect",
     "RuntimePanel",
+    "Viewport",
     "WorkspaceSpec",
 ]

@@ -58,13 +58,7 @@ class BrowserRuntimeController:
             xdotool_command=report.xdotool_command,
         )
 
-    def open(
-        self,
-        panel: PanelSpec,
-        parent_window_id: int,
-        width: int,
-        height: int,
-    ) -> RuntimeOpenResult:
+    def open(self, panel: PanelSpec, parent_window_id: int, width: int, height: int) -> RuntimeOpenResult:
         self.engine.open(panel.id, panel.target, parent_window_id, width, height)
         return RuntimeOpenResult(True)
 
@@ -90,13 +84,7 @@ class ApplicationRuntimeController:
     def availability(self, panel: PanelSpec) -> PanelRuntimeAvailability:
         return self.engine.availability(panel.target)
 
-    def open(
-        self,
-        panel: PanelSpec,
-        parent_window_id: int,
-        width: int,
-        height: int,
-    ) -> RuntimeOpenResult:
+    def open(self, panel: PanelSpec, parent_window_id: int, width: int, height: int) -> RuntimeOpenResult:
         session = self.engine.open(panel.id, panel.target, parent_window_id, width, height)
         return RuntimeOpenResult(session.embedded, session.external)
 
@@ -121,23 +109,10 @@ class TerminalRuntimeController:
 
     def availability(self, panel: PanelSpec) -> PanelRuntimeAvailability:
         report = self.engine.availability(panel.target)
-        return PanelRuntimeAvailability(
-            report.available,
-            report.can_embed,
-            report.reason,
-            executable=report.emulator,
-        )
+        return PanelRuntimeAvailability(report.available, report.can_embed, report.reason, executable=report.emulator)
 
-    def open(
-        self,
-        panel: PanelSpec,
-        parent_window_id: int,
-        width: int,
-        height: int,
-    ) -> RuntimeOpenResult:
-        session = self.engine.open(
-            panel.id, panel.title, panel.target, parent_window_id, width, height
-        )
+    def open(self, panel: PanelSpec, parent_window_id: int, width: int, height: int) -> RuntimeOpenResult:
+        session = self.engine.open(panel.id, panel.title, panel.target, parent_window_id, width, height)
         return RuntimeOpenResult(session.embedded, session.external)
 
     def has_session(self, panel_id: str) -> bool:
@@ -161,23 +136,10 @@ class PdfRuntimeController:
 
     def availability(self, panel: PanelSpec) -> PanelRuntimeAvailability:
         report = self.engine.availability(panel.target)
-        return PanelRuntimeAvailability(
-            report.available,
-            report.can_embed,
-            report.reason,
-            executable=report.viewer,
-        )
+        return PanelRuntimeAvailability(report.available, report.can_embed, report.reason, executable=report.viewer)
 
-    def open(
-        self,
-        panel: PanelSpec,
-        parent_window_id: int,
-        width: int,
-        height: int,
-    ) -> RuntimeOpenResult:
-        session = self.engine.open(
-            panel.id, panel.title, panel.target, parent_window_id, width, height
-        )
+    def open(self, panel: PanelSpec, parent_window_id: int, width: int, height: int) -> RuntimeOpenResult:
+        session = self.engine.open(panel.id, panel.title, panel.target, parent_window_id, width, height)
         return RuntimeOpenResult(session.embedded, session.external)
 
     def has_session(self, panel_id: str) -> bool:
@@ -194,8 +156,13 @@ class PdfRuntimeController:
 
 
 class RuntimeControllerRegistry:
-    def __init__(self, controllers: tuple[RuntimeController, ...]) -> None:
-        self._controllers = {item.adapter_name: item for item in controllers}
+    def __init__(self, controllers: tuple[RuntimeController, ...] = ()) -> None:
+        self._controllers: dict[str, RuntimeController] = {}
+        for controller in controllers:
+            self.register(controller)
+
+    def register(self, controller: RuntimeController) -> None:
+        self._controllers[controller.adapter_name] = controller
 
     def get(self, adapter_name: str) -> RuntimeController | None:
         return self._controllers.get(adapter_name)

@@ -27,27 +27,19 @@ Status: **concluído e validado no Linux Mint**
 A branch `main` permanece estável. O trem é integrado em `train/road-to-1.0`. Cada LEA usa branch, PR, CI e candidato isolado antes da promoção.
 
 ### `0.4.0` — Application Engine — LEA-197
-
 Status: **integrado ao trem; aguardando teste no Linux Mint**
 
-- Panel Runtime comum;
-- execução segura sem shell;
-- Application Adapter e Engine;
-- incorporação X11 e fallback externo;
-- candidato isolado.
-
 ### `0.5.0` — Terminal Engine — LEA-198
-
-Status: **implementado no candidato; aguardando CI e teste no Linux Mint**
-
-- Terminal Adapter e Engine;
-- shell configurável;
-- detecção de emuladores;
-- shell gráfico genérico;
-- incorporação e fallback pelo Panel Runtime.
+Status: **integrado ao trem; aguardando teste no Linux Mint**
 
 ### `0.6.0` — PDF Engine — LEA-199
-Status: **planejado**
+Status: **implementado no candidato; aguardando CI e teste no Linux Mint**
+
+- validação de arquivo local;
+- PDF Adapter e Engine;
+- visualizadores do sistema;
+- incorporação ou fallback externo;
+- candidato isolado.
 
 ### `0.7.0` — Capture Engine — LEA-200
 Status: **planejado**

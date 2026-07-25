@@ -1,6 +1,6 @@
-"""Compatibility entry point for the generic desktop shell."""
+"""Compatibility entry point for the current desktop shell."""
 
-from triview_workspace.gui_shell import (
+from triview_workspace.gui_pdf import (
     APP_TITLE,
     DEFAULT_WORKSPACE,
     PanelCard,

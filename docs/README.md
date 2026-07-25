@@ -5,11 +5,11 @@ Este diretório separa recursos validados, candidatos do trem e funcionalidades 
 ## Estado
 
 - versão estável: `0.3.0` em `main`;
-- candidato atual: `0.5.0` — Terminal Engine, LEA-198;
+- candidato atual: `0.6.0` — PDF Engine, LEA-199;
 - Browser e workspaces persistentes: validados;
-- Application Engine e Panel Runtime: integrados ao trem;
-- Terminal Engine: implementado, aguardando CI e aceite;
-- LEA-199–205: etapas seguintes.
+- Application e Terminal Engines: integrados ao trem;
+- PDF Engine: implementado, aguardando CI e aceite;
+- LEA-200–205: etapas seguintes.
 
 ## Produto
 
@@ -33,6 +33,7 @@ Este diretório separa recursos validados, candidatos do trem e funcionalidades 
 - [ADR-0004 — Catálogo versionado](decisions/ADR-0004-versioned-workspace-catalog.md)
 - [ADR-0005 — Panel Runtime](decisions/ADR-0005-application-engine-panel-runtime.md)
 - [ADR-0006 — Terminal e emuladores](decisions/ADR-0006-terminal-engine-emulator-adapters.md)
+- [ADR-0007 — Visualizadores PDF](decisions/ADR-0007-pdf-viewer-runtime.md)
 
 ## Registros
 
@@ -40,6 +41,7 @@ Este diretório separa recursos validados, candidatos do trem e funcionalidades 
 - [LEA-196](work/LEA-196.md)
 - [LEA-197](work/LEA-197.md)
 - [LEA-198](work/LEA-198.md)
+- [LEA-199](work/LEA-199.md)
 
 ## Fábrica
 

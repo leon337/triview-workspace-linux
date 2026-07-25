@@ -98,4 +98,4 @@ Consulte:
 - Migração segura: LEA-192 / PR #2.
 - Interface gráfica inicial: LEA-193 / PR #3.
 - Documentação estratégica: LEA-194 / PR #4.
-- Primeiro Browser Engine funcional: LEA-195.
+- Primeiro Browser Engine funcional: LEA-195 / PR #5.

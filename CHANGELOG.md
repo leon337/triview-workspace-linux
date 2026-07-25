@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.2 — Interface gráfica inicial
+
+- corrige o atalho principal, que antes executava apenas o diagnóstico em JSON;
+- adiciona uma janela desktop real que permanece aberta;
+- exibe três painéis móveis responsivos;
+- recalcula o layout ao maximizar, restaurar ou redimensionar;
+- mantém a CLI disponível com `--diagnostic`;
+- atualiza o atalho para modo gráfico sem terminal;
+- adiciona log de inicialização da GUI;
+- adiciona testes da seleção entre GUI e diagnóstico.
+
 ## 0.1.1 — Migração segura
 
 - adiciona migrador da instalação legada V0.1.0;

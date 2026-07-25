@@ -33,7 +33,7 @@ def panel_status(kind: str, adapter_name: str = "placeholder") -> str:
         "application": "Aplicação ainda não possui backend funcional neste painel",
         "terminal": "Terminal ainda não possui backend funcional neste painel",
         "pdf": "Visualizador PDF ainda não possui backend funcional neste painel",
-        "custom": "Plugin ainda não possui manifesto válido e ativo",
+        "custom": "Painel custom aguardando adaptador de plugin válido e ativo",
     }
     return labels.get(kind, "Painel preparado para adaptador futuro")
 

@@ -6,15 +6,30 @@ O produto gerencia **workspaces compostos por painéis independentes**. Navegado
 
 ## Estado atual
 
-- Versão funcional: `0.2.0`.
+- Versão funcional: `0.3.0`.
 - Interface gráfica responsiva: disponível.
-- Primeiro Browser Engine: disponível em sessões X11 compatíveis.
+- Browser Engine: validado no Linux Mint/X11.
+- Workspaces persistentes: disponíveis.
+- Criação, cópia, edição, renomeação, seleção e exclusão: disponíveis.
+- Restauração automática do último workspace: disponível.
 - Migração, backup, restauração e atualização versionada: disponíveis.
-- Application Engine: planejado.
-- Print e gravação individual por painel: planejados.
-- Plugins e persistência completa de workspaces: planejados.
+- Application Engine, captura, gravação e plugins: planejados.
 
-A versão `0.2.0` permite abrir conteúdo HTTP ou HTTPS dentro de painéis navegador por meio de Brave ou outro navegador Chromium compatível. O backend inicial utiliza X11 e `xdotool`. Quando os requisitos não estão disponíveis, a interface permanece aberta e mostra a causa da indisponibilidade.
+A versão `0.3.0` mantém um catálogo versionado em `~/.local/share/triview-workspace/workspaces.json` ou no diretório indicado por `XDG_DATA_HOME`. Alterações são gravadas de forma atômica e sobrevivem às atualizações, porque ficam separadas dos diretórios versionados do código.
+
+## Gerenciar workspaces
+
+A barra superior permite:
+
+- selecionar um workspace salvo;
+- criar uma cópia do workspace atual;
+- renomear o workspace;
+- editar título, tipo e destino dos painéis;
+- selecionar layouts disponíveis;
+- excluir workspaces, mantendo sempre ao menos um;
+- restaurar automaticamente o último workspace utilizado na próxima abertura.
+
+Quando o catálogo JSON está corrompido, o arquivo é preservado com sufixo `corrupt-<data>` e a aplicação restaura o workspace padrão, informando o ocorrido.
 
 ## Requisitos do Browser Engine inicial
 
@@ -22,25 +37,14 @@ A versão `0.2.0` permite abrir conteúdo HTTP ou HTTPS dentro de painéis naveg
 - Brave, Chromium ou Google Chrome compatível;
 - `xdotool` instalado.
 
-No Linux Mint/Ubuntu, o utilitário pode ser instalado com:
+No Linux Mint/Ubuntu:
 
 ```bash
 sudo apt update
 sudo apt install xdotool
 ```
 
-O backend inicial não oferece incorporação nativa em Wayland. Essa evolução permanece separada para evitar acoplamento do núcleo a uma única tecnologia gráfica.
-
-## Documentação
-
-A referência principal do projeto está em:
-
-- [Índice central da documentação](docs/README.md)
-- [Visão do produto](docs/product/VISION.md)
-- [Roadmap](docs/product/ROADMAP.md)
-- [Arquitetura](docs/architecture/README.md)
-- [Responsabilidades dos Engines](docs/architecture/ENGINES.md)
-- [Manual da Fábrica de Softwares](docs/factory/SOFTWARE_FACTORY_WORKFLOW.md)
+O backend inicial não oferece incorporação nativa em Wayland.
 
 ## Executar localmente
 
@@ -52,11 +56,33 @@ python -m pip install -e '.[dev]'
 triview-workspace
 ```
 
-Diagnóstico sem abrir a interface:
+Diagnóstico do último workspace persistido, sem abrir a interface:
 
 ```bash
-triview-workspace --diagnostic --workspace config/workspaces/three-mobile.json
+triview-workspace --diagnostic
 ```
+
+Abrir e importar explicitamente um bundle legado:
+
+```bash
+triview-workspace --workspace config/workspaces/three-mobile.json
+```
+
+Usar um catálogo alternativo para testes:
+
+```bash
+triview-workspace --data-file /tmp/triview-workspaces.json
+```
+
+## Documentação
+
+- [Índice central](docs/README.md)
+- [Visão do produto](docs/product/VISION.md)
+- [Roadmap](docs/product/ROADMAP.md)
+- [Histórico de versões](docs/product/RELEASE_HISTORY.md)
+- [Arquitetura](docs/architecture/README.md)
+- [Responsabilidades dos Engines](docs/architecture/ENGINES.md)
+- [Manual da Fábrica de Softwares](docs/factory/SOFTWARE_FACTORY_WORKFLOW.md)
 
 ## Estrutura
 
@@ -67,30 +93,16 @@ src/triview_workspace/
 │   ├── browser.py
 │   ├── layout.py
 │   ├── panels.py
+│   ├── session.py
 │   └── workspace.py
 ├── infrastructure/
+│   ├── config.py
+│   └── persistence.py
 ├── gui.py
 ├── gui_model.py
 ├── migration.py
 └── cli.py
-
-config/workspaces/
-docs/
-packaging/
-scripts/
-tests/
 ```
-
-## Migração e atualização
-
-A instalação antiga usa `~/.local/share/triview-workspace-linux`, enquanto as URLs ficam em `~/.config/triview-workspace/config.json`.
-
-O pacote de migração cria backup, preserva as URLs e instala a aplicação em `~/.local/share/triview-workspace`. Após a migração, o atalho **Atualizar TriView Workspace** obtém a versão validada do GitHub, mantém backup da versão anterior e atualiza o atalho gráfico principal.
-
-Consulte:
-
-- [Migração](docs/migration.md)
-- [Estratégia de atualização](docs/updater.md)
 
 ## Rastreabilidade
 
@@ -99,3 +111,4 @@ Consulte:
 - Interface gráfica inicial: LEA-193 / PR #3.
 - Documentação estratégica: LEA-194 / PR #4.
 - Primeiro Browser Engine funcional: LEA-195 / PR #5.
+- Workspaces persistentes: LEA-196.

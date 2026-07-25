@@ -19,17 +19,21 @@ class PanelViewModel:
 
 
 def panel_status(kind: str, adapter_name: str = "placeholder") -> str:
-    if adapter_name == "browser":
-        return "Navegador pronto para abertura dentro deste painel"
-    if adapter_name == "application":
-        return "Aplicação Linux pronta para abertura dentro ou fora deste painel"
-    if adapter_name == "terminal":
-        return "Terminal Linux pronto para abertura dentro ou fora deste painel"
+    messages = {
+        "browser": "Navegador pronto para abertura dentro deste painel",
+        "application": "Aplicação Linux pronta para abertura dentro ou fora deste painel",
+        "terminal": "Terminal Linux pronto para abertura dentro ou fora deste painel",
+        "pdf": "PDF pronto para abertura dentro ou fora deste painel",
+        "plugin": "Plugin declarativo pronto para validação e abertura",
+    }
+    if adapter_name in messages:
+        return messages[adapter_name]
     labels = {
         "browser": "Navegador ainda não possui backend funcional neste painel",
         "application": "Aplicação ainda não possui backend funcional neste painel",
         "terminal": "Terminal ainda não possui backend funcional neste painel",
-        "pdf": "Visualizador de PDF será incorporado em uma etapa posterior",
+        "pdf": "Visualizador PDF ainda não possui backend funcional neste painel",
+        "custom": "Painel custom aguardando adaptador de plugin válido e ativo",
     }
     return labels.get(kind, "Painel preparado para adaptador futuro")
 

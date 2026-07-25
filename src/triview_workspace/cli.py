@@ -13,6 +13,7 @@ from triview_workspace.engines import (
     PanelRegistry,
     PdfPanelAdapter,
     PlaceholderPanelAdapter,
+    PluginPanelAdapter,
     TerminalPanelAdapter,
     WorkspaceEngine,
 )
@@ -55,6 +56,7 @@ def run_diagnostic(
         ApplicationPanelAdapter(),
         TerminalPanelAdapter(),
         PdfPanelAdapter(),
+        PluginPanelAdapter(),
         PlaceholderPanelAdapter(),
     ):
         registry.register(adapter)

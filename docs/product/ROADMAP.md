@@ -28,15 +28,16 @@ Status: **integrado ao trem; aguardando teste**
 Status: **integrado ao trem; aguardando teste**
 
 ### `0.8.0` — Recording Engine — LEA-201
-Status: **implementado no candidato; aguardando CI e teste**
-
-- FFmpeg x11grab;
-- gravação da região do painel;
-- botão Gravar/Parar e indicador;
-- MP4 e histórico auditável.
+Status: **integrado ao trem; aguardando teste**
 
 ### `0.9.0` — Plugin Engine — LEA-202
-Status: **planejado**
+Status: **implementado no candidato; aguardando CI e teste**
+
+- manifestos declarativos e API versionada;
+- ativação explícita;
+- diretórios permitidos e symlinks ignorados;
+- execução pelo Application Engine sem shell;
+- diagnóstico e isolamento de falhas.
 
 ### `0.10.0` — Layout Engine avançado — LEA-203
 Status: **planejado**

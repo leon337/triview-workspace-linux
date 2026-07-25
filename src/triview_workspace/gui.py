@@ -1,6 +1,6 @@
 """Compatibility entry point for the current desktop shell."""
 
-from triview_workspace.gui_recording import (
+from triview_workspace.gui_plugins import (
     APP_TITLE,
     DEFAULT_WORKSPACE,
     PanelCard,

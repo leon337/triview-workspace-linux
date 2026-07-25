@@ -12,6 +12,7 @@ from triview_workspace.engines import (
     LayoutEngine,
     PanelRegistry,
     PlaceholderPanelAdapter,
+    TerminalPanelAdapter,
     WorkspaceEngine,
 )
 from triview_workspace.infrastructure import WorkspaceRepository, load_workspace_bundle
@@ -49,20 +50,14 @@ def resolve_workspace(
     workspace_path: Path | None,
     data_file: Path | None,
 ):
-    """Resolve an explicit bundle or the last persisted workspace.
-
-    Explicit diagnostic bundles are read-only: inspecting a file must not change the
-    user's active persisted workspace.
-    """
+    """Resolve an explicit bundle or the last persisted workspace."""
 
     seed_workspace, seed_layout = load_workspace_bundle(DEFAULT_WORKSPACE)
     repository = WorkspaceRepository(data_file)
     catalog = repository.load_or_bootstrap(seed_workspace, seed_layout)
-
     if workspace_path is not None:
         workspace, layout = load_workspace_bundle(workspace_path)
         return repository, catalog, workspace, layout
-
     workspace, layout = repository.active_bundle(catalog)
     return repository, catalog, workspace, layout
 
@@ -75,12 +70,15 @@ def run_diagnostic(
 ) -> int:
     repository, catalog, workspace, layout = resolve_workspace(workspace_path, data_file)
     registry = PanelRegistry()
-    registry.register(BrowserPanelAdapter())
-    registry.register(ApplicationPanelAdapter())
-    registry.register(PlaceholderPanelAdapter())
+    for adapter in (
+        BrowserPanelAdapter(),
+        ApplicationPanelAdapter(),
+        TerminalPanelAdapter(),
+        PlaceholderPanelAdapter(),
+    ):
+        registry.register(adapter)
     engine = WorkspaceEngine(LayoutEngine(), registry)
     prepared = engine.prepare(workspace, layout, width, height)
-
     payload = {
         "schema_version": catalog.schema_version,
         "catalog_path": str(repository.path),
@@ -115,7 +113,6 @@ def main() -> int:
     args = build_parser().parse_args()
     if args.diagnostic:
         return run_diagnostic(args.workspace, args.width, args.height, args.data_file)
-
     from triview_workspace.gui import main as gui_main
 
     return gui_main(args.workspace, args.data_file)

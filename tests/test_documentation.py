@@ -19,8 +19,10 @@ REQUIRED_DOCUMENTS = (
     "docs/decisions/ADR-0003-browser-x11-reparenting.md",
     "docs/decisions/ADR-0004-versioned-workspace-catalog.md",
     "docs/decisions/ADR-0005-application-engine-panel-runtime.md",
+    "docs/decisions/ADR-0006-terminal-engine-emulator-adapters.md",
     "docs/work/LEA-196.md",
     "docs/work/LEA-197.md",
+    "docs/work/LEA-198.md",
 )
 LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)")
 
@@ -33,7 +35,6 @@ def test_required_documentation_exists() -> None:
 def test_internal_markdown_links_resolve() -> None:
     broken: list[str] = []
     markdown_files = [ROOT / "README.md", *sorted((ROOT / "docs").rglob("*.md"))]
-
     for document in markdown_files:
         text = document.read_text(encoding="utf-8")
         for raw_target in LINK_PATTERN.findall(text):
@@ -43,7 +44,6 @@ def test_internal_markdown_links_resolve() -> None:
             resolved = (document.parent / target).resolve()
             if not resolved.is_file():
                 broken.append(f"{document.relative_to(ROOT)} -> {target}")
-
     assert not broken, "Broken Markdown links:\n" + "\n".join(broken)
 
 
@@ -65,13 +65,14 @@ def test_roadmap_tracks_the_development_train() -> None:
         assert heading in roadmap
     assert "train/road-to-1.0" in roadmap
     assert "Application Engine — LEA-197" in roadmap
-    assert roadmap.count("Status: **planejado**") >= 8
+    assert "Terminal Engine — LEA-198" in roadmap
+    assert roadmap.count("Status: **planejado**") >= 7
 
 
 def test_candidate_documentation_distinguishes_stable_and_candidate() -> None:
-    index = (ROOT / "docs/README.md").read_text(encoding="utf-8")
+    index = (ROOT / "docs/README.md").read_text(encoding="utf-8").lower()
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "Versão estável" in index
-    assert "Candidato atual" in index
-    assert "branch `main` permanece estável" in readme
-    assert "TriView Workspace — LEA-197" in readme
+    assert "versão estável" in index
+    assert "candidato atual" in index
+    assert "`main`: estável" in readme
+    assert "TriView Workspace — LEA-198" in readme

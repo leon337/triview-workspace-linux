@@ -1,43 +1,48 @@
 # Changelog
 
+## 0.9.0 — Plugin Engine
+
+- adiciona manifestos declarativos com esquema e API versionados;
+- descobre plugins somente em diretórios permitidos;
+- ignora symlinks e rejeita IDs ou versões incompatíveis;
+- exige ativação explícita;
+- grava estado de ativação atomicamente;
+- adiciona Plugin Adapter para painéis `custom`;
+- executa comandos pelo Application Engine, sem shell;
+- isola falhas e apresenta diagnósticos;
+- adiciona gerenciador na GUI, exemplo e instalador;
+- adiciona testes e ADR-0010.
+
 ## 0.8.0 — Recording Engine
 
-- implementa gravação individual por painel com FFmpeg x11grab;
-- grava a geometria absoluta do painel em MP4/H.264;
-- adiciona início, pausa, retomada e encerramento;
-- alterna o botão Gravar para Parar;
-- adiciona indicador GRAVANDO;
-- finaliza o contêiner com SIGINT e evita processos órfãos;
-- organiza vídeos e histórico por workspace, painel e data;
-- adiciona testes e ADR-0009.
+- gravação individual com FFmpeg x11grab;
+- botão Gravar/Parar, indicador e histórico;
+- ADR-0009.
 
 ## 0.7.0 — Capture Engine
 
 - captura individual com maim ou ImageMagick;
-- botão Print, PNGs organizados e histórico JSONL;
+- botão Print e histórico;
 - ADR-0008.
 
 ## 0.6.0 — PDF Engine
 
-- PDF Adapter e Engine;
-- visualizadores do sistema e fallback externo;
+- PDF Adapter, visualizadores e fallback;
 - ADR-0007.
 
 ## 0.5.0 — Terminal Engine
 
-- Terminal Adapter e Engine;
-- shell configurável e emuladores adaptados;
+- Terminal Adapter, shells e emuladores;
 - ADR-0006.
 
 ## 0.4.0 — Application Engine e Panel Runtime
 
-- Panel Runtime comum e Application Engine;
-- incorporação X11 e fallback externo;
+- runtime comum, aplicações e fallback;
 - ADR-0005.
 
 ## 0.3.0 — Workspaces persistentes
 
-- catálogo versionado, atômico e restaurável.
+- catálogo versionado e restaurável.
 
 ## 0.2.0 — Browser Engine
 

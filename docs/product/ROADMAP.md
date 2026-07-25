@@ -33,16 +33,16 @@ Status: **integrado ao trem; aguardando teste no Linux Mint**
 Status: **integrado ao trem; aguardando teste no Linux Mint**
 
 ### `0.6.0` — PDF Engine — LEA-199
-Status: **implementado no candidato; aguardando CI e teste no Linux Mint**
-
-- validação de arquivo local;
-- PDF Adapter e Engine;
-- visualizadores do sistema;
-- incorporação ou fallback externo;
-- candidato isolado.
+Status: **integrado ao trem; aguardando teste no Linux Mint**
 
 ### `0.7.0` — Capture Engine — LEA-200
-Status: **planejado**
+Status: **implementado no candidato; aguardando CI e teste no Linux Mint**
+
+- captura por janela do painel;
+- backends maim e ImageMagick;
+- botão Print habilitado;
+- PNGs organizados e histórico JSONL;
+- candidato isolado.
 
 ### `0.8.0` — Recording Engine — LEA-201
 Status: **planejado**

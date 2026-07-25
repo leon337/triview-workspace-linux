@@ -10,6 +10,15 @@ from .browser import (
     X11BraveBrowserBackend,
     normalize_browser_url,
 )
+from .capture import (
+    CaptureAvailability,
+    CaptureBackend,
+    CaptureEngine,
+    CaptureEngineError,
+    CaptureRequest,
+    CaptureResult,
+    X11CaptureBackend,
+)
 from .layout import LayoutEngine
 from .panel_runtime import (
     PanelBackendUnavailable,

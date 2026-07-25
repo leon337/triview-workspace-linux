@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import queue
 import threading
 import tkinter as tk
 from collections.abc import Callable
@@ -11,8 +12,8 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from triview_workspace.engines import (
-    BrowserBackendUnavailable,
     BrowserEngine,
+    BrowserEngineError,
     BrowserPanelAdapter,
     LayoutEngine,
     PanelRegistry,
@@ -239,6 +240,10 @@ class WorkspaceWindow:
         self.engine = WorkspaceEngine(LayoutEngine(), self.registry)
         self._resize_job: str | None = None
         self._launching: set[str] = set()
+        self._browser_results: queue.SimpleQueue[tuple[str, str, str | None]] = (
+            queue.SimpleQueue()
+        )
+        self._closed = False
 
         root.title(f"{APP_TITLE} — {self.workspace.name}")
         root.geometry("1280x760")
@@ -272,6 +277,7 @@ class WorkspaceWindow:
 
         self.content.bind("<Configure>", self._schedule_layout)
         root.after(60, self._render_layout)
+        root.after(80, self._drain_browser_results)
 
     @staticmethod
     def _configure_style() -> None:
@@ -331,7 +337,7 @@ class WorkspaceWindow:
                 card.set_status("PLANEJADO", card.panel.status, "#475569")
 
     def _open_browser(self, panel: PanelViewModel, card: PanelCard) -> None:
-        if panel.adapter_name != "browser" or panel.id in self._launching:
+        if self._closed or panel.adapter_name != "browser" or panel.id in self._launching:
             return
         if not self.browser_availability.available:
             card.configure_browser(available=False, message=self.browser_availability.reason)
@@ -359,16 +365,36 @@ class WorkspaceWindow:
                     height,
                 )
             except Exception as exc:  # noqa: BLE001
-                message = str(exc)
-                self.root.after(0, lambda: self._browser_failed(panel.id, message))
+                self._browser_results.put(("error", panel.id, str(exc)))
                 return
-            self.root.after(0, lambda: self._browser_opened(panel.id))
+
+            if self._closed:
+                self.browser_engine.close(panel.id)
+                return
+            self._browser_results.put(("opened", panel.id, None))
 
         threading.Thread(
             target=launch,
             name=f"triview-browser-{panel.id}",
             daemon=True,
         ).start()
+
+    def _drain_browser_results(self) -> None:
+        if self._closed:
+            return
+
+        while True:
+            try:
+                result, panel_id, message = self._browser_results.get_nowait()
+            except queue.Empty:
+                break
+
+            if result == "opened":
+                self._browser_opened(panel_id)
+            else:
+                self._browser_failed(panel_id, message or "Falha desconhecida ao abrir o painel.")
+
+        self.root.after(80, self._drain_browser_results)
 
     def _browser_opened(self, panel_id: str) -> None:
         self._launching.discard(panel_id)
@@ -424,16 +450,21 @@ class WorkspaceWindow:
         self.root.after_idle(self._resize_browsers)
 
     def _resize_browsers(self) -> None:
+        if self._closed:
+            return
         for card in self.cards:
             if not self.browser_engine.has_session(card.panel.id):
                 continue
             width, height = card.host_dimensions()
             try:
                 self.browser_engine.resize(card.panel.id, width, height)
-            except (BrowserBackendUnavailable, OSError) as exc:
+            except (BrowserEngineError, OSError) as exc:
                 logging.warning("Unable to resize browser panel %s: %s", card.panel.id, exc)
 
     def _close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         self.browser_engine.close_all()
         self.root.destroy()
 

@@ -1,4 +1,4 @@
-"""Tkinter desktop shell with persistent workspace management."""
+"""Tkinter desktop shell with persistent workspace and application management."""
 
 from __future__ import annotations
 
@@ -13,16 +13,22 @@ from tkinter import messagebox, simpledialog, ttk
 
 from triview_workspace.domain import PanelKind, PanelSpec
 from triview_workspace.engines import (
+    ApplicationEngine,
+    ApplicationEngineError,
+    ApplicationPanelAdapter,
     BrowserEngine,
     BrowserEngineError,
     BrowserPanelAdapter,
     LayoutEngine,
     PanelRegistry,
+    PanelRuntimeError,
     PlaceholderPanelAdapter,
     WorkspaceEngine,
     WorkspaceSessionEngine,
+    X11ApplicationBackend,
     X11BraveBrowserBackend,
     normalize_browser_url,
+    normalize_command,
 )
 from triview_workspace.gui_model import PanelViewModel, build_panel_view_models
 from triview_workspace.infrastructure import (
@@ -46,7 +52,9 @@ class PanelEditorDialog:
         self.window.configure(background="#0f172a")
         self.window.transient(parent)
         self.window.grab_set()
-        self._rows: list[tuple[PanelSpec, tk.StringVar, tk.StringVar, tk.StringVar]] = []
+        self._rows: list[
+            tuple[PanelSpec, tk.StringVar, tk.StringVar, tk.StringVar]
+        ] = []
 
         tk.Label(
             self.window,
@@ -91,9 +99,20 @@ class PanelEditorDialog:
             )
 
         actions = tk.Frame(self.window, background="#0f172a")
-        actions.grid(row=len(panels) + 2, column=0, columnspan=4, sticky="e", padx=14, pady=14)
-        tk.Button(actions, text="Cancelar", command=self.window.destroy).pack(side="right", padx=4)
-        tk.Button(actions, text="Salvar", command=self._save).pack(side="right", padx=4)
+        actions.grid(
+            row=len(panels) + 2,
+            column=0,
+            columnspan=4,
+            sticky="e",
+            padx=14,
+            pady=14,
+        )
+        tk.Button(actions, text="Cancelar", command=self.window.destroy).pack(
+            side="right", padx=4
+        )
+        tk.Button(actions, text="Salvar", command=self._save).pack(
+            side="right", padx=4
+        )
         self.window.columnconfigure(3, weight=1)
         self.window.protocol("WM_DELETE_WINDOW", self.window.destroy)
         self.window.wait_window()
@@ -111,6 +130,8 @@ class PanelEditorDialog:
                 kind = PanelKind(kind_var.get())
                 if kind is PanelKind.BROWSER:
                     target = normalize_browser_url(target)
+                elif kind is PanelKind.APPLICATION:
+                    target = normalize_command(target)
                 updated.append(
                     PanelSpec(
                         id=original.id,
@@ -218,7 +239,8 @@ class PanelCard:
             wraplength=240,
             justify="center",
         ).pack(pady=(8, 0))
-        self.browser_host = tk.Frame(
+
+        self.runtime_host = tk.Frame(
             self.content_stack,
             background="#020617",
             highlightbackground="#1e293b",
@@ -262,7 +284,7 @@ class PanelCard:
         if self._on_open is not None:
             self._on_open(self.panel, self)
 
-    def configure_browser(self, *, available: bool, message: str) -> None:
+    def configure_runtime(self, *, available: bool, message: str) -> None:
         if available:
             self.open_button.configure(state="normal")
             self.set_status("DISPONÍVEL", message, "#0f766e")
@@ -279,24 +301,27 @@ class PanelCard:
         if label is not None:
             self.open_button.configure(text=label)
 
-    def show_browser_host(self) -> None:
+    def show_runtime_host(self) -> None:
         self.placeholder.pack_forget()
-        if not self.browser_host.winfo_manager():
-            self.browser_host.pack(fill="both", expand=True)
-        self.browser_host.update_idletasks()
+        if not self.runtime_host.winfo_manager():
+            self.runtime_host.pack(fill="both", expand=True)
+        self.runtime_host.update_idletasks()
 
     def show_placeholder(self) -> None:
-        self.browser_host.pack_forget()
+        self.runtime_host.pack_forget()
         if not self.placeholder.winfo_manager():
             self.placeholder.pack(fill="both", expand=True)
 
     def native_host_id(self) -> int:
-        self.browser_host.update_idletasks()
-        return int(self.browser_host.winfo_id())
+        self.runtime_host.update_idletasks()
+        return int(self.runtime_host.winfo_id())
 
     def host_dimensions(self) -> tuple[int, int]:
-        self.browser_host.update_idletasks()
-        return max(1, self.browser_host.winfo_width()), max(1, self.browser_host.winfo_height())
+        self.runtime_host.update_idletasks()
+        return (
+            max(1, self.runtime_host.winfo_width()),
+            max(1, self.runtime_host.winfo_height()),
+        )
 
     @staticmethod
     def _icon_for(kind: str) -> str:
@@ -315,7 +340,7 @@ class PanelCard:
 
 
 class WorkspaceWindow:
-    """Responsive window backed by Browser, Layout and Session Engines."""
+    """Responsive window backed by Browser, Application, Layout and Session Engines."""
 
     def __init__(
         self,
@@ -329,14 +354,18 @@ class WorkspaceWindow:
         self.workspace = session_engine.current_workspace
         self.layout = session_engine.current_layout
         self.browser_engine = BrowserEngine(X11BraveBrowserBackend())
+        self.application_engine = ApplicationEngine(X11ApplicationBackend())
         self.browser_availability = self.browser_engine.availability()
         self.registry = PanelRegistry()
         self.registry.register(BrowserPanelAdapter())
+        self.registry.register(ApplicationPanelAdapter())
         self.registry.register(PlaceholderPanelAdapter())
         self.engine = WorkspaceEngine(LayoutEngine(), self.registry)
         self._resize_job: str | None = None
         self._launching: set[str] = set()
-        self._browser_results: queue.SimpleQueue[tuple[str, str, str | None, int]] = queue.SimpleQueue()
+        self._runtime_results: queue.SimpleQueue[
+            tuple[str, str, str, str | None, int, bool]
+        ] = queue.SimpleQueue()
         self._closed = False
         self._workspace_generation = 0
         self._updating_controls = False
@@ -364,7 +393,7 @@ class WorkspaceWindow:
         ).pack(fill="x", side="bottom")
         self.content.bind("<Configure>", self._schedule_layout)
         self._load_workspace_view("Workspace restaurado automaticamente")
-        root.after(80, self._drain_browser_results)
+        root.after(80, self._drain_runtime_results)
         if repository.last_recovery_message:
             root.after(150, self._show_recovery_warning)
 
@@ -433,7 +462,7 @@ class WorkspaceWindow:
         right.pack(side="right", fill="y", padx=16)
         tk.Label(
             right,
-            text="WORKSPACES 0.3.0",
+            text="APPLICATION ENGINE 0.4.0",
             background="#1d4ed8",
             foreground="#eff6ff",
             font=("Sans", 8, "bold"),
@@ -459,10 +488,12 @@ class WorkspaceWindow:
         self._updating_controls = True
         try:
             workspace_values = [
-                self._workspace_display(item.id) for item in self.session_engine.catalog.workspaces
+                self._workspace_display(item.id)
+                for item in self.session_engine.catalog.workspaces
             ]
             layout_values = [
-                self._layout_display(item.id) for item in self.session_engine.catalog.layouts
+                self._layout_display(item.id)
+                for item in self.session_engine.catalog.layouts
             ]
             self.workspace_selector.configure(values=workspace_values)
             self.layout_selector.configure(values=layout_values)
@@ -558,6 +589,7 @@ class WorkspaceWindow:
     def _load_workspace_view(self, message: str) -> None:
         self._workspace_generation += 1
         self.browser_engine.close_all()
+        self.application_engine.close_all()
         self._launching.clear()
         for card in self.cards:
             card.destroy()
@@ -565,7 +597,7 @@ class WorkspaceWindow:
         self.cards_by_id.clear()
         prepared = self.engine.prepare(self.workspace, self.layout, 1200, 650)
         views = build_panel_view_models(prepared)
-        self.cards = [PanelCard(self.content, view, self._open_browser) for view in views]
+        self.cards = [PanelCard(self.content, view, self._open_panel) for view in views]
         self.cards_by_id = {card.panel.id: card for card in self.cards}
         self._configure_panel_states()
         self._refresh_controls()
@@ -578,29 +610,44 @@ class WorkspaceWindow:
                 message = self.browser_availability.reason
                 if self.browser_availability.available:
                     message = f"{message} Clique em Abrir para carregar {card.panel.title}."
-                card.configure_browser(
+                card.configure_runtime(
                     available=self.browser_availability.available,
+                    message=message,
+                )
+            elif card.panel.adapter_name == "application":
+                availability = self.application_engine.availability(card.panel.target)
+                message = availability.reason
+                if availability.available:
+                    suffix = (
+                        " A janela será incorporada quando o programa for compatível."
+                        if availability.can_embed
+                        else " O programa será aberto em uma janela externa controlada."
+                    )
+                    message = f"{message}{suffix}"
+                card.configure_runtime(
+                    available=availability.available,
                     message=message,
                 )
             else:
                 card.set_status("PLANEJADO", card.panel.status, "#475569")
 
+    def _open_panel(self, panel: PanelViewModel, card: PanelCard) -> None:
+        if panel.adapter_name == "browser":
+            self._open_browser(panel, card)
+        elif panel.adapter_name == "application":
+            self._open_application(panel, card)
+
     def _open_browser(self, panel: PanelViewModel, card: PanelCard) -> None:
-        if self._closed or panel.adapter_name != "browser" or panel.id in self._launching:
+        if self._closed or panel.id in self._launching:
             return
         if not self.browser_availability.available:
-            card.configure_browser(available=False, message=self.browser_availability.reason)
+            card.configure_runtime(
+                available=False,
+                message=self.browser_availability.reason,
+            )
             return
         generation = self._workspace_generation
-        self._launching.add(panel.id)
-        card.show_browser_host()
-        card.set_open_enabled(False, "Abrindo…")
-        card.set_status(
-            "ABRINDO",
-            f"Inicializando {panel.title} e incorporando a janela no painel.",
-            "#a16207",
-        )
-        self.root.update_idletasks()
+        self._prepare_launch(panel, card, "browser")
         parent_window_id = card.native_host_id()
         width, height = card.host_dimensions()
 
@@ -614,12 +661,16 @@ class WorkspaceWindow:
                     height,
                 )
             except Exception as exc:  # noqa: BLE001
-                self._browser_results.put(("error", panel.id, str(exc), generation))
+                self._runtime_results.put(
+                    ("browser", "error", panel.id, str(exc), generation, False)
+                )
                 return
             if self._closed or generation != self._workspace_generation:
                 self.browser_engine.close(panel.id)
                 return
-            self._browser_results.put(("opened", panel.id, None, generation))
+            self._runtime_results.put(
+                ("browser", "opened", panel.id, None, generation, True)
+            )
 
         threading.Thread(
             target=launch,
@@ -627,39 +678,147 @@ class WorkspaceWindow:
             daemon=True,
         ).start()
 
-    def _drain_browser_results(self) -> None:
+    def _open_application(self, panel: PanelViewModel, card: PanelCard) -> None:
+        if self._closed or panel.id in self._launching:
+            return
+        availability = self.application_engine.availability(panel.target)
+        if not availability.available:
+            card.configure_runtime(available=False, message=availability.reason)
+            return
+        generation = self._workspace_generation
+        self._prepare_launch(panel, card, "application")
+        parent_window_id = card.native_host_id()
+        width, height = card.host_dimensions()
+
+        def launch() -> None:
+            try:
+                session = self.application_engine.open(
+                    panel.id,
+                    panel.target,
+                    parent_window_id,
+                    width,
+                    height,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._runtime_results.put(
+                    ("application", "error", panel.id, str(exc), generation, False)
+                )
+                return
+            if self._closed or generation != self._workspace_generation:
+                self.application_engine.close(panel.id)
+                return
+            self._runtime_results.put(
+                (
+                    "application",
+                    "opened",
+                    panel.id,
+                    None,
+                    generation,
+                    session.embedded,
+                )
+            )
+
+        threading.Thread(
+            target=launch,
+            name=f"triview-application-{panel.id}",
+            daemon=True,
+        ).start()
+
+    def _prepare_launch(
+        self,
+        panel: PanelViewModel,
+        card: PanelCard,
+        engine_name: str,
+    ) -> None:
+        self._launching.add(panel.id)
+        card.show_runtime_host()
+        card.set_open_enabled(False, "Abrindo…")
+        card.set_status(
+            "ABRINDO",
+            f"Inicializando {panel.title} com {engine_name}.",
+            "#a16207",
+        )
+        self.root.update_idletasks()
+
+    def _drain_runtime_results(self) -> None:
         if self._closed:
             return
         while True:
             try:
-                result, panel_id, message, generation = self._browser_results.get_nowait()
+                (
+                    engine_name,
+                    result,
+                    panel_id,
+                    message,
+                    generation,
+                    embedded,
+                ) = self._runtime_results.get_nowait()
             except queue.Empty:
                 break
             if generation != self._workspace_generation or panel_id not in self.cards_by_id:
                 continue
             if result == "opened":
-                self._browser_opened(panel_id)
+                self._runtime_opened(engine_name, panel_id, embedded)
             else:
-                self._browser_failed(panel_id, message or "Falha desconhecida ao abrir o painel.")
-        self.root.after(80, self._drain_browser_results)
+                self._runtime_failed(
+                    engine_name,
+                    panel_id,
+                    message or "Falha desconhecida ao abrir o painel.",
+                )
+        self.root.after(80, self._drain_runtime_results)
 
-    def _browser_opened(self, panel_id: str) -> None:
+    def _runtime_opened(
+        self,
+        engine_name: str,
+        panel_id: str,
+        embedded: bool,
+    ) -> None:
         self._launching.discard(panel_id)
         card = self.cards_by_id[panel_id]
-        card.show_browser_host()
         card.set_open_enabled(True, "Reabrir")
-        card.set_status("ATIVO", f"{card.panel.title} está executando dentro do painel.", "#15803d")
-        self.status_text.set(f"Painel {card.panel.title} aberto com Browser Engine X11")
-        self._resize_browsers()
+        if embedded:
+            card.show_runtime_host()
+            card.set_status(
+                "ATIVO",
+                f"{card.panel.title} está executando dentro do painel.",
+                "#15803d",
+            )
+            state = "incorporado"
+        else:
+            card.show_placeholder()
+            card.set_status(
+                "EXTERNO",
+                f"{card.panel.title} foi aberto em uma janela externa controlada.",
+                "#7c3aed",
+            )
+            state = "externo"
+        self.status_text.set(
+            f"Painel {card.panel.title} aberto com {engine_name}: {state}"
+        )
+        self._resize_runtimes()
 
-    def _browser_failed(self, panel_id: str, message: str) -> None:
+    def _runtime_failed(
+        self,
+        engine_name: str,
+        panel_id: str,
+        message: str,
+    ) -> None:
         self._launching.discard(panel_id)
         card = self.cards_by_id[panel_id]
         card.show_placeholder()
-        card.set_open_enabled(self.browser_availability.available, "Tentar novamente")
+        if engine_name == "browser":
+            available = self.browser_availability.available
+        else:
+            available = self.application_engine.availability(card.panel.target).available
+        card.set_open_enabled(available, "Tentar novamente")
         card.set_status("ERRO", message, "#991b1b")
         self.status_text.set(f"Falha ao abrir {card.panel.title}: {message}")
-        logging.error("Unable to open browser panel %s: %s", panel_id, message)
+        logging.error(
+            "Unable to open %s panel %s: %s",
+            engine_name,
+            panel_id,
+            message,
+        )
 
     def _schedule_layout(self, _event: tk.Event[tk.Misc]) -> None:
         if self._resize_job is not None:
@@ -682,26 +841,33 @@ class WorkspaceWindow:
                 width=bounds.width,
                 height=bounds.height,
             )
-        backend_state = (
-            "browser disponível" if self.browser_availability.available else "browser indisponível"
+        browser_state = (
+            "browser disponível"
+            if self.browser_availability.available
+            else "browser indisponível"
+        )
+        application_count = sum(
+            1 for card in self.cards if card.panel.adapter_name == "application"
         )
         self.status_text.set(
-            f"{self.workspace.name} · {len(views)} painéis · {backend_state} · "
-            f"estado salvo · área útil {width} × {height}"
+            f"{self.workspace.name} · {len(views)} painéis · {browser_state} · "
+            f"{application_count} aplicação(ões) configurada(s) · estado salvo · "
+            f"área útil {width} × {height}"
         )
-        self.root.after_idle(self._resize_browsers)
+        self.root.after_idle(self._resize_runtimes)
 
-    def _resize_browsers(self) -> None:
+    def _resize_runtimes(self) -> None:
         if self._closed:
             return
         for card in self.cards:
-            if not self.browser_engine.has_session(card.panel.id):
-                continue
             width, height = card.host_dimensions()
             try:
-                self.browser_engine.resize(card.panel.id, width, height)
-            except (BrowserEngineError, OSError) as exc:
-                logging.warning("Unable to resize browser panel %s: %s", card.panel.id, exc)
+                if self.browser_engine.has_session(card.panel.id):
+                    self.browser_engine.resize(card.panel.id, width, height)
+                if self.application_engine.has_session(card.panel.id):
+                    self.application_engine.resize(card.panel.id, width, height)
+            except (BrowserEngineError, ApplicationEngineError, PanelRuntimeError, OSError) as exc:
+                logging.warning("Unable to resize panel %s: %s", card.panel.id, exc)
 
     def _show_recovery_warning(self) -> None:
         if self.repository.last_recovery_message:
@@ -716,11 +882,14 @@ class WorkspaceWindow:
             return
         self._closed = True
         self.browser_engine.close_all()
+        self.application_engine.close_all()
         self.root.destroy()
 
 
 def _configure_logging() -> Path:
-    state_root = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+    state_root = Path(
+        os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")
+    )
     log_dir = state_root / "triview-workspace"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "gui.log"
@@ -745,7 +914,12 @@ def main(
         catalog = repository.load_or_bootstrap(seed_workspace, seed_layout)
         if workspace_path is not None:
             workspace, layout = load_workspace_bundle(workspace_path)
-            catalog = repository.save_workspace(catalog, workspace, layout, make_active=True)
+            catalog = repository.save_workspace(
+                catalog,
+                workspace,
+                layout,
+                make_active=True,
+            )
         session_engine = WorkspaceSessionEngine(repository, catalog)
         root = tk.Tk()
         WorkspaceWindow(root, repository, session_engine)

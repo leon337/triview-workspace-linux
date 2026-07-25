@@ -25,17 +25,21 @@ def panel_status(kind: str, adapter_name: str = "placeholder") -> str:
 
     if adapter_name == "browser":
         return "Navegador pronto para abertura dentro deste painel"
+    if adapter_name == "application":
+        return "Aplicação Linux pronta para abertura dentro ou fora deste painel"
 
     labels = {
         "browser": "Navegador ainda não possui backend funcional neste painel",
-        "application": "Aplicação externa será incorporada em uma etapa posterior",
+        "application": "Aplicação ainda não possui backend funcional neste painel",
         "terminal": "Terminal será incorporado em uma etapa posterior",
         "pdf": "Visualizador de PDF será incorporado em uma etapa posterior",
     }
     return labels.get(kind, "Painel preparado para adaptador futuro")
 
 
-def build_panel_view_models(runtime_panels: tuple[RuntimePanel, ...]) -> tuple[PanelViewModel, ...]:
+def build_panel_view_models(
+    runtime_panels: tuple[RuntimePanel, ...],
+) -> tuple[PanelViewModel, ...]:
     """Convert runtime panels into immutable GUI-ready values."""
 
     return tuple(

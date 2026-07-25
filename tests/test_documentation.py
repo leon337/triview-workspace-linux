@@ -13,11 +13,14 @@ REQUIRED_DOCUMENTS = (
     "docs/architecture/README.md",
     "docs/architecture/ENGINES.md",
     "docs/factory/SOFTWARE_FACTORY_WORKFLOW.md",
+    "docs/factory/DEVELOPMENT_TRAIN_LEA-197-205.md",
     "docs/decisions/ADR-0001-workspace-platform.md",
     "docs/decisions/ADR-0002-documentation-source-of-truth.md",
     "docs/decisions/ADR-0003-browser-x11-reparenting.md",
     "docs/decisions/ADR-0004-versioned-workspace-catalog.md",
+    "docs/decisions/ADR-0005-application-engine-panel-runtime.md",
     "docs/work/LEA-196.md",
+    "docs/work/LEA-197.md",
 )
 LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)")
 
@@ -44,15 +47,31 @@ def test_internal_markdown_links_resolve() -> None:
     assert not broken, "Broken Markdown links:\n" + "\n".join(broken)
 
 
-def test_roadmap_distinguishes_completed_and_planned_capabilities() -> None:
+def test_roadmap_tracks_the_development_train() -> None:
     roadmap = (ROOT / "docs/product/ROADMAP.md").read_text(encoding="utf-8")
     for heading in (
-        "Primeiro painel funcional",
+        "Browser Engine",
         "Workspaces persistentes",
-        "Captura individual de imagem",
-        "Gravação individual por painel",
-        "Plugins",
+        "Application Engine",
+        "Terminal Engine",
+        "PDF Engine",
+        "Capture Engine",
+        "Recording Engine",
+        "Plugin Engine",
+        "Layout Engine avançado",
+        "Session Engine completo",
+        "Workspace Hub",
     ):
         assert heading in roadmap
-    assert "catálogo JSON com esquema versionado" in roadmap
-    assert roadmap.count("Status: **planejado**") >= 7
+    assert "train/road-to-1.0" in roadmap
+    assert "Application Engine — LEA-197" in roadmap
+    assert roadmap.count("Status: **planejado**") >= 8
+
+
+def test_candidate_documentation_distinguishes_stable_and_candidate() -> None:
+    index = (ROOT / "docs/README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "Versão estável" in index
+    assert "Candidato atual" in index
+    assert "branch `main` permanece estável" in readme
+    assert "TriView Workspace — LEA-197" in readme

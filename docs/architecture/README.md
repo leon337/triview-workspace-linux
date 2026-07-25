@@ -5,83 +5,103 @@
 
 ## Princípio central
 
-O núcleo gerencia **áreas de trabalho**, não navegadores. Navegadores e aplicações são tipos de painel resolvidos por adaptadores e backends substituíveis.
+O núcleo gerencia **áreas de trabalho**, não programas específicos. Navegadores, aplicações, terminais, PDFs e plugins são tipos de painel resolvidos por adaptadores e Engines substituíveis.
 
 ## Camadas
 
 ```text
 CLI / Interface gráfica
           ↓
-Workspace Session Engine ──→ Workspace Repository ──→ catálogo JSON versionado
+Workspace Session Engine ── Workspace Repository ── catálogo versionado
           ↓
 Workspace Engine
    ├── Layout Engine
    └── Panel Registry
-          ├── Browser Adapter ──→ Browser Engine ──→ Backend X11
-          ├── Application Adapter                 [planejado]
-          ├── Terminal Adapter                    [planejado]
-          └── futuros adaptadores
+          ├── Browser Adapter ── Browser Engine ── Backend X11 de navegador
+          ├── Application Adapter ── Application Engine
+          │                              ↓
+          │                         Panel Runtime X11
+          ├── Terminal Adapter                         [LEA-198]
+          ├── PDF Adapter                              [LEA-199]
+          └── Plugin Adapter                           [LEA-202]
 ```
 
-## Responsabilidades
+## Componentes validados
 
-### Workspace Session Engine
+### Workspace Session Engine e Repository
 
-Mantém o workspace ativo, alterna entre itens persistidos e executa operações de criar por cópia, renomear, editar, excluir e selecionar layout. Não conhece Tkinter nem o formato do arquivo.
+Mantêm o workspace ativo, catálogo JSON versionado, gravação atômica, recuperação de corrupção e operações de criação, edição, alternância e exclusão.
 
-### Workspace Repository
+### Workspace Engine e Layout Engine
 
-Armazena workspaces, layouts e o identificador ativo em um catálogo com `schema_version`. Usa gravação atômica, migra o bundle legado e preserva arquivos corrompidos antes do fallback.
-
-### Workspace Engine
-
-Orquestra a preparação de um workspace, verifica compatibilidade com o layout e associa cada painel ao adaptador apropriado.
-
-### Layout Engine
-
-Converte regiões normalizadas em retângulos de pixels para a dimensão atual da janela.
-
-### Panel Registry
-
-Desacopla o domínio das tecnologias de incorporação. O Browser Adapter está implementado e os demais permanecem planejados.
+Preparam os painéis e convertem regiões proporcionais em limites de pixels sem iniciar processos.
 
 ### Browser Engine
 
-Gerencia disponibilidade, abertura, redimensionamento e encerramento de sessões web. A implementação inicial usa um backend X11 separado.
+Gerencia sessões web incorporadas com Brave/Chromium, X11 e `xdotool`. Foi validado no Linux Mint.
 
-### Capture Engine
+## Componentes do candidato LEA-197
 
-Reservado para tarefa posterior. Deverá produzir print ou gravação somente do painel solicitado.
+### Panel Runtime
 
-## Persistência e atualização
+Camada reutilizável para painéis que executam processos Linux. Suas responsabilidades são:
 
-O catálogo padrão fica em:
+- validar e resolver o executável;
+- dividir argumentos sem entregar a entrada a um shell;
+- iniciar e acompanhar o processo;
+- localizar a janela X11 por PID, classe ou nome;
+- incorporar a janela quando compatível;
+- redimensionar e encerrar a sessão;
+- manter fallback externo explícito.
+
+O Panel Runtime não conhece Tkinter, workspaces persistidos ou regras específicas de aplicações.
+
+### Application Engine
+
+Gerencia uma sessão de aplicação por painel e usa o Panel Runtime para abrir, incorporar, redimensionar, reabrir e encerrar programas. Aplicações incompatíveis permanecem em uma janela externa controlada.
+
+A decisão está registrada na [ADR-0005](../decisions/ADR-0005-application-engine-panel-runtime.md).
+
+## Persistência e candidatos
+
+A versão principal usa:
 
 ```text
 ~/.local/share/triview-workspace/workspaces.json
 ```
 
-ou sob `XDG_DATA_HOME`. O atualizador troca apenas o diretório da versão ativa, portanto o catálogo persiste entre releases. Consulte a [ADR-0004](../decisions/ADR-0004-versioned-workspace-catalog.md).
+Candidatos do trem usam código, dados e estado separados:
+
+```text
+~/.local/share/triview-workspace-candidates/<lea>
+~/.local/share/triview-workspace-candidate-data/<lea>
+~/.local/state/triview-workspace-candidates/<lea>
+```
+
+Isso permite validar uma LEA sem modificar a versão estável.
 
 ## Estado da implementação
 
-- Workspace Engine: implementado.
-- Workspace Session Engine: implementado na `0.3.0`.
-- Workspace Repository: implementado na `0.3.0`.
-- Layout Engine: implementado.
-- Panel Registry: Browser Adapter e fallback placeholder implementados.
-- Interface gráfica: gerenciamento persistente integrado na `0.3.0`.
-- Browser Engine: implementado e validado em X11.
-- Application, Capture e Plugin Engines: planejados.
-- Backend nativo de Wayland: planejado.
+- Browser Engine: **validado em X11**;
+- workspaces persistentes: **validados**;
+- Application Engine e Panel Runtime: **implementados no candidato LEA-197**;
+- Terminal Engine: **LEA-198**;
+- PDF Engine: **LEA-199**;
+- Capture Engine: **LEA-200**;
+- Recording Engine: **LEA-201**;
+- Plugin Engine: **LEA-202**;
+- Layout Engine avançado: **LEA-203**;
+- Session Engine completo: **LEA-204**;
+- Workspace Hub: **LEA-205**;
+- backend nativo de Wayland: evolução posterior.
 
 ## Regras de evolução
 
-1. Nenhum painel conhece detalhes do gerenciador de janelas.
-2. Nenhum layout executa aplicações.
-3. A interface usa Engines e não grava JSON diretamente.
-4. O Session Engine não conhece widgets gráficos.
-5. Persistência não conhece Tkinter.
-6. Adaptadores não controlam o armazenamento de workspaces.
-7. Backends de sistema operacional implementam contratos neutros.
-8. Formatos persistidos devem ser versionados antes de mudanças incompatíveis.
+1. A interface chama Engines, nunca o contrário.
+2. Adaptadores preparam solicitações, mas não iniciam processos.
+3. Layout não executa aplicações.
+4. Panel Runtime não conhece persistência ou widgets.
+5. Comandos não são executados por shell.
+6. Backends do sistema operacional implementam contratos neutros.
+7. Candidatos não usam os dados da versão principal.
+8. Uma LEA só é promovida após CI e teste real correspondente.

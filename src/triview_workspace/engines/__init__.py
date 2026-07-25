@@ -30,19 +30,36 @@ from .panel_runtime import (
     split_command,
 )
 from .panels import PanelAdapter, PanelRegistry, PlaceholderPanelAdapter
+from .runtime_controllers import (
+    ApplicationRuntimeController,
+    BrowserRuntimeController,
+    RuntimeController,
+    RuntimeControllerRegistry,
+    RuntimeOpenResult,
+    TerminalRuntimeController,
+)
 from .session import WorkspaceSessionEngine
+from .terminal import (
+    TerminalAvailability,
+    TerminalEngine,
+    TerminalEngineError,
+    TerminalPanelAdapter,
+    X11TerminalBackend,
+)
 from .workspace import WorkspaceEngine
 
 __all__ = [
     "ApplicationEngine",
     "ApplicationEngineError",
     "ApplicationPanelAdapter",
+    "ApplicationRuntimeController",
     "BrowserBackendAvailability",
     "BrowserBackendUnavailable",
     "BrowserEngine",
     "BrowserEngineError",
     "BrowserLaunchError",
     "BrowserPanelAdapter",
+    "BrowserRuntimeController",
     "BrowserSession",
     "LayoutEngine",
     "PanelAdapter",
@@ -54,11 +71,20 @@ __all__ = [
     "PanelRuntimeLaunchRequest",
     "PanelRuntimeSession",
     "PlaceholderPanelAdapter",
+    "RuntimeController",
+    "RuntimeControllerRegistry",
+    "RuntimeOpenResult",
+    "TerminalAvailability",
+    "TerminalEngine",
+    "TerminalEngineError",
+    "TerminalPanelAdapter",
+    "TerminalRuntimeController",
     "WorkspaceEngine",
     "WorkspaceSessionEngine",
     "X11ApplicationBackend",
     "X11BraveBrowserBackend",
     "X11PanelRuntimeBackend",
+    "X11TerminalBackend",
     "normalize_browser_url",
     "normalize_command",
     "resolve_command",

@@ -11,6 +11,7 @@ from .browser import (
 )
 from .layout import LayoutEngine
 from .panels import PanelAdapter, PanelRegistry, PlaceholderPanelAdapter
+from .session import WorkspaceSessionEngine
 from .workspace import WorkspaceEngine
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "PanelRegistry",
     "PlaceholderPanelAdapter",
     "WorkspaceEngine",
+    "WorkspaceSessionEngine",
     "X11BraveBrowserBackend",
     "normalize_browser_url",
 ]

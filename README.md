@@ -4,41 +4,51 @@ Plataforma modular de áreas de trabalho para Linux.
 
 ## Estado deste candidato
 
-- versão candidata: `0.8.0`;
+- versão candidata: `0.9.0`;
 - `main`: estável em `0.3.0`;
 - Browser e workspaces persistentes: validados;
-- Application, Terminal, PDF e Capture Engines: integrados ao trem;
-- Recording Engine: candidato LEA-201;
-- Plugin, Layout, Session e Hub: LEA-202–205.
+- Application, Terminal, PDF, Capture e Recording Engines: integrados ao trem;
+- Plugin Engine: candidato LEA-202;
+- Layout, Session e Hub: LEA-203–205.
 
-## Gravação por painel
+## Plugins declarativos
 
-O botão **Gravar** inicia uma sessão FFmpeg somente sobre a geometria do painel. Durante a gravação, o botão muda para **Parar** e o painel exibe **GRAVANDO**.
-
-Arquivos:
+Plugins vivem em:
 
 ```text
-~/Videos/TriView Workspace/Recordings/<workspace>/<painel>/<data>/<hora>.mp4
+${XDG_DATA_HOME:-~/.local/share}/triview-workspace/plugins/<id>/manifest.json
 ```
 
-O marco inicial grava vídeo H.264 sem áudio.
+Eles não carregam código Python. Cada manifesto declara um comando versionado e permanece desativado até autorização explícita no botão **Plugins**.
 
-## Instalar o candidato LEA-201
+Painel:
+
+```text
+Tipo: custom
+Destino: plugin:text-editor
+```
+
+## Instalar o candidato e o exemplo
 
 ```bash
 bash scripts/install-candidate.sh \
-  LEA-201 \
-  leonpcsn/lea-201-implementar-recording-engine-por-painel
+  LEA-202 \
+  leonpcsn/lea-202-implementar-plugin-engine-seguro
+
+bash scripts/install-example-plugin.sh
 ```
 
-O atalho criado é **TriView Workspace — LEA-201** e usa dados separados da versão principal.
+O atalho criado é **TriView Workspace — LEA-202**. O exemplo usa o editor `xed`, quando instalado.
 
-## Requisitos
+## Segurança
 
-```bash
-sudo apt update
-sudo apt install xdotool maim ffmpeg
-```
+- manifesto e API versionados;
+- ativação explícita;
+- IDs e diretórios validados;
+- symlinks ignorados;
+- execução sem shell;
+- argumentos adicionais somente quando autorizados;
+- falha isolada com diagnóstico.
 
 ## Documentação
 
@@ -50,10 +60,11 @@ sudo apt install xdotool maim ffmpeg
 - [LEA-199](docs/work/LEA-199.md)
 - [LEA-200](docs/work/LEA-200.md)
 - [LEA-201](docs/work/LEA-201.md)
+- [LEA-202](docs/work/LEA-202.md)
 
 ## Rastreabilidade
 
 - LEA-191–196: base validada;
-- LEA-197–200: painéis executáveis e captura integrados ao trem;
-- LEA-201: gravação individual;
-- LEA-202–205: etapas seguintes.
+- LEA-197–201: painéis, captura e gravação integrados ao trem;
+- LEA-202: Plugin Engine seguro;
+- LEA-203–205: etapas seguintes.

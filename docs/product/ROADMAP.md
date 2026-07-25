@@ -60,7 +60,7 @@ Status: **concluído e validado no Linux Mint**
 
 ## Trem de desenvolvimento LEA-197–205
 
-O ramo `main` permanece estável. Cada LEA usa branch, PR, CI e candidato isolado antes da promoção.
+A branch `main` permanece estável. O trem é integrado em `train/road-to-1.0`. Cada LEA usa branch, PR, CI e candidato isolado antes da promoção.
 
 ### `0.4.0` — Application Engine — LEA-197
 

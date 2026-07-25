@@ -41,10 +41,10 @@ def test_internal_markdown_links_resolve() -> None:
     assert not broken, "Broken Markdown links:\n" + "\n".join(broken)
 
 
-def test_roadmap_does_not_claim_planned_engines_are_available() -> None:
+def test_roadmap_does_not_claim_planned_capabilities_are_available() -> None:
     roadmap = (ROOT / "docs/product/ROADMAP.md").read_text(encoding="utf-8")
     for heading in (
-        "Browser Engine",
+        "Primeiro painel funcional",
         "Captura individual de imagem",
         "Gravação individual por painel",
         "Plugins",

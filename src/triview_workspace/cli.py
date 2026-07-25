@@ -13,10 +13,7 @@ from triview_workspace.engines import (
     PlaceholderPanelAdapter,
     WorkspaceEngine,
 )
-from triview_workspace.infrastructure import (
-    WorkspaceRepository,
-    load_workspace_bundle,
-)
+from triview_workspace.infrastructure import WorkspaceRepository, load_workspace_bundle
 
 DEFAULT_WORKSPACE = Path("config/workspaces/three-mobile.json")
 
@@ -51,7 +48,11 @@ def resolve_workspace(
     workspace_path: Path | None,
     data_file: Path | None,
 ):
-    """Resolve an explicit bundle or the last persisted workspace."""
+    """Resolve an explicit bundle or the last persisted workspace.
+
+    Explicit diagnostic bundles are read-only: inspecting a file must not change the
+    user's active persisted workspace.
+    """
 
     seed_workspace, seed_layout = load_workspace_bundle(DEFAULT_WORKSPACE)
     repository = WorkspaceRepository(data_file)
@@ -59,7 +60,6 @@ def resolve_workspace(
 
     if workspace_path is not None:
         workspace, layout = load_workspace_bundle(workspace_path)
-        catalog = repository.save_workspace(catalog, workspace, layout, make_active=True)
         return repository, catalog, workspace, layout
 
     workspace, layout = repository.active_bundle(catalog)
@@ -83,6 +83,7 @@ def run_diagnostic(
         "schema_version": catalog.schema_version,
         "catalog_path": str(repository.path),
         "active_workspace_id": catalog.active_workspace_id,
+        "inspected_workspace_id": workspace.id,
         "workspace": workspace.name,
         "layout": layout.name,
         "viewport": {"width": width, "height": height},

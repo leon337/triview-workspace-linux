@@ -5,11 +5,11 @@ Este diretório separa recursos validados, candidatos do trem e funcionalidades 
 ## Estado
 
 - versão estável: `0.3.0` em `main`;
-- candidato atual: `0.8.0` — Recording Engine, LEA-201;
+- candidato atual: `0.9.0` — Plugin Engine, LEA-202;
 - Browser e workspaces persistentes: validados;
-- Application, Terminal, PDF e Capture Engines: integrados ao trem;
-- Recording Engine: implementado, aguardando CI e aceite;
-- LEA-202–205: etapas seguintes.
+- Application, Terminal, PDF, Capture e Recording Engines: integrados ao trem;
+- Plugin Engine: implementado, aguardando CI e aceite;
+- LEA-203–205: etapas seguintes.
 
 ## Produto
 
@@ -31,6 +31,7 @@ Este diretório separa recursos validados, candidatos do trem e funcionalidades 
 - [ADR-0007 — Visualizadores PDF](decisions/ADR-0007-pdf-viewer-runtime.md)
 - [ADR-0008 — Captura por janela](decisions/ADR-0008-panel-window-capture.md)
 - [ADR-0009 — Gravação com FFmpeg](decisions/ADR-0009-panel-region-recording-ffmpeg.md)
+- [ADR-0010 — Plugins declarativos](decisions/ADR-0010-declarative-plugin-manifests.md)
 
 ## Registros do trem
 
@@ -39,6 +40,7 @@ Este diretório separa recursos validados, candidatos do trem e funcionalidades 
 - [LEA-199](work/LEA-199.md)
 - [LEA-200](work/LEA-200.md)
 - [LEA-201](work/LEA-201.md)
+- [LEA-202](work/LEA-202.md)
 
 ## Fábrica
 

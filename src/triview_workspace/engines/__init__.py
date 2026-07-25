@@ -10,15 +10,7 @@ from .browser import (
     X11BraveBrowserBackend,
     normalize_browser_url,
 )
-from .capture import (
-    CaptureAvailability,
-    CaptureBackend,
-    CaptureEngine,
-    CaptureEngineError,
-    CaptureRequest,
-    CaptureResult,
-    X11CaptureBackend,
-)
+from .capture import CaptureAvailability, CaptureBackend, CaptureEngine, CaptureEngineError, CaptureRequest, CaptureResult, X11CaptureBackend
 from .layout import LayoutEngine
 from .panel_runtime import (
     PanelBackendUnavailable,
@@ -35,25 +27,21 @@ from .panel_runtime import (
 )
 from .panels import PanelAdapter, PanelRegistry, PlaceholderPanelAdapter
 from .pdf import PdfAvailability, PdfEngine, PdfEngineError, PdfPanelAdapter, X11PdfBackend, normalize_pdf_path
-from .recording import (
-    RecordingAvailability,
-    RecordingBackend,
-    RecordingEngine,
-    RecordingEngineError,
-    RecordingRequest,
-    RecordingResult,
-    RecordingSession,
-    X11FfmpegRecordingBackend,
+from .plugin import (
+    PLUGIN_API_VERSION,
+    PLUGIN_SCHEMA_VERSION,
+    PluginDiagnostic,
+    PluginEngine,
+    PluginEngineError,
+    PluginManifest,
+    PluginOpenResult,
+    PluginPanelAdapter,
+    PluginRuntimeController,
+    PluginTarget,
+    parse_plugin_target,
 )
-from .runtime_controllers import (
-    ApplicationRuntimeController,
-    BrowserRuntimeController,
-    PdfRuntimeController,
-    RuntimeController,
-    RuntimeControllerRegistry,
-    RuntimeOpenResult,
-    TerminalRuntimeController,
-)
+from .recording import RecordingAvailability, RecordingBackend, RecordingEngine, RecordingEngineError, RecordingRequest, RecordingResult, RecordingSession, X11FfmpegRecordingBackend
+from .runtime_controllers import ApplicationRuntimeController, BrowserRuntimeController, PdfRuntimeController, RuntimeController, RuntimeControllerRegistry, RuntimeOpenResult, TerminalRuntimeController
 from .session import WorkspaceSessionEngine
 from .terminal import TerminalAvailability, TerminalEngine, TerminalEngineError, TerminalPanelAdapter, X11TerminalBackend
 from .workspace import WorkspaceEngine

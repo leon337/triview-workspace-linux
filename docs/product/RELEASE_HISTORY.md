@@ -13,7 +13,11 @@ Ideia inicial: organizar três janelas do Brave
         ↓
 0.1.2: primeira interface gráfica real
         ↓
-Próximo marco: primeiro painel com conteúdo funcional
+LEA-194: consolidação estratégica e documental
+        ↓
+0.2.0: primeiro Browser Engine funcional em X11
+        ↓
+Próximo marco: workspaces persistentes
 ```
 
 ## `0.1.0` — Fundação modular
@@ -70,18 +74,18 @@ Entregas principais:
 - CLI de diagnóstico separada;
 - launcher gráfico sem terminal.
 
-Limite da versão: os painéis ainda exibem placeholders. Brave, GitHub e Terminal não estão incorporados dentro deles.
+Limite da versão: os painéis ainda exibiam placeholders. Brave, GitHub e Terminal não estavam incorporados dentro deles.
 
 Rastreabilidade:
 
 - Linear: LEA-193;
 - GitHub: PR #3.
 
-## Consolidação documental
+## Consolidação documental — LEA-194
 
-A LEA-194 não altera a versão funcional do aplicativo. Ela cria a documentação estratégica e operacional necessária para orientar os próximos marcos sem confundir funcionalidades concluídas com planos futuros.
+A LEA-194 não alterou a versão funcional do aplicativo. Ela criou a documentação estratégica e operacional necessária para orientar os próximos marcos sem confundir funcionalidades concluídas com planos futuros.
 
-Entregas esperadas:
+Entregas:
 
 - visão e princípios do produto;
 - roadmap;
@@ -89,3 +93,39 @@ Entregas esperadas:
 - responsabilidades dos Engines;
 - manual da Fábrica de Softwares;
 - governança da documentação.
+
+Rastreabilidade:
+
+- Linear: LEA-194;
+- GitHub: PR #4.
+
+## `0.2.0` — Primeiro Browser Engine funcional
+
+Esta versão transforma os painéis navegador de placeholders em hosts capazes de abrir conteúdo web real em sessões X11 compatíveis.
+
+Entregas principais:
+
+- contrato `BrowserBackend` independente de Tkinter e do domínio;
+- `BrowserEngine` para abertura, redimensionamento, reabertura e encerramento;
+- `BrowserPanelAdapter` integrado ao registro de painéis;
+- normalização e restrição de URLs a HTTP e HTTPS;
+- backend inicial para Brave, Chromium ou Google Chrome compatível;
+- execução em modo aplicativo;
+- incorporação da janela com `xdotool windowreparent`;
+- perfis separados por painel;
+- estados visuais e mensagens de indisponibilidade;
+- testes headless de contratos, URL, ciclo de vida e fallback;
+- ADR-0003 sobre a decisão X11.
+
+Limites da versão:
+
+- exige sessão com `DISPLAY`;
+- exige navegador Chromium compatível e `xdotool`;
+- não fornece backend nativo de Wayland;
+- persistência avançada de autenticação e sessões pertence ao futuro Session Engine;
+- a incorporação visual precisa ser validada no Linux Mint real.
+
+Rastreabilidade:
+
+- Linear: LEA-195;
+- GitHub: PR #5.

@@ -37,7 +37,7 @@ Status: **concluído**
 
 ### LEA-194 — Consolidação documental
 
-Status: **concluído quando integrado**
+Status: **concluído**
 
 - visão e princípios do produto;
 - roadmap e histórico de versões;
@@ -45,23 +45,29 @@ Status: **concluído quando integrado**
 - manual da Fábrica de Softwares;
 - índice documental central.
 
-## Próximos marcos recomendados
-
 ### `0.2.0` — Primeiro painel funcional
 
-Status: **planejado**
+Status: **concluído**
 
-Objetivo: provar a execução real dentro da arquitetura de painéis.
+Objetivo entregue: provar a execução real dentro da arquitetura de painéis.
 
-Escopo esperado:
+Entregas:
 
-- selecionar o primeiro backend de painel;
-- abrir conteúdo real a partir do botão **Abrir**;
-- definir comportamento em X11 e limite inicial em Wayland;
-- tratar falhas e indisponibilidade do backend;
-- manter os outros painéis como placeholders quando necessário.
+- Browser Engine com contrato de backend substituível;
+- Browser Adapter integrado ao Panel Registry;
+- URL HTTP/HTTPS validada e normalizada;
+- Brave/Chromium iniciado em modo aplicativo;
+- incorporação da janela no host do painel através de X11 e `xdotool`;
+- perfis locais separados por painel;
+- redimensionamento da janela incorporada;
+- estados visuais de disponibilidade, abertura, atividade e erro;
+- fallback controlado quando navegador, `DISPLAY` ou `xdotool` não estão disponíveis;
+- preservação do modo `--diagnostic`;
+- testes headless e documentação arquitetural.
 
-A escolha entre navegador incorporado, janela externa controlada ou abordagem híbrida deverá ser validada por tarefa técnica antes da implementação definitiva.
+Limite conhecido: o backend inicial não é nativo de Wayland e precisa ser validado no Linux Mint real.
+
+## Próximos marcos recomendados
 
 ### `0.3.0` — Workspaces persistentes
 
@@ -105,8 +111,8 @@ Status: **planejado**
 
 Status: **planejado**
 
-- sessões independentes por painel quando suportadas;
-- perfis de navegador;
+- sessões independentes persistentes por painel quando suportadas;
+- gerenciamento de perfis de navegador;
 - isolamento de configurações;
 - recuperação após encerramento inesperado.
 
@@ -128,6 +134,15 @@ Status: **planejado**
 - descoberta controlada de plugins;
 - validação de compatibilidade;
 - revisão de segurança, desempenho e recuperação.
+
+### `0.10.0` — Compatibilidade gráfica ampliada
+
+Status: **planejado**
+
+- backend nativo ou híbrido para Wayland;
+- seleção automática de backend gráfico;
+- fallback para janela externa controlada quando necessário;
+- matriz de compatibilidade por distribuição e sessão gráfica.
 
 ### `1.0.0` — Primeira versão estável
 

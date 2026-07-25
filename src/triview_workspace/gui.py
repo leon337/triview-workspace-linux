@@ -4,15 +4,22 @@ from __future__ import annotations
 
 import logging
 import os
+import queue
+import threading
 import tkinter as tk
+from collections.abc import Callable
 from pathlib import Path
 from tkinter import messagebox, ttk
 
 from triview_workspace.engines import (
+    BrowserEngine,
+    BrowserEngineError,
+    BrowserPanelAdapter,
     LayoutEngine,
     PanelRegistry,
     PlaceholderPanelAdapter,
     WorkspaceEngine,
+    X11BraveBrowserBackend,
 )
 from triview_workspace.gui_model import PanelViewModel, build_panel_view_models
 from triview_workspace.infrastructure import load_workspace_bundle
@@ -23,10 +30,16 @@ CONTENT_PADDING = 12
 
 
 class PanelCard:
-    """Visual shell for one future embedded panel."""
+    """Visual shell and native host for one workspace panel."""
 
-    def __init__(self, parent: tk.Misc, panel: PanelViewModel) -> None:
+    def __init__(
+        self,
+        parent: tk.Misc,
+        panel: PanelViewModel,
+        on_open: Callable[[PanelViewModel, PanelCard], None] | None = None,
+    ) -> None:
         self.panel = panel
+        self._on_open = on_open
         self.frame = tk.Frame(
             parent,
             background="#111827",
@@ -56,24 +69,25 @@ class PanelCard:
             anchor="w",
         ).pack(side="left", fill="x", expand=True)
 
-        tk.Label(
+        self.badge = tk.Label(
             header,
-            text="PRONTO",
-            background="#0f766e",
-            foreground="#ecfeff",
+            text="PLANEJADO",
+            background="#475569",
+            foreground="#f8fafc",
             font=("Sans", 8, "bold"),
             padx=8,
             pady=3,
-        ).pack(side="right", padx=10)
+        )
+        self.badge.pack(side="right", padx=10)
 
         body = tk.Frame(self.frame, background="#0f172a")
         body.pack(fill="both", expand=True, padx=1, pady=1)
 
-        mock_top = tk.Frame(body, background="#1e293b", height=36)
-        mock_top.pack(fill="x", padx=12, pady=(16, 0))
-        mock_top.pack_propagate(False)
+        target_bar = tk.Frame(body, background="#1e293b", height=36)
+        target_bar.pack(fill="x", padx=12, pady=(12, 0))
+        target_bar.pack_propagate(False)
         tk.Label(
-            mock_top,
+            target_bar,
             text=panel.target,
             background="#1e293b",
             foreground="#cbd5e1",
@@ -82,36 +96,67 @@ class PanelCard:
             padx=10,
         ).pack(fill="both", expand=True)
 
-        center = tk.Frame(body, background="#0f172a")
-        center.pack(fill="both", expand=True, padx=18, pady=18)
+        self.content_stack = tk.Frame(body, background="#0f172a")
+        self.content_stack.pack(fill="both", expand=True, padx=12, pady=12)
+
+        self.placeholder = tk.Frame(self.content_stack, background="#0f172a")
+        self.placeholder.pack(fill="both", expand=True)
         tk.Label(
-            center,
+            self.placeholder,
             text=self._icon_for(panel.kind),
             background="#0f172a",
             foreground="#38bdf8",
             font=("Sans", 34),
-        ).pack(pady=(12, 8))
+        ).pack(pady=(18, 8))
         tk.Label(
-            center,
+            self.placeholder,
             text=panel.title,
             background="#0f172a",
             foreground="#f8fafc",
             font=("Sans", 15, "bold"),
         ).pack()
+
+        self.status_message = tk.StringVar(value=panel.status)
         tk.Label(
-            center,
-            text=panel.status,
+            self.placeholder,
+            textvariable=self.status_message,
             background="#0f172a",
             foreground="#94a3b8",
             font=("Sans", 9),
-            wraplength=220,
+            wraplength=240,
             justify="center",
         ).pack(pady=(8, 0))
+
+        self.browser_host = tk.Frame(
+            self.content_stack,
+            background="#020617",
+            highlightbackground="#1e293b",
+            highlightthickness=1,
+            bd=0,
+        )
 
         footer = tk.Frame(self.frame, background="#172033", height=48)
         footer.pack(fill="x")
         footer.pack_propagate(False)
-        for label in ("Abrir", "Print", "Gravar"):
+
+        self.open_button = tk.Button(
+            footer,
+            text="Abrir",
+            command=self._request_open,
+            state="disabled",
+            disabledforeground="#64748b",
+            background="#1e293b",
+            foreground="#e2e8f0",
+            activebackground="#334155",
+            activeforeground="#f8fafc",
+            relief="flat",
+            bd=0,
+            font=("Sans", 8),
+            padx=8,
+        )
+        self.open_button.pack(side="left", padx=(8, 0), pady=9)
+
+        for label in ("Print", "Gravar"):
             tk.Button(
                 footer,
                 text=label,
@@ -123,6 +168,49 @@ class PanelCard:
                 font=("Sans", 8),
                 padx=8,
             ).pack(side="left", padx=(8, 0), pady=9)
+
+    def _request_open(self) -> None:
+        if self._on_open is not None:
+            self._on_open(self.panel, self)
+
+    def configure_browser(self, *, available: bool, message: str) -> None:
+        if available:
+            self.open_button.configure(state="normal")
+            self.set_status("DISPONÍVEL", message, "#0f766e")
+        else:
+            self.open_button.configure(state="disabled")
+            self.set_status("INDISPONÍVEL", message, "#991b1b")
+
+    def set_status(self, badge: str, message: str, badge_background: str) -> None:
+        self.badge.configure(text=badge, background=badge_background)
+        self.status_message.set(message)
+
+    def set_open_enabled(self, enabled: bool, label: str | None = None) -> None:
+        self.open_button.configure(state="normal" if enabled else "disabled")
+        if label is not None:
+            self.open_button.configure(text=label)
+
+    def show_browser_host(self) -> None:
+        self.placeholder.pack_forget()
+        if not self.browser_host.winfo_manager():
+            self.browser_host.pack(fill="both", expand=True)
+        self.browser_host.update_idletasks()
+
+    def show_placeholder(self) -> None:
+        self.browser_host.pack_forget()
+        if not self.placeholder.winfo_manager():
+            self.placeholder.pack(fill="both", expand=True)
+
+    def native_host_id(self) -> int:
+        self.browser_host.update_idletasks()
+        return int(self.browser_host.winfo_id())
+
+    def host_dimensions(self) -> tuple[int, int]:
+        self.browser_host.update_idletasks()
+        return (
+            max(1, self.browser_host.winfo_width()),
+            max(1, self.browser_host.winfo_height()),
+        )
 
     @staticmethod
     def _icon_for(kind: str) -> str:
@@ -144,15 +232,24 @@ class WorkspaceWindow:
         self.root = root
         self.workspace_path = workspace_path
         self.workspace, self.layout = load_workspace_bundle(workspace_path)
+        self.browser_engine = BrowserEngine(X11BraveBrowserBackend())
+        self.browser_availability = self.browser_engine.availability()
         self.registry = PanelRegistry()
+        self.registry.register(BrowserPanelAdapter())
         self.registry.register(PlaceholderPanelAdapter())
         self.engine = WorkspaceEngine(LayoutEngine(), self.registry)
         self._resize_job: str | None = None
+        self._launching: set[str] = set()
+        self._browser_results: queue.SimpleQueue[tuple[str, str, str | None]] = (
+            queue.SimpleQueue()
+        )
+        self._closed = False
 
         root.title(f"{APP_TITLE} — {self.workspace.name}")
         root.geometry("1280x760")
         root.minsize(820, 540)
         root.configure(background="#020617")
+        root.protocol("WM_DELETE_WINDOW", self._close)
 
         self._configure_style()
         self._build_header()
@@ -160,7 +257,7 @@ class WorkspaceWindow:
         self.content = tk.Frame(root, background="#020617")
         self.content.pack(fill="both", expand=True)
 
-        self.status_text = tk.StringVar(value="Workspace carregado · 3 painéis preparados")
+        self.status_text = tk.StringVar(value="Workspace carregado")
         tk.Label(
             root,
             textvariable=self.status_text,
@@ -173,10 +270,14 @@ class WorkspaceWindow:
         ).pack(fill="x", side="bottom")
 
         prepared = self.engine.prepare(self.workspace, self.layout, 1200, 650)
-        self.cards = [PanelCard(self.content, view) for view in build_panel_view_models(prepared)]
+        views = build_panel_view_models(prepared)
+        self.cards = [PanelCard(self.content, view, self._open_browser) for view in views]
+        self.cards_by_id = {card.panel.id: card for card in self.cards}
+        self._configure_panel_states()
 
         self.content.bind("<Configure>", self._schedule_layout)
         root.after(60, self._render_layout)
+        root.after(80, self._drain_browser_results)
 
     @staticmethod
     def _configure_style() -> None:
@@ -214,13 +315,108 @@ class WorkspaceWindow:
         right.pack(side="right", fill="y", padx=16)
         tk.Label(
             right,
-            text="FUNDAÇÃO GRÁFICA 0.1.2",
+            text="BROWSER ENGINE 0.2.0",
             background="#1d4ed8",
             foreground="#eff6ff",
             font=("Sans", 8, "bold"),
             padx=10,
             pady=5,
         ).pack(side="right", pady=20)
+
+    def _configure_panel_states(self) -> None:
+        for card in self.cards:
+            if card.panel.adapter_name == "browser":
+                message = self.browser_availability.reason
+                if self.browser_availability.available:
+                    message = f"{message} Clique em Abrir para carregar {card.panel.title}."
+                card.configure_browser(
+                    available=self.browser_availability.available,
+                    message=message,
+                )
+            else:
+                card.set_status("PLANEJADO", card.panel.status, "#475569")
+
+    def _open_browser(self, panel: PanelViewModel, card: PanelCard) -> None:
+        if self._closed or panel.adapter_name != "browser" or panel.id in self._launching:
+            return
+        if not self.browser_availability.available:
+            card.configure_browser(available=False, message=self.browser_availability.reason)
+            return
+
+        self._launching.add(panel.id)
+        card.show_browser_host()
+        card.set_open_enabled(False, "Abrindo…")
+        card.set_status(
+            "ABRINDO",
+            f"Inicializando {panel.title} e incorporando a janela no painel.",
+            "#a16207",
+        )
+        self.root.update_idletasks()
+        parent_window_id = card.native_host_id()
+        width, height = card.host_dimensions()
+
+        def launch() -> None:
+            try:
+                self.browser_engine.open(
+                    panel.id,
+                    panel.target,
+                    parent_window_id,
+                    width,
+                    height,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._browser_results.put(("error", panel.id, str(exc)))
+                return
+
+            if self._closed:
+                self.browser_engine.close(panel.id)
+                return
+            self._browser_results.put(("opened", panel.id, None))
+
+        threading.Thread(
+            target=launch,
+            name=f"triview-browser-{panel.id}",
+            daemon=True,
+        ).start()
+
+    def _drain_browser_results(self) -> None:
+        if self._closed:
+            return
+
+        while True:
+            try:
+                result, panel_id, message = self._browser_results.get_nowait()
+            except queue.Empty:
+                break
+
+            if result == "opened":
+                self._browser_opened(panel_id)
+            else:
+                self._browser_failed(panel_id, message or "Falha desconhecida ao abrir o painel.")
+
+        self.root.after(80, self._drain_browser_results)
+
+    def _browser_opened(self, panel_id: str) -> None:
+        self._launching.discard(panel_id)
+        card = self.cards_by_id[panel_id]
+        card.show_browser_host()
+        card.set_open_enabled(True, "Reabrir")
+        card.set_status(
+            "ATIVO",
+            f"{card.panel.title} está executando dentro do painel.",
+            "#15803d",
+        )
+        self.status_text.set(f"Painel {card.panel.title} aberto com Browser Engine X11")
+        self._resize_browsers()
+
+    def _browser_failed(self, panel_id: str, message: str) -> None:
+        self._launching.discard(panel_id)
+        card = self.cards_by_id[panel_id]
+        card.show_placeholder()
+        card.set_open_enabled(self.browser_availability.available, "Tentar novamente")
+        card.set_status("ERRO", message, "#991b1b")
+        self.status_text.set(f"Falha ao abrir {card.panel.title}: {message}")
+        logging.error("Unable to open browser panel %s: %s", panel_id, message)
 
     def _schedule_layout(self, _event: tk.Event[tk.Misc]) -> None:
         if self._resize_job is not None:
@@ -243,9 +439,34 @@ class WorkspaceWindow:
                 height=bounds.height,
             )
 
+        if self.browser_availability.available:
+            backend_state = "browser disponível"
+        else:
+            backend_state = "browser indisponível"
         self.status_text.set(
-            f"{self.workspace.name} · {len(views)} painéis · área útil {width} × {height}"
+            f"{self.workspace.name} · {len(views)} painéis · {backend_state} · "
+            f"área útil {width} × {height}"
         )
+        self.root.after_idle(self._resize_browsers)
+
+    def _resize_browsers(self) -> None:
+        if self._closed:
+            return
+        for card in self.cards:
+            if not self.browser_engine.has_session(card.panel.id):
+                continue
+            width, height = card.host_dimensions()
+            try:
+                self.browser_engine.resize(card.panel.id, width, height)
+            except (BrowserEngineError, OSError) as exc:
+                logging.warning("Unable to resize browser panel %s: %s", card.panel.id, exc)
+
+    def _close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self.browser_engine.close_all()
+        self.root.destroy()
 
 
 def _configure_logging() -> Path:

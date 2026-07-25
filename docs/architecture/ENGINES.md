@@ -10,9 +10,12 @@ Interface gráfica / CLI
 Workspace Engine
    ├── Layout Engine
    ├── Panel Registry / adapters
-   ├── Session Engine          [planejado]
-   ├── Capture Engine          [planejado]
-   └── Plugin Engine           [planejado]
+   │      ├── Browser Adapter     [implementado]
+   │      └── demais adapters     [planejados]
+   ├── Browser Engine             [implementado em X11]
+   ├── Session Engine             [planejado]
+   ├── Capture Engine             [planejado]
+   └── Plugin Engine              [planejado]
           ↓
 Configuração, persistência, sistema gráfico e sistema operacional
 ```
@@ -63,7 +66,7 @@ Próximas evoluções planejadas:
 
 ## Panel Registry e adaptadores
 
-Status: **registro implementado; adaptadores reais planejados**
+Status: **registro e Browser Adapter implementados; demais adaptadores planejados**
 
 Responsabilidades:
 
@@ -72,17 +75,19 @@ Responsabilidades:
 - produzir solicitações de abertura ou incorporação;
 - informar indisponibilidade de forma controlada.
 
-Adaptadores previstos:
+Adaptadores:
 
-- Browser Adapter;
-- Application Adapter;
-- Terminal Adapter;
-- PDF Adapter;
-- Custom/Plugin Adapter.
+- Browser Adapter: **implementado**;
+- Application Adapter: **planejado**;
+- Terminal Adapter: **planejado**;
+- PDF Adapter: **planejado**;
+- Custom/Plugin Adapter: **planejado**.
+
+O `BrowserPanelAdapter` valida o alvo e produz uma solicitação neutra. Ele não executa processos e não conhece widgets Tkinter.
 
 ## Interface gráfica
 
-Status: **implementada como casca funcional na versão 0.1.2**
+Status: **implementada com Browser Engine inicial na versão 0.2.0**
 
 Responsabilidades atuais:
 
@@ -90,28 +95,69 @@ Responsabilidades atuais:
 - exibir os painéis preparados;
 - reagir ao redimensionamento;
 - apresentar título, alvo e estado;
-- reservar ações de abrir, print e gravação.
+- oferecer abertura de painéis navegador compatíveis;
+- reservar ações de print e gravação;
+- manter fallback visual quando o backend não estiver disponível;
+- solicitar encerramento das sessões ao fechar a janela.
 
-Limite atual:
+Limites atuais:
 
-- o conteúdo exibido é placeholder;
-- as ações funcionais dependem dos Engines e adaptadores posteriores.
+- painéis de aplicação, terminal e PDF continuam como placeholders;
+- print e gravação permanecem desativados;
+- a incorporação de navegador depende do backend X11 inicial.
 
 ## Browser Engine
 
-Status: **planejado**
+Status: **implementado inicialmente para X11 na versão 0.2.0**
 
-Responsabilidades esperadas:
+Componentes:
 
-- abrir conteúdo web através do backend escolhido;
-- gerenciar navegação e estado do painel;
-- definir estratégia para sessões e perfis;
-- fornecer fallback quando incorporação não for possível;
-- tratar diferenças entre X11 e Wayland.
+- `BrowserEngine`: gerencia ciclo de vida das sessões;
+- `BrowserBackend`: contrato para backends substituíveis;
+- `BrowserPanelAdapter`: prepara metadados de abertura;
+- `X11BraveBrowserBackend`: implementação inicial para Brave/Chromium;
+- `BrowserBackendAvailability`: diagnóstico sem iniciar processos;
+- normalizador de URLs HTTP e HTTPS.
 
-Decisão pendente:
+Responsabilidades:
 
-- navegador incorporado, janela externa controlada ou arquitetura híbrida. Essa escolha exige prova técnica específica.
+- validar e normalizar a URL do painel;
+- verificar disponibilidade do backend;
+- criar perfil local separado por painel;
+- iniciar o navegador em modo aplicativo;
+- incorporar a janela no host nativo do painel;
+- redimensionar a janela junto com o painel;
+- reabrir ou encerrar uma sessão;
+- comunicar falhas sem derrubar a interface.
+
+Backend X11 inicial:
+
+```text
+Painel Tkinter
+     ↓ fornece winfo_id()
+Browser Engine
+     ↓ inicia Brave/Chromium --app
+xdotool search
+     ↓ localiza a janela X11
+xdotool windowreparent
+     ↓
+Janela do navegador incorporada no painel
+```
+
+Requisitos:
+
+- variável `DISPLAY` disponível;
+- Brave, Chromium ou Google Chrome compatível;
+- `xdotool`.
+
+Limites:
+
+- não é uma solução nativa de Wayland;
+- a incorporação depende do comportamento do navegador e do gerenciador de janelas;
+- autenticação avançada e restauração de sessões pertencem ao Session Engine;
+- a CI valida contratos e fallback, mas a incorporação visual exige validação no Linux Mint real.
+
+A decisão está registrada na [ADR-0003](../decisions/ADR-0003-browser-x11-reparenting.md).
 
 ## Application Engine
 
@@ -185,6 +231,7 @@ Responsabilidades esperadas:
 1. A interface chama os Engines, não o contrário.
 2. Layout não executa aplicações.
 3. Adaptadores não definem o modelo persistente.
-4. Captura não altera layout nem sessão.
-5. Persistência não deve conhecer widgets gráficos.
-6. Integrações específicas do sistema operacional permanecem na infraestrutura ou em adaptadores.
+4. Backends específicos do sistema operacional implementam contratos neutros.
+5. Captura não altera layout nem sessão.
+6. Persistência não deve conhecer widgets gráficos.
+7. Integrações X11 ou Wayland permanecem isoladas em backends ou adaptadores.

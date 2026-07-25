@@ -17,16 +17,20 @@ class PanelViewModel:
     target: str
     status: str
     bounds: PixelRect
+    adapter_name: str = "placeholder"
 
 
-def panel_status(kind: str) -> str:
-    """Return the temporary integration status shown in the shell."""
+def panel_status(kind: str, adapter_name: str = "placeholder") -> str:
+    """Return the integration status shown in the shell."""
+
+    if adapter_name == "browser":
+        return "Navegador pronto para abertura dentro deste painel"
 
     labels = {
-        "browser": "Navegador será incorporado na próxima etapa",
-        "application": "Aplicação externa será incorporada na próxima etapa",
-        "terminal": "Terminal será incorporado na próxima etapa",
-        "pdf": "Visualizador de PDF será incorporado na próxima etapa",
+        "browser": "Navegador ainda não possui backend funcional neste painel",
+        "application": "Aplicação externa será incorporada em uma etapa posterior",
+        "terminal": "Terminal será incorporado em uma etapa posterior",
+        "pdf": "Visualizador de PDF será incorporado em uma etapa posterior",
     }
     return labels.get(kind, "Painel preparado para adaptador futuro")
 
@@ -40,8 +44,9 @@ def build_panel_view_models(runtime_panels: tuple[RuntimePanel, ...]) -> tuple[P
             title=runtime.panel.title,
             kind=runtime.panel.kind.value,
             target=runtime.panel.target,
-            status=panel_status(runtime.panel.kind.value),
+            status=panel_status(runtime.panel.kind.value, runtime.adapter_name),
             bounds=runtime.bounds,
+            adapter_name=runtime.adapter_name,
         )
         for runtime in runtime_panels
     )

@@ -15,6 +15,7 @@ REQUIRED_DOCUMENTS = (
     "docs/factory/SOFTWARE_FACTORY_WORKFLOW.md",
     "docs/decisions/ADR-0001-workspace-platform.md",
     "docs/decisions/ADR-0002-documentation-source-of-truth.md",
+    "docs/decisions/ADR-0003-browser-x11-reparenting.md",
 )
 LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)")
 
@@ -41,7 +42,7 @@ def test_internal_markdown_links_resolve() -> None:
     assert not broken, "Broken Markdown links:\n" + "\n".join(broken)
 
 
-def test_roadmap_does_not_claim_planned_capabilities_are_available() -> None:
+def test_roadmap_distinguishes_completed_and_planned_capabilities() -> None:
     roadmap = (ROOT / "docs/product/ROADMAP.md").read_text(encoding="utf-8")
     for heading in (
         "Primeiro painel funcional",
@@ -50,4 +51,5 @@ def test_roadmap_does_not_claim_planned_capabilities_are_available() -> None:
         "Plugins",
     ):
         assert heading in roadmap
+    assert "Browser Engine com contrato de backend substituível" in roadmap
     assert roadmap.count("Status: **planejado**") >= 7

@@ -107,3 +107,17 @@ update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
 
 log "Atualização concluída. Versão ativa: $version"
 log "Backup: $backup_dir"
+
+if ! command -v xdotool >/dev/null 2>&1; then
+  log "AVISO: xdotool não foi encontrado; o Browser Engine permanecerá indisponível."
+  log "Instale no Linux Mint/Ubuntu com: sudo apt install xdotool"
+fi
+
+if ! command -v brave-browser >/dev/null 2>&1 \
+  && ! command -v brave >/dev/null 2>&1 \
+  && ! command -v chromium >/dev/null 2>&1 \
+  && ! command -v chromium-browser >/dev/null 2>&1 \
+  && ! command -v google-chrome >/dev/null 2>&1 \
+  && ! command -v google-chrome-stable >/dev/null 2>&1; then
+  log "AVISO: nenhum navegador Brave/Chromium compatível foi encontrado."
+fi

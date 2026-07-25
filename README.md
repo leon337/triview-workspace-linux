@@ -2,19 +2,34 @@
 
 Plataforma modular de áreas de trabalho para Linux.
 
-O produto gerencia **workspaces compostos por painéis independentes**. Navegadores, aplicações, terminais, PDFs e componentes futuros serão resolvidos por adaptadores, sem limitar o núcleo ao caso inicial de três janelas.
+O produto gerencia **workspaces compostos por painéis independentes**. Navegadores, aplicações, terminais, PDFs e componentes futuros são resolvidos por adaptadores, sem limitar o núcleo ao caso inicial de três janelas.
 
 ## Estado atual
 
-- Versão funcional: `0.1.2`.
-- Interface gráfica inicial: disponível.
-- Três painéis responsivos: disponíveis.
+- Versão funcional: `0.2.0`.
+- Interface gráfica responsiva: disponível.
+- Primeiro Browser Engine: disponível em sessões X11 compatíveis.
 - Migração, backup, restauração e atualização versionada: disponíveis.
-- Navegadores e aplicações incorporados: planejados.
+- Application Engine: planejado.
 - Print e gravação individual por painel: planejados.
-- Consolidação estratégica: LEA-194.
+- Plugins e persistência completa de workspaces: planejados.
 
-A versão atual é uma **casca gráfica funcional**. Os painéis ainda exibem placeholders e não incorporam Brave, GitHub ou Terminal.
+A versão `0.2.0` permite abrir conteúdo HTTP ou HTTPS dentro de painéis navegador por meio de Brave ou outro navegador Chromium compatível. O backend inicial utiliza X11 e `xdotool`. Quando os requisitos não estão disponíveis, a interface permanece aberta e mostra a causa da indisponibilidade.
+
+## Requisitos do Browser Engine inicial
+
+- Linux com sessão gráfica e variável `DISPLAY`;
+- Brave, Chromium ou Google Chrome compatível;
+- `xdotool` instalado.
+
+No Linux Mint/Ubuntu, o utilitário pode ser instalado com:
+
+```bash
+sudo apt update
+sudo apt install xdotool
+```
+
+O backend inicial não oferece incorporação nativa em Wayland. Essa evolução permanece separada para evitar acoplamento do núcleo a uma única tecnologia gráfica.
 
 ## Documentação
 
@@ -49,6 +64,10 @@ triview-workspace --diagnostic --workspace config/workspaces/three-mobile.json
 src/triview_workspace/
 ├── domain/
 ├── engines/
+│   ├── browser.py
+│   ├── layout.py
+│   ├── panels.py
+│   └── workspace.py
 ├── infrastructure/
 ├── gui.py
 ├── gui_model.py
@@ -78,4 +97,5 @@ Consulte:
 - Fundação modular: LEA-191 / PR #1.
 - Migração segura: LEA-192 / PR #2.
 - Interface gráfica inicial: LEA-193 / PR #3.
-- Documentação estratégica: LEA-194.
+- Documentação estratégica: LEA-194 / PR #4.
+- Primeiro Browser Engine funcional: LEA-195 / PR #5.

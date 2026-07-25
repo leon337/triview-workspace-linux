@@ -1,0 +1,54 @@
+{
+  "layout": {
+    "id": "three-mobile",
+    "name": "Três painéis móveis",
+    "slots": [
+      {
+        "x": 0.02,
+        "y": 0.04,
+        "width": 0.3,
+        "height": 0.92,
+        "aspect_ratio": 0.461538
+      },
+      {
+        "x": 0.35,
+        "y": 0.04,
+        "width": 0.3,
+        "height": 0.92,
+        "aspect_ratio": 0.461538
+      },
+      {
+        "x": 0.68,
+        "y": 0.04,
+        "width": 0.3,
+        "height": 0.92,
+        "aspect_ratio": 0.461538
+      }
+    ]
+  },
+  "workspace": {
+    "id": "development-demo",
+    "name": "Desenvolvimento",
+    "layout_id": "three-mobile",
+    "panels": [
+      {
+        "id": "chatgpt",
+        "title": "ChatGPT",
+        "kind": "browser",
+        "target": "https://chatgpt.com"
+      },
+      {
+        "id": "github",
+        "title": "GitHub",
+        "kind": "browser",
+        "target": "https://github.com"
+      },
+      {
+        "id": "terminal",
+        "title": "Terminal",
+        "kind": "application",
+        "target": "x-terminal-emulator"
+      }
+    ]
+  }
+}

@@ -1,5 +1,8 @@
 # Arquitetura da plataforma
 
+> Índice geral: [Documentação do TriView Workspace](../README.md)  
+> Responsabilidades detalhadas: [Engines](ENGINES.md)
+
 ## Princípio central
 
 O núcleo gerencia **áreas de trabalho**, não navegadores. Navegadores e aplicações são tipos de painel resolvidos por adaptadores.
@@ -38,6 +41,16 @@ O `PanelRegistry` desacopla o domínio das tecnologias de incorporação. Adapta
 
 Reservado para uma tarefa posterior. A captura deverá receber a identidade e os limites do painel e produzir print ou gravação somente daquela área.
 
+## Estado da implementação
+
+- Workspace Engine: fundação implementada.
+- Layout Engine: implementado e usado pela GUI.
+- Panel Registry: implementado com adaptador placeholder.
+- Interface gráfica: casca funcional implementada na versão `0.1.2`.
+- Browser, Application, Session, Capture e Plugin Engines: planejados.
+
+Consulte [Responsabilidades dos Engines](ENGINES.md) para a separação completa entre componentes implementados e planejados.
+
 ## Regras de evolução
 
 1. Nenhum painel conhece detalhes do gerenciador de janelas.
@@ -45,3 +58,4 @@ Reservado para uma tarefa posterior. A captura deverá receber a identidade e os
 3. Adaptadores não controlam o armazenamento de workspaces.
 4. Captura e gravação serão serviços independentes.
 5. Formatos persistidos devem ser versionados antes de mudanças incompatíveis.
+6. Integrações específicas de X11, Wayland, navegador ou terminal devem permanecer atrás de adaptadores.

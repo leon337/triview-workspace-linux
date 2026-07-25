@@ -1,5 +1,18 @@
 # Changelog
 
+## Não lançado — Consolidação documental
+
+- adiciona índice central em `docs/README.md`;
+- registra visão, princípios e roadmap do produto;
+- consolida o histórico explicado das versões `0.1.0`, `0.1.1` e `0.1.2`;
+- documenta responsabilidades e estado dos Engines;
+- cria o manual operacional da Fábrica de Softwares;
+- registra a ADR-0002 sobre governança documental;
+- adiciona testes para arquivos obrigatórios e links Markdown internos;
+- reorganiza o README da raiz como porta de entrada para a documentação.
+
+Esta mudança não altera a versão funcional da aplicação.
+
 ## 0.1.2 — Interface gráfica inicial
 
 - corrige o atalho principal, que antes executava apenas o diagnóstico em JSON;

@@ -10,7 +10,6 @@ from threading import RLock
 
 from triview_workspace.domain import PanelKind, PanelSpec
 from triview_workspace.engines.panel_runtime import (
-    PanelRuntimeAvailability,
     PanelRuntimeLaunchRequest,
     PanelRuntimeSession,
     X11PanelRuntimeBackend,
@@ -53,11 +52,14 @@ class PdfPanelAdapter:
         return kind is PanelKind.PDF
 
     def build_launch_request(self, panel: PanelSpec) -> dict[str, object]:
-        return {
-            "mode": "pdf",
-            "panel_id": panel.id,
-            "document": normalize_pdf_path(panel.target),
-        }
+        # Workspace preparation must remain available even when a configured file
+        # was moved. Runtime availability reports the actionable validation error.
+        raw = panel.target.strip()
+        try:
+            document = normalize_pdf_path(raw)
+        except ValueError:
+            document = str(Path(raw).expanduser()) if raw else raw
+        return {"mode": "pdf", "panel_id": panel.id, "document": document}
 
 
 class X11PdfBackend:

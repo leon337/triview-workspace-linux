@@ -45,5 +45,12 @@ from .runtime_controllers import ApplicationRuntimeController, BrowserRuntimeCon
 from .session import WorkspaceSessionEngine
 from .terminal import TerminalAvailability, TerminalEngine, TerminalEngineError, TerminalPanelAdapter, X11TerminalBackend
 from .workspace import WorkspaceEngine
+from .workspace_hub import (
+    HUB_SCHEMA_VERSION,
+    HubEntry,
+    HubPreview,
+    WorkspaceHubError,
+    WorkspaceHubRepository,
+)
 
 __all__ = [name for name in globals() if not name.startswith("_")]

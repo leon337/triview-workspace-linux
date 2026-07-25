@@ -47,7 +47,7 @@ Status: **concluído**
 
 ### `0.2.0` — Primeiro painel funcional
 
-Status: **concluído**
+Status: **concluído e validado no Linux Mint**
 
 Objetivo entregue: provar a execução real dentro da arquitetura de painéis.
 
@@ -63,9 +63,11 @@ Entregas:
 - estados visuais de disponibilidade, abertura, atividade e erro;
 - fallback controlado quando navegador, `DISPLAY` ou `xdotool` não estão disponíveis;
 - preservação do modo `--diagnostic`;
-- testes headless e documentação arquitetural.
+- testes headless e documentação arquitetural;
+- validação real de ChatGPT e GitHub executando simultaneamente em painéis independentes;
+- validação com janela maximizada, restaurada e redimensionada.
 
-Limite conhecido: o backend inicial não é nativo de Wayland e precisa ser validado no Linux Mint real.
+Limite conhecido: o backend inicial é validado em X11, mas ainda não oferece incorporação nativa em Wayland.
 
 ## Próximos marcos recomendados
 

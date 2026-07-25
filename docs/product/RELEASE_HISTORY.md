@@ -15,7 +15,7 @@ Ideia inicial: organizar três janelas do Brave
         ↓
 LEA-194: consolidação estratégica e documental
         ↓
-0.2.0: primeiro Browser Engine funcional em X11
+0.2.0: primeiro Browser Engine funcional e validado em X11
         ↓
 Próximo marco: workspaces persistentes
 ```
@@ -117,15 +117,23 @@ Entregas principais:
 - testes headless de contratos, URL, ciclo de vida e fallback;
 - ADR-0003 sobre a decisão X11.
 
+Validação de aceite:
+
+- executada no Linux Mint em 25/07/2026;
+- ChatGPT e GitHub funcionaram simultaneamente dentro de painéis independentes;
+- a incorporação permaneceu funcional com a janela maximizada e restaurada;
+- o redimensionamento preservou os limites e o alinhamento dos painéis;
+- o painel Terminal permaneceu corretamente identificado como planejado.
+
 Limites da versão:
 
 - exige sessão com `DISPLAY`;
 - exige navegador Chromium compatível e `xdotool`;
 - não fornece backend nativo de Wayland;
-- persistência avançada de autenticação e sessões pertence ao futuro Session Engine;
-- a incorporação visual precisa ser validada no Linux Mint real.
+- persistência avançada de autenticação e sessões pertence ao futuro Session Engine.
 
 Rastreabilidade:
 
 - Linear: LEA-195;
-- GitHub: PR #5.
+- GitHub: PR #5;
+- validação real: Linux Mint/X11.

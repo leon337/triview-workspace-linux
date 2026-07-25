@@ -11,6 +11,7 @@ from triview_workspace.engines import (
     BrowserPanelAdapter,
     LayoutEngine,
     PanelRegistry,
+    PdfPanelAdapter,
     PlaceholderPanelAdapter,
     TerminalPanelAdapter,
     WorkspaceEngine,
@@ -22,36 +23,15 @@ DEFAULT_WORKSPACE = Path("config/workspaces/three-mobile.json")
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Abra ou inspecione um workspace do TriView.")
-    parser.add_argument(
-        "--workspace",
-        type=Path,
-        default=None,
-        help=(
-            "Arquivo JSON de workspace. Quando omitido, restaura o último workspace persistido."
-        ),
-    )
-    parser.add_argument(
-        "--data-file",
-        type=Path,
-        default=None,
-        help="Caminho alternativo para o catálogo persistente de workspaces.",
-    )
-    parser.add_argument(
-        "--diagnostic",
-        action="store_true",
-        help="Imprime o workspace calculado como JSON sem abrir a interface.",
-    )
+    parser.add_argument("--workspace", type=Path, default=None)
+    parser.add_argument("--data-file", type=Path, default=None)
+    parser.add_argument("--diagnostic", action="store_true")
     parser.add_argument("--width", type=int, default=1366)
     parser.add_argument("--height", type=int, default=768)
     return parser
 
 
-def resolve_workspace(
-    workspace_path: Path | None,
-    data_file: Path | None,
-):
-    """Resolve an explicit bundle or the last persisted workspace."""
-
+def resolve_workspace(workspace_path: Path | None, data_file: Path | None):
     seed_workspace, seed_layout = load_workspace_bundle(DEFAULT_WORKSPACE)
     repository = WorkspaceRepository(data_file)
     catalog = repository.load_or_bootstrap(seed_workspace, seed_layout)
@@ -74,11 +54,13 @@ def run_diagnostic(
         BrowserPanelAdapter(),
         ApplicationPanelAdapter(),
         TerminalPanelAdapter(),
+        PdfPanelAdapter(),
         PlaceholderPanelAdapter(),
     ):
         registry.register(adapter)
-    engine = WorkspaceEngine(LayoutEngine(), registry)
-    prepared = engine.prepare(workspace, layout, width, height)
+    prepared = WorkspaceEngine(LayoutEngine(), registry).prepare(
+        workspace, layout, width, height
+    )
     payload = {
         "schema_version": catalog.schema_version,
         "catalog_path": str(repository.path),

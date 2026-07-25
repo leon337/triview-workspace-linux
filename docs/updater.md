@@ -26,11 +26,26 @@ Após a migração, `scripts/update.sh`:
 4. instala em um novo diretório versionado;
 5. troca o link `current` somente depois do sucesso;
 6. recria o comando e o atalho gráfico principal;
-7. mantém dados e backups separados do código.
+7. mantém dados e backups separados do código;
+8. informa requisitos opcionais ausentes para o Browser Engine.
 
-## Correção da versão 0.1.1
+## Evolução da interface
 
-Na versão 0.1.1, o comando principal chamava a CLI de verificação, que imprimia JSON e encerrava. A versão 0.1.2 altera o comportamento padrão para abrir a GUI e preserva o diagnóstico apenas quando `--diagnostic` é informado.
+Na versão `0.1.1`, o comando principal chamava a CLI de verificação, que imprimia JSON e encerrava. A versão `0.1.2` alterou o comportamento padrão para abrir a GUI e preservou o diagnóstico apenas quando `--diagnostic` é informado.
+
+A versão `0.2.0` adiciona o primeiro Browser Engine. A atualização do código continua automática, mas o atualizador não instala pacotes do sistema sem autorização. Ao final, ele avisa quando não encontra:
+
+- `xdotool`;
+- Brave, Chromium ou Google Chrome compatível.
+
+No Linux Mint/Ubuntu, `xdotool` pode ser instalado com:
+
+```bash
+sudo apt update
+sudo apt install xdotool
+```
+
+A ausência desses componentes não invalida a atualização. A interface continua abrindo e apresenta o motivo pelo qual o painel navegador está indisponível.
 
 ## Restauração
 

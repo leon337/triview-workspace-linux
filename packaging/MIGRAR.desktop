@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Migrar TriView Workspace
+Comment=Instala a nova arquitetura com backup e preservação das URLs
+Exec=sh -c 'cd "$(dirname "$1")" && chmod +x ./migrar.sh ./restaurar.sh && ./migrar.sh; status=$?; printf "\nPressione Enter para fechar..."; read _; exit $status' dummy %k
+Icon=system-software-install
+Terminal=true
+Categories=Utility;Development;

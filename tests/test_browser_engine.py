@@ -16,8 +16,9 @@ from triview_workspace.engines import (
 
 
 class FakeBackend:
-    def __init__(self, *, available: bool = True) -> None:
+    def __init__(self, *, available: bool = True, fail_resize: bool = False) -> None:
         self.available = available
+        self.fail_resize = fail_resize
         self.launched: list[tuple[object, int]] = []
         self.resized: list[tuple[str, int, int]] = []
         self.closed: list[str] = []
@@ -44,6 +45,8 @@ class FakeBackend:
 
     def resize(self, session: BrowserSession, width: int, height: int) -> None:
         self.resized.append((session.panel_id, width, height))
+        if self.fail_resize:
+            raise RuntimeError("resize failed")
 
     def close(self, session: BrowserSession) -> None:
         self.closed.append(session.panel_id)
@@ -107,6 +110,28 @@ def test_browser_engine_manages_open_resize_reopen_and_close(tmp_path: Path) -> 
 
     engine.close_all()
     assert backend.closed == ["chatgpt", "chatgpt"]
+    assert not engine.has_session("chatgpt")
+
+
+def test_browser_engine_sanitizes_profile_and_window_tokens(tmp_path: Path) -> None:
+    backend = FakeBackend()
+    engine = BrowserEngine(backend, profile_root=tmp_path)
+
+    engine.open("../../painel especial", "example.com", 100, 320, 640)
+
+    request = backend.launched[-1][0]
+    assert getattr(request, "profile_dir") == tmp_path / "painel-especial"
+    assert getattr(request, "window_class") == "TriView-painel-especial"
+
+
+def test_browser_engine_closes_session_when_initial_resize_fails(tmp_path: Path) -> None:
+    backend = FakeBackend(fail_resize=True)
+    engine = BrowserEngine(backend, profile_root=tmp_path)
+
+    with pytest.raises(RuntimeError, match="resize failed"):
+        engine.open("chatgpt", "https://chatgpt.com", 100, 320, 640)
+
+    assert backend.closed == ["chatgpt"]
     assert not engine.has_session("chatgpt")
 
 

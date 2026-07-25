@@ -12,6 +12,8 @@ O núcleo gerencia **áreas de trabalho**, não navegadores. Navegadores e aplic
 ```text
 CLI / Interface gráfica
           ↓
+Workspace Session Engine ──→ Workspace Repository ──→ catálogo JSON versionado
+          ↓
 Workspace Engine
    ├── Layout Engine
    └── Panel Registry
@@ -19,50 +21,67 @@ Workspace Engine
           ├── Application Adapter                 [planejado]
           ├── Terminal Adapter                    [planejado]
           └── futuros adaptadores
-          ↓
-Configuração, persistência e integrações do sistema operacional
 ```
 
 ## Responsabilidades
 
+### Workspace Session Engine
+
+Mantém o workspace ativo, alterna entre itens persistidos e executa operações de criar por cópia, renomear, editar, excluir e selecionar layout. Não conhece Tkinter nem o formato do arquivo.
+
+### Workspace Repository
+
+Armazena workspaces, layouts e o identificador ativo em um catálogo com `schema_version`. Usa gravação atômica, migra o bundle legado e preserva arquivos corrompidos antes do fallback.
+
 ### Workspace Engine
 
-Orquestra a preparação de um workspace, verifica a compatibilidade entre workspace e layout e associa cada painel ao adaptador apropriado.
+Orquestra a preparação de um workspace, verifica compatibilidade com o layout e associa cada painel ao adaptador apropriado.
 
 ### Layout Engine
 
-Recebe regiões normalizadas entre `0` e `1` e calcula os retângulos em pixels para a dimensão atual da janela. Uma região pode preservar uma proporção visual, como `9:19,5`, sem depender de coordenadas fixas.
+Converte regiões normalizadas em retângulos de pixels para a dimensão atual da janela.
 
 ### Panel Registry
 
-O `PanelRegistry` desacopla o domínio das tecnologias de incorporação. O Browser Adapter já está implementado; adaptadores futuros podem ser adicionados sem modificar os modelos centrais.
+Desacopla o domínio das tecnologias de incorporação. O Browser Adapter está implementado e os demais permanecem planejados.
 
 ### Browser Engine
 
-Gerencia disponibilidade, abertura, redimensionamento e encerramento de sessões web. A implementação inicial utiliza um backend X11 separado, mantendo comandos de Brave/Chromium e `xdotool` fora do domínio, do Layout Engine e do Workspace Engine.
+Gerencia disponibilidade, abertura, redimensionamento e encerramento de sessões web. A implementação inicial usa um backend X11 separado.
 
 ### Capture Engine
 
-Reservado para uma tarefa posterior. A captura deverá receber a identidade e os limites do painel e produzir print ou gravação somente daquela área.
+Reservado para tarefa posterior. Deverá produzir print ou gravação somente do painel solicitado.
+
+## Persistência e atualização
+
+O catálogo padrão fica em:
+
+```text
+~/.local/share/triview-workspace/workspaces.json
+```
+
+ou sob `XDG_DATA_HOME`. O atualizador troca apenas o diretório da versão ativa, portanto o catálogo persiste entre releases. Consulte a [ADR-0004](../decisions/ADR-0004-versioned-workspace-catalog.md).
 
 ## Estado da implementação
 
-- Workspace Engine: fundação implementada.
-- Layout Engine: implementado e usado pela GUI.
-- Panel Registry: implementado com Browser Adapter e fallback placeholder.
-- Interface gráfica: Browser Engine inicial integrado na versão `0.2.0`.
-- Browser Engine: implementado inicialmente para sessões X11 compatíveis.
-- Application, Session, Capture e Plugin Engines: planejados.
+- Workspace Engine: implementado.
+- Workspace Session Engine: implementado na `0.3.0`.
+- Workspace Repository: implementado na `0.3.0`.
+- Layout Engine: implementado.
+- Panel Registry: Browser Adapter e fallback placeholder implementados.
+- Interface gráfica: gerenciamento persistente integrado na `0.3.0`.
+- Browser Engine: implementado e validado em X11.
+- Application, Capture e Plugin Engines: planejados.
 - Backend nativo de Wayland: planejado.
-
-Consulte [Responsabilidades dos Engines](ENGINES.md) para a separação completa entre componentes implementados e planejados.
 
 ## Regras de evolução
 
 1. Nenhum painel conhece detalhes do gerenciador de janelas.
 2. Nenhum layout executa aplicações.
-3. Adaptadores não controlam o armazenamento de workspaces.
-4. Backends de sistema operacional implementam contratos neutros.
-5. Captura e gravação serão serviços independentes.
-6. Formatos persistidos devem ser versionados antes de mudanças incompatíveis.
-7. Integrações específicas de X11, Wayland, navegador ou terminal permanecem atrás de adaptadores ou backends.
+3. A interface usa Engines e não grava JSON diretamente.
+4. O Session Engine não conhece widgets gráficos.
+5. Persistência não conhece Tkinter.
+6. Adaptadores não controlam o armazenamento de workspaces.
+7. Backends de sistema operacional implementam contratos neutros.
+8. Formatos persistidos devem ser versionados antes de mudanças incompatíveis.

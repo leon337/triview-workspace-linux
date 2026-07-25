@@ -185,7 +185,14 @@ class BrowserEngine:
             self._backend.close(previous)
 
         session = self._backend.launch(request, parent_window_id)
-        self._backend.resize(session, width, height)
+        try:
+            self._backend.resize(session, width, height)
+        except Exception:
+            try:
+                self._backend.close(session)
+            finally:
+                raise
+
         with self._lock:
             self._sessions[panel_id] = session
         return session
@@ -219,6 +226,21 @@ class X11BraveBrowserBackend:
     def __init__(self, launch_timeout: float = 15.0) -> None:
         self._launch_timeout = launch_timeout
 
+    @staticmethod
+    def _browser_command() -> str | None:
+        configured = os.environ.get("TRIVIEW_BROWSER")
+        browser = shutil.which(configured) if configured else None
+        if browser is not None:
+            return browser
+        return next(
+            (resolved for candidate in _BROWSER_CANDIDATES if (resolved := shutil.which(candidate))),
+            None,
+        )
+
+    @staticmethod
+    def _xdotool_command() -> str | None:
+        return shutil.which("xdotool")
+
     def availability(self) -> BrowserBackendAvailability:
         if not os.environ.get("DISPLAY"):
             return BrowserBackendAvailability(
@@ -226,20 +248,14 @@ class X11BraveBrowserBackend:
                 "A incorporação do navegador exige uma sessão gráfica X11 com DISPLAY disponível.",
             )
 
-        configured = os.environ.get("TRIVIEW_BROWSER")
-        browser = shutil.which(configured) if configured else None
-        if browser is None:
-            browser = next(
-                (resolved for candidate in _BROWSER_CANDIDATES if (resolved := shutil.which(candidate))),
-                None,
-            )
+        browser = self._browser_command()
         if browser is None:
             return BrowserBackendAvailability(
                 False,
                 "Brave ou outro navegador Chromium compatível não foi encontrado no sistema.",
             )
 
-        xdotool = shutil.which("xdotool")
+        xdotool = self._xdotool_command()
         if xdotool is None:
             return BrowserBackendAvailability(
                 False,
@@ -293,7 +309,7 @@ class X11BraveBrowserBackend:
             )
             self._run_xdotool(availability.xdotool_command, "windowmap", window_id)
         except Exception:
-            process.terminate()
+            self._terminate_process(process)
             raise
 
         return BrowserSession(
@@ -307,20 +323,17 @@ class X11BraveBrowserBackend:
     def resize(self, session: BrowserSession, width: int, height: int) -> None:
         if not session.window_id:
             return
-        availability = self.availability()
-        if not availability.xdotool_command:
-            return
+        xdotool = self._xdotool_command()
+        if xdotool is None:
+            raise BrowserBackendUnavailable(
+                "O xdotool deixou de estar disponível durante a sessão do navegador."
+            )
+
         safe_width = max(1, int(width))
         safe_height = max(1, int(height))
+        self._run_xdotool(xdotool, "windowmove", session.window_id, "0", "0")
         self._run_xdotool(
-            availability.xdotool_command,
-            "windowmove",
-            session.window_id,
-            "0",
-            "0",
-        )
-        self._run_xdotool(
-            availability.xdotool_command,
+            xdotool,
             "windowsize",
             session.window_id,
             str(safe_width),
@@ -328,24 +341,15 @@ class X11BraveBrowserBackend:
         )
 
     def close(self, session: BrowserSession) -> None:
-        availability = self.availability()
-        if session.window_id and availability.xdotool_command:
+        xdotool = self._xdotool_command()
+        if session.window_id and xdotool:
             try:
-                self._run_xdotool(
-                    availability.xdotool_command,
-                    "windowclose",
-                    session.window_id,
-                )
+                self._run_xdotool(xdotool, "windowclose", session.window_id)
             except BrowserLaunchError:
                 LOGGER.warning("Unable to request X11 close for panel %s", session.panel_id)
 
-        process = session.process
-        if process is not None and process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                process.kill()
+        if session.process is not None:
+            self._terminate_process(session.process)
 
     def _wait_for_window(
         self,
@@ -354,13 +358,14 @@ class X11BraveBrowserBackend:
         process: subprocess.Popen[bytes],
     ) -> str:
         deadline = time.monotonic() + self._launch_timeout
-        while time.monotonic() < deadline:
-            if process.poll() is not None:
-                raise BrowserLaunchError(
-                    "O navegador encerrou antes que sua janela pudesse ser incorporada."
-                )
+        exit_code: int | None = None
 
-            for selector in ("--classname", "--name"):
+        while time.monotonic() < deadline:
+            current_exit = process.poll()
+            if current_exit is not None:
+                exit_code = current_exit
+
+            for selector in ("--class", "--classname", "--name"):
                 result = subprocess.run(  # noqa: S603
                     [xdotool, "search", "--onlyvisible", selector, window_class],
                     capture_output=True,
@@ -373,9 +378,24 @@ class X11BraveBrowserBackend:
                     return window_ids[-1]
             time.sleep(0.2)
 
+        if exit_code is not None:
+            raise BrowserLaunchError(
+                "A janela do navegador não foi localizada. "
+                f"O processo inicial encerrou com código {exit_code}."
+            )
         raise BrowserLaunchError(
             "O navegador abriu, mas a janela X11 não foi localizada para incorporação no painel."
         )
+
+    @staticmethod
+    def _terminate_process(process: subprocess.Popen[bytes]) -> None:
+        if process.poll() is not None:
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.kill()
 
     @staticmethod
     def _run_xdotool(xdotool: str, *arguments: str) -> None:

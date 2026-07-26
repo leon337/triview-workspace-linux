@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "channel": "testing",
+  "enabled": true,
+  "candidate_id": "LEA-197",
+  "version": "0.4.0",
+  "ref": "c63855c2ffeea6f1492513f7af160b8f27d7cd1f",
+  "module": "triview_workspace.cli",
+  "status": "awaiting-linux-mint-acceptance"
+}

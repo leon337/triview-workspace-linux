@@ -6,16 +6,17 @@ O produto gerencia **workspaces compostos por painéis independentes**. Navegado
 
 ## Estado atual
 
-- Versão funcional: `0.3.0`.
+- Versão funcional estável: `0.3.1`.
 - Interface gráfica responsiva: disponível.
 - Browser Engine: validado no Linux Mint/X11.
 - Workspaces persistentes: disponíveis.
 - Criação, cópia, edição, renomeação, seleção e exclusão: disponíveis.
 - Restauração automática do último workspace: disponível.
 - Migração, backup, restauração e atualização versionada: disponíveis.
-- Application Engine, captura, gravação e plugins: planejados.
+- Canal controlado de testes: preparado e fixado inicialmente na LEA-197.
+- Application Engine, captura, gravação e plugins: permanecem fora da `main` até o aceite sequencial.
 
-A versão `0.3.0` mantém um catálogo versionado em `~/.local/share/triview-workspace/workspaces.json` ou no diretório indicado por `XDG_DATA_HOME`. Alterações são gravadas de forma atômica e sobrevivem às atualizações, porque ficam separadas dos diretórios versionados do código.
+A versão `0.3.1` mantém o comportamento funcional da `0.3.0` e corrige o atualizador. O catálogo versionado continua em `~/.local/share/triview-workspace/workspaces.json` ou no diretório indicado por `XDG_DATA_HOME`. Alterações são gravadas de forma atômica e sobrevivem às atualizações, porque ficam separadas dos diretórios versionados do código.
 
 ## Gerenciar workspaces
 
@@ -78,37 +79,4 @@ triview-workspace --data-file /tmp/triview-workspaces.json
 
 - [Índice central](docs/README.md)
 - [Visão do produto](docs/product/VISION.md)
-- [Roadmap](docs/product/ROADMAP.md)
-- [Histórico de versões](docs/product/RELEASE_HISTORY.md)
-- [Arquitetura](docs/architecture/README.md)
-- [Responsabilidades dos Engines](docs/architecture/ENGINES.md)
-- [Manual da Fábrica de Softwares](docs/factory/SOFTWARE_FACTORY_WORKFLOW.md)
-
-## Estrutura
-
-```text
-src/triview_workspace/
-├── domain/
-├── engines/
-│   ├── browser.py
-│   ├── layout.py
-│   ├── panels.py
-│   ├── session.py
-│   └── workspace.py
-├── infrastructure/
-│   ├── config.py
-│   └── persistence.py
-├── gui.py
-├── gui_model.py
-├── migration.py
-└── cli.py
-```
-
-## Rastreabilidade
-
-- Fundação modular: LEA-191 / PR #1.
-- Migração segura: LEA-192 / PR #2.
-- Interface gráfica inicial: LEA-193 / PR #3.
-- Documentação estratégica: LEA-194 / PR #4.
-- Primeiro Browser Engine funcional: LEA-195 / PR #5.
-- Workspaces persistentes: LEA-196.
+- [Estratégia de atualização](docs/updater.md)

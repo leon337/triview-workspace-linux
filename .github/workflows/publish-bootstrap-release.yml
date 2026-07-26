@@ -1,0 +1,60 @@
+name: Publish bootstrap release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+      - "scripts/update.sh"
+      - ".github/workflows/publish-bootstrap-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          version="$(python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          text = Path('pyproject.toml').read_text(encoding='utf-8')
+          match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+          if not match:
+              raise SystemExit('version not found')
+          print(match.group(1))
+          PY
+          )"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Validate bootstrap
+        shell: bash
+        run: |
+          bash -n scripts/update.sh
+          python3 -m compileall -q src tests
+
+      - name: Publish release when absent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; nothing to do."
+            exit 0
+          fi
+
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title "TriView Workspace $VERSION" \
+            --notes "Bootstrap oficial do atualizador. Mantém o resultado visível, grava log e preserva o fluxo de testes sequenciais antes da LEA-197."

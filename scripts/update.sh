@@ -70,18 +70,46 @@ install_persistent_updater() {
   run mkdir -p "$UPDATER_ROOT" "$HOME/.local/bin" "$applications_dir"
   if ((DRY_RUN)); then
     log "O controlador persistente seria instalado em $target_script"
-  else
-    if [[ "$source_script" != "$target_script" ]] && ! cmp -s "$source_script" "$target_script" 2>/dev/null; then
-      cp -a "$source_script" "$target_script"
-    fi
-    chmod +x "$target_script"
-    cat > "$launcher" <<LAUNCHER
+    log "O resultado seria mantido na tela e salvo em log."
+    return
+  fi
+
+  if [[ "$source_script" != "$target_script" ]] \
+    && ! cmp -s "$source_script" "$target_script" 2>/dev/null; then
+    cp -a "$source_script" "$target_script"
+  fi
+  chmod +x "$target_script"
+
+  cat > "$launcher" <<LAUNCHER
 #!/usr/bin/env bash
-set -Eeuo pipefail
-exec "$target_script" "\$@"
+set -uo pipefail
+STATE_ROOT="\${XDG_STATE_HOME:-\$HOME/.local/state}/triview-workspace"
+mkdir -p "\$STATE_ROOT"
+timestamp="\$(date +%Y%m%d-%H%M%S)"
+LOG_FILE="\$STATE_ROOT/update-\$timestamp.log"
+
+set +e
+"$target_script" "\$@" 2>&1 | tee -a "\$LOG_FILE"
+status=\${PIPESTATUS[0]}
+set -e
+
+printf '\n============================================================\n'
+if ((status == 0)); then
+  printf 'ATUALIZAÇÃO FINALIZADA COM SUCESSO.\n'
+else
+  printf 'A ATUALIZAÇÃO TERMINOU COM ERRO (código %s).\n' "\$status"
+fi
+printf 'Log salvo em: %s\n' "\$LOG_FILE"
+printf '============================================================\n\n'
+
+if [[ "\${TRIVIEW_NO_PAUSE:-0}" != "1" && -t 0 ]]; then
+  read -r -p 'Pressione ENTER para fechar esta janela... ' _ || true
+fi
+exit "\$status"
 LAUNCHER
-    chmod +x "$launcher"
-    cat > "$desktop" <<DESKTOP
+  chmod +x "$launcher"
+
+  cat > "$desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=Atualizar TriView Workspace
@@ -90,9 +118,8 @@ Icon=system-software-update
 Terminal=true
 Categories=Utility;Development;
 DESKTOP
-    chmod +x "$desktop"
-    update-desktop-database "$applications_dir" >/dev/null 2>&1 || true
-  fi
+  chmod +x "$desktop"
+  update-desktop-database "$applications_dir" >/dev/null 2>&1 || true
 }
 
 read_testing_manifest() {
@@ -143,7 +170,8 @@ mkdir -p "$APP_ROOT/releases" "$BACKUP_ROOT" "$DATA_DIR"
 timestamp="$(date +%Y%m%d-%H%M%S)"
 backup_dir="$BACKUP_ROOT/update-$timestamp"
 tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
+cleanup() { rm -rf "$tmp_dir"; }
+trap cleanup EXIT
 
 TARGET_ID="stable"
 EXPECTED_VERSION=""
@@ -279,7 +307,7 @@ printf '%s\n' "$version" > "$APP_ROOT/VERSION"
 printf '%s\n' "$CHANNEL" > "$CHANNEL_FILE"
 
 BIN_DIR="$HOME/.local/bin"
-APPLICATIONS_DIR="$HOME/.local/share/applications"
+APPLICATIONS_DIR="$HOME/.local/applications"
 mkdir -p "$BIN_DIR" "$APPLICATIONS_DIR"
 cat > "$BIN_DIR/triview-workspace" <<LAUNCHER
 #!/usr/bin/env bash

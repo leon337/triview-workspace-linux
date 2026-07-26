@@ -10,15 +10,31 @@ import shutil
 import subprocess
 import time
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
-from typing import Protocol, Sequence
+from threading import RLock
+from typing import Callable, ParamSpec, Protocol, Sequence, TypeVar
 
 LOGGER = logging.getLogger(__name__)
+_X11_LAUNCH_LOCK = RLock()
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 _PARENT_WINDOW_PATTERN = re.compile(
     r"Parent window id:\s*(0x[0-9A-Fa-f]+|[0-9]+)",
     re.IGNORECASE,
 )
 _MAP_STATE_PATTERN = re.compile(r"Map State:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
+
+
+def _serialized_x11_launch(function: Callable[_P, _R]) -> Callable[_P, _R]:
+    """Serialize X11 discovery so simultaneous panels cannot capture each other."""
+
+    @wraps(function)
+    def wrapped(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        with _X11_LAUNCH_LOCK:
+            return function(*args, **kwargs)
+
+    return wrapped
 
 
 class PanelRuntimeError(RuntimeError):
@@ -249,6 +265,7 @@ class X11PanelRuntimeBackend:
             xwininfo_command=xwininfo,
         )
 
+    @_serialized_x11_launch
     def launch(
         self,
         request: PanelRuntimeLaunchRequest,
@@ -488,7 +505,17 @@ class X11PanelRuntimeBackend:
                 unowned_hinted.append(window_id)
 
         add(family_hinted)
-        add(unowned_hinted)
+        if ordered:
+            return ordered
+
+        unique_unowned = list(dict.fromkeys(unowned_hinted))
+        if len(unique_unowned) == 1:
+            add(unique_unowned)
+        elif len(unique_unowned) > 1:
+            LOGGER.warning(
+                "Ignoring %s ambiguous new X11 windows without PID metadata.",
+                len(unique_unowned),
+            )
         return ordered
 
     def _embed_window(
@@ -534,7 +561,8 @@ class X11PanelRuntimeBackend:
         return False
 
     def _visible_window_ids(self, xdotool: str) -> set[str]:
-        return set(self._search_windows(xdotool, "--name", ".*"))
+        # Snapshot all existing windows, including hidden ones that could become visible later.
+        return set(self._search_windows(xdotool, "--name", ".*", only_visible=False))
 
     def _process_family(self, root_pid: int) -> set[int]:
         result = subprocess.run(  # noqa: S603
@@ -548,9 +576,20 @@ class X11PanelRuntimeBackend:
             return {int(root_pid)}
         return descendant_process_ids(root_pid, parse_process_table(result.stdout))
 
-    def _search_windows(self, xdotool: str, selector: str, value: str) -> list[str]:
+    def _search_windows(
+        self,
+        xdotool: str,
+        selector: str,
+        value: str,
+        *,
+        only_visible: bool = True,
+    ) -> list[str]:
+        arguments = [xdotool, "search"]
+        if only_visible:
+            arguments.append("--onlyvisible")
+        arguments.extend((selector, value))
         result = subprocess.run(  # noqa: S603
-            [xdotool, "search", "--onlyvisible", selector, value],
+            arguments,
             capture_output=True,
             text=True,
             check=False,

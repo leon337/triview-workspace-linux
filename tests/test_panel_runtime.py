@@ -161,7 +161,57 @@ def test_candidate_windows_ignore_preexisting_and_unrelated_windows(
         {"9", "10"},
     )
 
-    assert candidates == ["11", "13"]
+    assert candidates == ["11"]
+
+
+def test_ambiguous_unowned_hint_windows_are_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = X11PanelRuntimeBackend()
+
+    def fake_search(
+        _xdotool: str,
+        selector: str,
+        _value: str,
+        **_kwargs: object,
+    ) -> list[str]:
+        if selector == "--pid":
+            return []
+        return ["20", "21"]
+
+    monkeypatch.setattr(backend, "_search_windows", fake_search)
+    monkeypatch.setattr(backend, "_window_pid", lambda *_args: None)
+
+    candidates = backend._candidate_window_ids(
+        "/usr/bin/xdotool",
+        {100},
+        ("demo",),
+        set(),
+    )
+
+    assert candidates == []
+
+
+def test_prelaunch_snapshot_includes_hidden_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = X11PanelRuntimeBackend()
+    calls: list[bool] = []
+
+    def fake_search(
+        _xdotool: str,
+        _selector: str,
+        _value: str,
+        *,
+        only_visible: bool = True,
+    ) -> list[str]:
+        calls.append(only_visible)
+        return ["10"]
+
+    monkeypatch.setattr(backend, "_search_windows", fake_search)
+
+    assert backend._visible_window_ids("xdotool") == {"10"}
+    assert calls == [False]
 
 
 def test_embedding_retries_until_parent_is_stable(

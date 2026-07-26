@@ -19,5 +19,7 @@ jobs:
           python -m pip install -e '.[dev]'
       - name: Compile
         run: python -m compileall -q src tests
+      - name: Validate shell scripts
+        run: bash -n scripts/*.sh packaging/*.sh
       - name: Tests
         run: pytest

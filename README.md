@@ -6,7 +6,7 @@ O produto gerencia **workspaces compostos por painéis independentes**. Navegado
 
 ## Estado atual
 
-- Versão funcional estável: `0.3.2`.
+- Versão funcional estável: `0.3.3`.
 - Interface gráfica responsiva: disponível.
 - Browser Engine: validado no Linux Mint/X11.
 - Workspaces persistentes: disponíveis.
@@ -14,10 +14,11 @@ O produto gerencia **workspaces compostos por painéis independentes**. Navegado
 - Restauração automática do último workspace: disponível.
 - Migração, backup, restauração e atualização versionada: disponíveis.
 - Canal controlado de testes: preparado e fixado inicialmente na LEA-197.
-- Resultado do atualizador: mantido na tela até confirmação e salvo em arquivo de log.
+- Resultado do atualizador: exibido em caixa gráfica, salvo em log e mantido no Terminal quando aplicável.
+- Atalhos antigos da Área de Trabalho: substituídos automaticamente pela versão canônica.
 - Application Engine, captura, gravação e plugins: permanecem fora da `main` até o aceite sequencial.
 
-A versão `0.3.2` mantém o comportamento funcional da `0.3.0`, preserva o canal controlado introduzido na `0.3.1` e corrige o encerramento automático da janela do atualizador. O catálogo versionado continua em `~/.local/share/triview-workspace/workspaces.json` ou no diretório indicado por `XDG_DATA_HOME`.
+A versão `0.3.3` mantém o comportamento funcional da `0.3.0`, preserva o canal controlado introduzido na `0.3.1` e corrige a distribuição do atualizador em atalhos antigos da Área de Trabalho. O catálogo versionado continua em `~/.local/share/triview-workspace/workspaces.json` ou no diretório indicado por `XDG_DATA_HOME`.
 
 ## Gerenciar workspaces
 

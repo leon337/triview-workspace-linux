@@ -3,8 +3,8 @@
   "channel": "testing",
   "enabled": true,
   "candidate_id": "LEA-197",
-  "version": "0.3.2",
-  "ref": "f64819fc35f1ceba82c1a4e1dd9911b53480a6f9",
+  "version": "0.3.3",
+  "ref": "c662c36cc46a5ca7bd69eeca0ed1e08d14138ce7",
   "module": "triview_workspace.cli",
-  "status": "updater-result-hotfix"
+  "status": "updater-desktop-shortcut-hotfix"
 }

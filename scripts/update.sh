@@ -5,15 +5,17 @@ REPO="${TRIVIEW_REPO:-leon337/triview-workspace-linux}"
 APP_ROOT="${TRIVIEW_APP_ROOT:-$HOME/.local/share/triview-workspace}"
 BACKUP_ROOT="${TRIVIEW_BACKUP_ROOT:-$HOME/.local/share/triview-workspace-backups}"
 DATA_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}"
+STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/triview-workspace"
 CATALOG_FILE="${TRIVIEW_DATA_FILE:-$DATA_ROOT/triview-workspace/workspaces.json}"
 CURRENT_LINK="$APP_ROOT/current"
-DATA_DIR="$APP_ROOT/data"
 UPDATER_ROOT="$APP_ROOT/updater"
 CHANNEL_FILE="$APP_ROOT/UPDATE_CHANNEL"
 ACTIVE_CANDIDATE_FILE="$APP_ROOT/ACTIVE-CANDIDATE.json"
 TEST_MANIFEST_URL="${TRIVIEW_TEST_MANIFEST_URL:-https://raw.githubusercontent.com/$REPO/main/config/update-channels/testing.json}"
 DRY_RUN=0
 CHANNEL_OVERRIDE=""
+TMP_DIR=""
+RESULT_SUMMARY="Atualização encerrada."
 
 while (($#)); do
   case "$1" in
@@ -29,7 +31,7 @@ while (($#)); do
 done
 
 log() { printf '[TriView Updater] %s\n' "$*"; }
-fail() { log "ERRO: $*" >&2; exit 1; }
+fail() { RESULT_SUMMARY="$*"; log "ERRO: $*" >&2; exit 1; }
 run() {
   if ((DRY_RUN)); then
     printf '[DRY-RUN]'; printf ' %q' "$@"; printf '\n'
@@ -37,6 +39,51 @@ run() {
     "$@"
   fi
 }
+
+show_direct_result() {
+  local status="$1"
+  local title text icon
+
+  ((DRY_RUN)) && return 0
+  [[ "${TRIVIEW_UPDATER_WRAPPED:-0}" == "1" ]] && return 0
+  [[ "${TRIVIEW_NO_RESULT_UI:-0}" == "1" ]] && return 0
+
+  if ((status == 0)); then
+    title="TriView Workspace — atualização concluída"
+    text="A atualização foi concluída com sucesso.\n\n$RESULT_SUMMARY"
+    icon="--info"
+  else
+    title="TriView Workspace — erro na atualização"
+    text="A atualização terminou com erro (código $status).\n\n$RESULT_SUMMARY"
+    icon="--error"
+  fi
+
+  printf '\n============================================================\n'
+  printf '%s\n' "$title"
+  printf '%b\n' "$text"
+  printf '============================================================\n\n'
+
+  if command -v zenity >/dev/null 2>&1 \
+    && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+    zenity "$icon" --title="$title" --text="$text" --width=520 >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  if [[ -t 0 ]]; then
+    read -r -p 'Pressione ENTER para fechar esta janela... ' _ || true
+  elif [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+    sleep 20
+  fi
+}
+
+finish() {
+  local status=$?
+  trap - EXIT
+  [[ -n "$TMP_DIR" ]] && rm -rf "$TMP_DIR"
+  show_direct_result "$status"
+  exit "$status"
+}
+trap finish EXIT
 
 for command in curl tar python3; do
   command -v "$command" >/dev/null 2>&1 || fail "$command não encontrado."
@@ -59,6 +106,67 @@ CHANNEL="$(resolve_channel)"
 [[ "$CHANNEL" == "stable" || "$CHANNEL" == "testing" ]] \
   || fail "Canal inválido: $CHANNEL"
 
+write_update_desktop_entry() {
+  local output_file="$1"
+  local launcher="$2"
+  local terminal_exec terminal_flag
+
+  if command -v x-terminal-emulator >/dev/null 2>&1; then
+    terminal_exec="$(command -v x-terminal-emulator) -e $launcher"
+    terminal_flag="false"
+  elif command -v gnome-terminal >/dev/null 2>&1; then
+    terminal_exec="$(command -v gnome-terminal) -- $launcher"
+    terminal_flag="false"
+  else
+    terminal_exec="$launcher"
+    terminal_flag="true"
+  fi
+
+  cat > "$output_file" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Atualizar TriView Workspace
+Comment=Atualiza o TriView Workspace com backup e validação
+Exec=$terminal_exec
+Icon=system-software-update
+Terminal=$terminal_flag
+Categories=Utility;Development;
+StartupNotify=true
+DESKTOP
+  chmod +x "$output_file"
+}
+
+refresh_desktop_copies() {
+  local source_desktop="$1"
+  local detected=""
+  local directory file canonical
+  local -a desktop_dirs=()
+
+  if command -v xdg-user-dir >/dev/null 2>&1; then
+    detected="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
+    [[ -n "$detected" ]] && desktop_dirs+=("$detected")
+  fi
+  desktop_dirs+=("$HOME/Desktop" "$HOME/Área de Trabalho" "$HOME/Área de trabalho")
+
+  for directory in "${desktop_dirs[@]}"; do
+    [[ -d "$directory" ]] || continue
+    canonical="$directory/Atualizar TriView Workspace.desktop"
+    cp -f "$source_desktop" "$canonical"
+    chmod +x "$canonical"
+    command -v gio >/dev/null 2>&1 \
+      && gio set "$canonical" metadata::trusted true >/dev/null 2>&1 || true
+
+    while IFS= read -r -d '' file; do
+      if grep -Eq '^Name=Atualizar TriView Workspace$|triview-workspace.*update|scripts/update\.sh' "$file" 2>/dev/null; then
+        cp -f "$source_desktop" "$file"
+        chmod +x "$file"
+        command -v gio >/dev/null 2>&1 \
+          && gio set "$file" metadata::trusted true >/dev/null 2>&1 || true
+      fi
+    done < <(find "$directory" -maxdepth 1 -type f -name '*.desktop' -print0 2>/dev/null)
+  done
+}
+
 install_persistent_updater() {
   local source_script target_script launcher applications_dir desktop
   source_script="$(readlink -f "${BASH_SOURCE[0]}")"
@@ -67,10 +175,11 @@ install_persistent_updater() {
   applications_dir="$HOME/.local/share/applications"
   desktop="$applications_dir/triview-workspace-update.desktop"
 
-  run mkdir -p "$UPDATER_ROOT" "$HOME/.local/bin" "$applications_dir"
+  run mkdir -p "$UPDATER_ROOT" "$HOME/.local/bin" "$applications_dir" "$STATE_ROOT"
   if ((DRY_RUN)); then
     log "O controlador persistente seria instalado em $target_script"
-    log "O resultado seria mantido na tela e salvo em log."
+    log "O atalho antigo da Área de Trabalho seria substituído."
+    log "O resultado seria exibido em janela gráfica e salvo em log."
     return
   fi
 
@@ -89,37 +198,45 @@ timestamp="\$(date +%Y%m%d-%H%M%S)"
 LOG_FILE="\$STATE_ROOT/update-\$timestamp.log"
 
 set +e
-"$target_script" "\$@" 2>&1 | tee -a "\$LOG_FILE"
+TRIVIEW_UPDATER_WRAPPED=1 "$target_script" "\$@" 2>&1 | tee -a "\$LOG_FILE"
 status=\${PIPESTATUS[0]}
 set -e
 
 printf '\n============================================================\n'
 if ((status == 0)); then
+  title='TriView Workspace — atualização concluída'
+  text="A atualização foi concluída com sucesso.\\n\\nLog: \$LOG_FILE"
   printf 'ATUALIZAÇÃO FINALIZADA COM SUCESSO.\n'
 else
+  title='TriView Workspace — erro na atualização'
+  text="A atualização terminou com erro (código \$status).\\n\\nLog: \$LOG_FILE"
   printf 'A ATUALIZAÇÃO TERMINOU COM ERRO (código %s).\n' "\$status"
 fi
 printf 'Log salvo em: %s\n' "\$LOG_FILE"
 printf '============================================================\n\n'
 
-if [[ "\${TRIVIEW_NO_PAUSE:-0}" != "1" && -t 0 ]]; then
-  read -r -p 'Pressione ENTER para fechar esta janela... ' _ || true
+if command -v zenity >/dev/null 2>&1 && [[ -n "\${DISPLAY:-}\${WAYLAND_DISPLAY:-}" ]]; then
+  if ((status == 0)); then
+    zenity --info --title="\$title" --text="\$text" --width=520 >/dev/null 2>&1 || true
+  else
+    zenity --error --title="\$title" --text="\$text" --width=520 >/dev/null 2>&1 || true
+  fi
+fi
+
+if [[ "\${TRIVIEW_NO_PAUSE:-0}" != "1" ]]; then
+  if [[ -t 0 ]]; then
+    read -r -p 'Pressione ENTER para fechar esta janela... ' _ || true
+  elif [[ -n "\${DISPLAY:-}\${WAYLAND_DISPLAY:-}" ]]; then
+    sleep 20
+  fi
 fi
 exit "\$status"
 LAUNCHER
   chmod +x "$launcher"
 
-  cat > "$desktop" <<DESKTOP
-[Desktop Entry]
-Type=Application
-Name=Atualizar TriView Workspace
-Exec=$launcher
-Icon=system-software-update
-Terminal=true
-Categories=Utility;Development;
-DESKTOP
-  chmod +x "$desktop"
+  write_update_desktop_entry "$desktop" "$launcher"
   update-desktop-database "$applications_dir" >/dev/null 2>&1 || true
+  refresh_desktop_copies "$desktop"
 }
 
 read_testing_manifest() {
@@ -166,12 +283,10 @@ for key in ("candidate_id", "version", "ref", "module", "status"):
 PY
 }
 
-mkdir -p "$APP_ROOT/releases" "$BACKUP_ROOT" "$DATA_DIR"
+mkdir -p "$APP_ROOT/releases" "$BACKUP_ROOT" "$STATE_ROOT"
 timestamp="$(date +%Y%m%d-%H%M%S)"
 backup_dir="$BACKUP_ROOT/update-$timestamp"
-tmp_dir="$(mktemp -d)"
-cleanup() { rm -rf "$tmp_dir"; }
-trap cleanup EXIT
+TMP_DIR="$(mktemp -d)"
 
 TARGET_ID="stable"
 EXPECTED_VERSION=""
@@ -181,7 +296,7 @@ TARGET_STATUS="stable"
 archive_url=""
 
 if [[ "$CHANNEL" == "testing" ]]; then
-  manifest_file="$tmp_dir/testing.json"
+  manifest_file="$TMP_DIR/testing.json"
   if [[ -n "${TRIVIEW_TEST_MANIFEST_FILE:-}" ]]; then
     cp -a "$TRIVIEW_TEST_MANIFEST_FILE" "$manifest_file"
   else
@@ -214,7 +329,8 @@ raise SystemExit(0 if data.get("ref") == sys.argv[2] else 1)
 PY
   then
     install_persistent_updater
-    log "$TARGET_ID já está ativo neste computador. Nenhuma alteração foi feita."
+    RESULT_SUMMARY="$TARGET_ID já está ativo. O atalho foi corrigido."
+    log "$TARGET_ID já está ativo neste computador. Nenhuma reinstalação foi feita."
     exit 0
   fi
 else
@@ -248,9 +364,9 @@ if [[ -f "$CATALOG_FILE" ]]; then
 fi
 
 log "Baixando atualização do canal $CHANNEL..."
-run curl -fL "$archive_url" -o "$tmp_dir/source.tar.gz"
-run mkdir -p "$tmp_dir/extracted"
-run tar -xzf "$tmp_dir/source.tar.gz" -C "$tmp_dir/extracted" --strip-components=1
+run curl -fL "$archive_url" -o "$TMP_DIR/source.tar.gz"
+run mkdir -p "$TMP_DIR/extracted"
+run tar -xzf "$TMP_DIR/source.tar.gz" -C "$TMP_DIR/extracted" --strip-components=1
 
 if ((DRY_RUN)); then
   install_persistent_updater
@@ -258,10 +374,10 @@ if ((DRY_RUN)); then
   exit 0
 fi
 
-[[ -f "$tmp_dir/extracted/pyproject.toml" ]] || fail "Pacote baixado inválido."
-[[ -d "$tmp_dir/extracted/src/triview_workspace" ]] || fail "Código da aplicação ausente."
-python3 -m compileall -q "$tmp_dir/extracted/src"
-version="$(python3 - "$tmp_dir/extracted/pyproject.toml" <<'PY'
+[[ -f "$TMP_DIR/extracted/pyproject.toml" ]] || fail "Pacote baixado inválido."
+[[ -d "$TMP_DIR/extracted/src/triview_workspace" ]] || fail "Código da aplicação ausente."
+python3 -m compileall -q "$TMP_DIR/extracted/src"
+version="$(python3 - "$TMP_DIR/extracted/pyproject.toml" <<'PY'
 from pathlib import Path
 import re
 import sys
@@ -281,14 +397,14 @@ fi
 release_suffix="$(printf '%s' "$TARGET_ID" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9._-')"
 release_dir="$APP_ROOT/releases/$version-$release_suffix-$timestamp"
 mkdir -p "$release_dir"
-cp -a "$tmp_dir/extracted/." "$release_dir/"
+cp -a "$TMP_DIR/extracted/." "$release_dir/"
 
 export PYTHONPATH="$release_dir/src"
 cd "$release_dir"
 python3 -m triview_workspace.cli \
   --diagnostic \
   --workspace "$release_dir/config/workspaces/three-mobile.json" \
-  --data-file "$tmp_dir/diagnostic-workspaces.json" >/dev/null
+  --data-file "$TMP_DIR/diagnostic-workspaces.json" >/dev/null
 python3 - "$TARGET_MODULE" <<'PY'
 import importlib
 import sys
@@ -307,7 +423,7 @@ printf '%s\n' "$version" > "$APP_ROOT/VERSION"
 printf '%s\n' "$CHANNEL" > "$CHANNEL_FILE"
 
 BIN_DIR="$HOME/.local/bin"
-APPLICATIONS_DIR="$HOME/.local/applications"
+APPLICATIONS_DIR="$HOME/.local/share/applications"
 mkdir -p "$BIN_DIR" "$APPLICATIONS_DIR"
 cat > "$BIN_DIR/triview-workspace" <<LAUNCHER
 #!/usr/bin/env bash
@@ -355,6 +471,7 @@ temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", e
 temporary.replace(path)
 PY
 
+RESULT_SUMMARY="Versão ativa: $version. Atalho da Área de Trabalho corrigido."
 log "Atualização concluída. Canal: $CHANNEL"
 log "Versão ativa: $version"
 if [[ "$CHANNEL" == "testing" ]]; then

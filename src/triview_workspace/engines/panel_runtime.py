@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import Protocol, Sequence
 
 LOGGER = logging.getLogger(__name__)
+_PARENT_WINDOW_PATTERN = re.compile(
+    r"Parent window id:\s*(0x[0-9A-Fa-f]+|[0-9]+)",
+    re.IGNORECASE,
+)
 
 
 class PanelRuntimeError(RuntimeError):
@@ -37,6 +41,7 @@ class PanelRuntimeAvailability:
     reason: str
     executable: str | None = None
     xdotool_command: str | None = None
+    xwininfo_command: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +138,19 @@ def resolve_command(value: str | Sequence[str]) -> tuple[str, ...]:
     return (resolved, *parts[1:])
 
 
+def parse_parent_window_id(output: str) -> int | None:
+    """Extract the X11 parent window identifier reported by xwininfo."""
+
+    match = _PARENT_WINDOW_PATTERN.search(output)
+    if match is None:
+        return None
+    raw_value = match.group(1)
+    try:
+        return int(raw_value, 0)
+    except ValueError:
+        return None
+
+
 class X11PanelRuntimeBackend:
     """Launch Linux applications and embed compatible windows through xdotool."""
 
@@ -142,6 +160,10 @@ class X11PanelRuntimeBackend:
     @staticmethod
     def _xdotool_command() -> str | None:
         return shutil.which("xdotool")
+
+    @staticmethod
+    def _xwininfo_command() -> str | None:
+        return shutil.which("xwininfo")
 
     def availability(self, command: Sequence[str]) -> PanelRuntimeAvailability:
         try:
@@ -166,12 +188,23 @@ class X11PanelRuntimeBackend:
                 executable=resolved[0],
             )
 
+        xwininfo = self._xwininfo_command()
+        if xwininfo is None:
+            return PanelRuntimeAvailability(
+                True,
+                False,
+                "O programa pode abrir externamente, mas xwininfo não está disponível para confirmar a incorporação.",
+                executable=resolved[0],
+                xdotool_command=xdotool,
+            )
+
         return PanelRuntimeAvailability(
             True,
             True,
             "Backend X11 pronto para executar e incorporar aplicações compatíveis.",
             executable=resolved[0],
             xdotool_command=xdotool,
+            xwininfo_command=xwininfo,
         )
 
     def launch(
@@ -194,7 +227,11 @@ class X11PanelRuntimeBackend:
         except OSError as exc:
             raise PanelLaunchError(f"Não foi possível iniciar a aplicação: {exc}.") from exc
 
-        if not availability.can_embed or availability.xdotool_command is None:
+        if (
+            not availability.can_embed
+            or availability.xdotool_command is None
+            or availability.xwininfo_command is None
+        ):
             return PanelRuntimeSession(
                 panel_id=request.panel_id,
                 command=command,
@@ -235,6 +272,28 @@ class X11PanelRuntimeBackend:
                 "windowmap",
                 window_id,
             )
+            if not self._confirm_window_parent(
+                availability.xwininfo_command,
+                window_id,
+                parent_window_id,
+            ):
+                if request.allow_external_fallback:
+                    LOGGER.warning(
+                        "Application panel %s did not remain inside the requested X11 parent; "
+                        "using external fallback.",
+                        request.panel_id,
+                    )
+                    return PanelRuntimeSession(
+                        panel_id=request.panel_id,
+                        command=command,
+                        process=process if process.poll() is None else None,
+                        window_id=None,
+                        embedded=False,
+                        external=True,
+                    )
+                raise PanelLaunchError(
+                    "A aplicação abriu, mas o gerenciador de janelas não manteve sua janela incorporada."
+                )
         except Exception:
             if request.allow_external_fallback and process.poll() is None:
                 LOGGER.warning(
@@ -337,6 +396,37 @@ class X11PanelRuntimeBackend:
             time.sleep(0.2)
 
         return None
+
+    def _confirm_window_parent(
+        self,
+        xwininfo: str,
+        window_id: str,
+        expected_parent_window_id: int,
+    ) -> bool:
+        consecutive_matches = 0
+        for _attempt in range(4):
+            time.sleep(0.15)
+            parent_window_id = self._read_parent_window_id(xwininfo, window_id)
+            if parent_window_id == int(expected_parent_window_id):
+                consecutive_matches += 1
+                if consecutive_matches >= 2:
+                    return True
+            else:
+                consecutive_matches = 0
+        return False
+
+    @staticmethod
+    def _read_parent_window_id(xwininfo: str, window_id: str) -> int | None:
+        result = subprocess.run(  # noqa: S603
+            [xwininfo, "-id", window_id, "-tree"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=3,
+        )
+        if result.returncode != 0:
+            return None
+        return parse_parent_window_id(result.stdout)
 
     @staticmethod
     def _terminate_process(process: subprocess.Popen[bytes]) -> None:

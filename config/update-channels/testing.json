@@ -3,8 +3,8 @@
   "channel": "testing",
   "enabled": true,
   "candidate_id": "LEA-197",
-  "version": "0.4.0",
-  "ref": "c63855c2ffeea6f1492513f7af160b8f27d7cd1f",
+  "version": "0.3.2",
+  "ref": "f64819fc35f1ceba82c1a4e1dd9911b53480a6f9",
   "module": "triview_workspace.cli",
-  "status": "awaiting-linux-mint-acceptance"
+  "status": "updater-result-hotfix"
 }

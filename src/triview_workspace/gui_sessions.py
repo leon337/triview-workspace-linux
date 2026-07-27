@@ -46,7 +46,7 @@ class WorkspaceWindow(LayoutWorkspaceWindow):
         plan = self.recovery_engine.recovery_plan(self.workspace)
         self.recovery_engine.begin(self.workspace)
         self._runtime_signature = self._signature({})
-        self._replace_engine_badge(root)
+        self.set_product_stage("SESSIONS")
         root.after(500, self._periodic_runtime_sync)
         if self.runtime_state_repository.last_recovery_message:
             root.after(250, self._show_runtime_state_warning)
@@ -174,13 +174,8 @@ class WorkspaceWindow(LayoutWorkspaceWindow):
             )
 
     @staticmethod
-    def _replace_engine_badge(widget: tk.Misc) -> None:
-        for child in widget.winfo_children():
-            if isinstance(child, tk.Label) and str(child.cget("text")).startswith(
-                ("LAYOUT ENGINE", "PLUGIN ENGINE", "RECORDING ENGINE")
-            ):
-                child.configure(text="SESSION ENGINE 0.11.0")
-            WorkspaceWindow._replace_engine_badge(child)
+    def _replace_engine_badge(_widget: tk.Misc) -> None:
+        """Deprecated: the product badge now has one explicit source."""
 
     def _close(self) -> None:
         if self._closed:
@@ -228,7 +223,3 @@ __all__ = [
     "WorkspaceWindow",
     "main",
 ]
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

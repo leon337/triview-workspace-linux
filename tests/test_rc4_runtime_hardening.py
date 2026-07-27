@@ -70,7 +70,7 @@ def test_menu_action_releases_grab_before_capture() -> None:
 
     action()
 
-    assert root.events == ["unpost", "release", "idle", ("after", 90), "capture"]
+    assert root.events == ["unpost", "release", "idle", ("after", 120), "capture"]
 
 
 def test_terminal_window_is_hidden_as_soon_as_it_is_discovered(monkeypatch: Any) -> None:

@@ -71,7 +71,7 @@ def test_wait_for_window_survives_launcher_exit_until_real_window_appears(
     assert clock.value >= 1.25
 
 
-def test_embedding_uses_unmap_reparent_map_transaction(
+def test_embedding_waits_before_reparent_and_confirms_parent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     backend = X11PanelRuntimeBackend(
@@ -105,7 +105,6 @@ def test_embedding_uses_unmap_reparent_map_transaction(
 
     assert embedded is True
     assert commands == [
-        ("windowunmap", "900"),
         ("windowreparent", "900", "99"),
         ("windowmap", "900"),
     ]

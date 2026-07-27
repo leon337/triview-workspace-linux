@@ -36,7 +36,7 @@ def test_dual_mode_uses_focus_and_next_panel_cyclically() -> None:
 
 def test_unknown_mode_is_rejected() -> None:
     with pytest.raises(ValueError, match="Modo de visualização desconhecido"):
-        select_visible_panel_ids(("chatgpt",), "grid", "chatgpt")
+        select_visible_panel_ids(("chatgpt", "github"), "grid", "chatgpt")
 
 
 def test_dual_orientation_preserves_useful_space() -> None:

@@ -7,7 +7,11 @@ from triview_workspace.engines.terminal_embedded import (
     EmbeddedFirstX11PanelRuntimeBackend,
     EmbeddedOnlyTerminalBackend,
 )
-from triview_workspace.gui_rc4_runtime import deferred_menu_action
+from triview_workspace.gui_rc4_runtime import (
+    deferred_menu_action,
+    parse_work_area,
+    proportional_panel_bounds,
+)
 
 
 class _FakeRoot:
@@ -71,6 +75,26 @@ def test_menu_action_releases_grab_before_capture() -> None:
     action()
 
     assert root.events == ["unpost", "release", "idle", ("after", 120), "capture"]
+
+
+def test_three_panels_fill_the_complete_workspace_width() -> None:
+    bounds = proportional_panel_bounds(1366, 3)
+
+    assert bounds[0][0] == 0
+    assert bounds[-1][0] + bounds[-1][1] == 1366
+    assert sum(width for _x, width in bounds) == 1366
+    assert max(width for _x, width in bounds) - min(width for _x, width in bounds) <= 1
+    assert all(
+        bounds[index][0] + bounds[index][1] == bounds[index + 1][0]
+        for index in range(len(bounds) - 1)
+    )
+
+
+def test_work_area_uses_desktop_limits_instead_of_native_title_bar_space() -> None:
+    output = "_NET_WORKAREA(CARDINAL) = 0, 0, 1366, 742, 0, 0, 1366, 742"
+
+    assert parse_work_area(output, 1366, 768) == (0, 0, 1366, 742)
+    assert parse_work_area("", 1366, 768) == (0, 0, 1366, 768)
 
 
 def test_terminal_window_is_hidden_as_soon_as_it_is_discovered(monkeypatch: Any) -> None:

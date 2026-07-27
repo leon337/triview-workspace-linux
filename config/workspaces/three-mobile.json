@@ -1,25 +1,25 @@
 {
   "layout": {
     "id": "three-mobile",
-    "name": "Três painéis amplos",
+    "name": "Três painéis 33x96",
     "slots": [
       {
-        "x": 0.01,
-        "y": 0.01,
-        "width": 0.32,
-        "height": 0.98
+        "x": 0.0,
+        "y": 0.02,
+        "width": 0.333333,
+        "height": 0.96
       },
       {
-        "x": 0.34,
-        "y": 0.01,
-        "width": 0.32,
-        "height": 0.98
+        "x": 0.333333,
+        "y": 0.02,
+        "width": 0.333334,
+        "height": 0.96
       },
       {
-        "x": 0.67,
-        "y": 0.01,
-        "width": 0.32,
-        "height": 0.98
+        "x": 0.666667,
+        "y": 0.02,
+        "width": 0.333333,
+        "height": 0.96
       }
     ]
   },

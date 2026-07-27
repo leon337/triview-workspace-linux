@@ -1,4 +1,4 @@
-"""Workspace-first presentation with wide panels and compact application chrome."""
+"""Workspace-first presentation with percentage-based panels and minimal chrome."""
 
 from __future__ import annotations
 
@@ -21,8 +21,18 @@ from triview_workspace.infrastructure import WorkspaceRepository, load_workspace
 
 
 @dataclass(frozen=True)
+class PercentageSlot:
+    """Normalized panel area expressed as percentages of the useful viewport."""
+
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+@dataclass(frozen=True)
 class WideRect:
-    """Pixel rectangle used by the workspace-first grid."""
+    """Pixel rectangle produced only at the final Tkinter rendering boundary."""
 
     x: int
     y: int
@@ -30,49 +40,69 @@ class WideRect:
     height: int
 
 
-def calculate_wide_grid(
+def calculate_percentage_slots(
     panel_count: int,
-    viewport_width: int,
-    viewport_height: int,
     *,
-    padding: int = 8,
-    gap: int = 10,
-) -> tuple[WideRect, ...]:
-    """Fill the viewport with useful panels instead of narrow phone-shaped cards."""
+    vertical_share: float = 0.96,
+) -> tuple[PercentageSlot, ...]:
+    """Describe the workspace using proportions, not fixed desktop dimensions."""
 
     if panel_count < 0:
         raise ValueError("panel_count must be zero or greater")
-    if viewport_width <= 0 or viewport_height <= 0:
-        raise ValueError("viewport dimensions must be greater than zero")
-    if padding < 0 or gap < 0:
-        raise ValueError("padding and gap must be zero or greater")
+    if not 0 < vertical_share <= 1:
+        raise ValueError("vertical_share must be greater than zero and at most one")
     if panel_count == 0:
         return ()
 
     columns = panel_count if panel_count <= 3 else math.ceil(math.sqrt(panel_count))
     rows = math.ceil(panel_count / columns)
+    column_share = 1.0 / columns
+    row_share = vertical_share / rows
+    top_share = (1.0 - vertical_share) / 2.0
 
-    usable_width = max(1, viewport_width - padding * 2 - gap * (columns - 1))
-    usable_height = max(1, viewport_height - padding * 2 - gap * (rows - 1))
-    base_width = max(1, usable_width // columns)
-    base_height = max(1, usable_height // rows)
-    right_edge = max(padding + 1, viewport_width - padding)
-    bottom_edge = max(padding + 1, viewport_height - padding)
+    return tuple(
+        PercentageSlot(
+            x=(index % columns) * column_share,
+            y=top_share + (index // columns) * row_share,
+            width=column_share,
+            height=row_share,
+        )
+        for index in range(panel_count)
+    )
 
+
+def calculate_wide_grid(
+    panel_count: int,
+    viewport_width: int,
+    viewport_height: int,
+    *,
+    vertical_share: float = 0.96,
+) -> tuple[WideRect, ...]:
+    """Convert the percentage contract to pixels only when Tkinter needs it."""
+
+    if viewport_width <= 0 or viewport_height <= 0:
+        raise ValueError("viewport dimensions must be greater than zero")
+
+    slots = calculate_percentage_slots(panel_count, vertical_share=vertical_share)
     rects: list[WideRect] = []
-    for index in range(panel_count):
-        row = index // columns
-        column = index % columns
-        x = padding + column * (base_width + gap)
-        y = padding + row * (base_height + gap)
-        width = right_edge - x if column == columns - 1 else base_width
-        height = bottom_edge - y if row == rows - 1 else base_height
-        rects.append(WideRect(x, y, max(1, width), max(1, height)))
+    for slot in slots:
+        left = round(slot.x * viewport_width)
+        top = round(slot.y * viewport_height)
+        right = round((slot.x + slot.width) * viewport_width)
+        bottom = round((slot.y + slot.height) * viewport_height)
+        rects.append(
+            WideRect(
+                x=left,
+                y=top,
+                width=max(1, right - left),
+                height=max(1, bottom - top),
+            )
+        )
     return tuple(rects)
 
 
 class WorkspaceWindow(FocusWorkspaceWindow):
-    """Prioritize live content area while preserving focus and dual-panel modes."""
+    """Make live applications dominant and reduce the surrounding interface."""
 
     def __init__(
         self,
@@ -80,79 +110,114 @@ class WorkspaceWindow(FocusWorkspaceWindow):
         repository: WorkspaceRepository,
         session_engine: WorkspaceSessionEngine,
     ) -> None:
-        self._wide_padding = 8
-        self._wide_gap = 10
+        self._workspace_vertical_share = 0.96
         self._fullscreen = False
         super().__init__(root, repository, session_engine)
-        self.set_product_stage("WIDE WORKSPACE")
+        self.set_product_stage("WORKSPACE 33×96")
         self.status_text.set(
-            "Workspace amplo ativo: painéis ocupam a área útil; F11 alterna tela cheia"
+            "Área útil prioritária: 33% por painel e 96% da altura do workspace"
         )
         root.bind("<F11>", self._toggle_fullscreen, add="+")
         root.after_idle(self._maximize_window)
-        root.after_idle(self._apply_compact_chrome)
+        root.after_idle(self._apply_workspace_first_chrome)
         root.after_idle(self._render_layout)
 
     def _load_workspace_view(self, message: str) -> None:
         super()._load_workspace_view(message)
-        self._apply_compact_chrome()
+        self._apply_workspace_first_chrome()
         self.root.after_idle(self._render_layout)
 
-    def _apply_compact_chrome(self) -> None:
-        """Return vertical space to the embedded applications."""
+    def _apply_workspace_first_chrome(self) -> None:
+        """Collapse controls so the embedded content owns the visible window."""
 
         if not hasattr(self, "header"):
             return
 
-        self.header.configure(height=92)
+        allowed_header_children = {
+            self.workspace_toolbar,
+            self.extension_actions_frame,
+        }
         for child in self.header.winfo_children():
-            info = child.grid_info()
-            if not info:
+            if child in allowed_header_children:
                 continue
-            row = int(info.get("row", 0))
-            child.grid_configure(pady=(6, 2) if row == 0 else (2, 6))
+            if child.grid_info():
+                child.grid_remove()
+            else:
+                child.place_forget()
+
+        self.header.configure(height=52)
+        self.workspace_toolbar.grid_configure(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=8,
+            pady=7,
+        )
+        self.extension_actions_frame.grid_configure(
+            row=0,
+            column=1,
+            sticky="e",
+            padx=8,
+            pady=7,
+        )
 
         for child in self.root.pack_slaves():
-            info = child.pack_info()
-            if info.get("side") == "bottom":
-                try:
-                    child.configure(height=24)
-                except tk.TclError:
-                    pass
+            try:
+                if child.pack_info().get("side") == "bottom":
+                    child.pack_forget()
+            except tk.TclError:
+                continue
 
         for card in self.cards:
-            parts = card.frame.winfo_children()
-            if len(parts) < 3:
+            self._compact_card(card)
+
+    def _compact_card(self, card: PanelCard) -> None:
+        parts = card.frame.winfo_children()
+        if len(parts) < 3:
+            return
+
+        header, body, footer = parts[0], parts[1], parts[2]
+        header.configure(height=32)
+        footer.configure(height=28)
+
+        header_children = header.pack_slaves()
+        if header_children:
+            header_children[0].pack_forget()
+        if len(header_children) >= 2:
+            identity = header_children[1]
+            identity.pack_configure(padx=(8, 2), pady=4)
+            identity_children = identity.pack_slaves()
+            if identity_children:
+                identity_children[0].configure(font=("DejaVu Sans", 10, "bold"))
+            for widget in identity_children[1:]:
+                widget.pack_forget()
+        for widget in header_children[2:]:
+            try:
+                widget.configure(font=("DejaVu Sans", 7, "bold"), padx=6, pady=2)
+                widget.pack_configure(padx=(0, 5))
+            except tk.TclError:
                 continue
-            header, body, footer = parts[0], parts[1], parts[2]
-            header.configure(height=44)
-            footer.configure(height=40)
 
-            header_children = header.pack_slaves()
-            if header_children:
-                icon = header_children[0]
-                try:
-                    icon.configure(width=30, height=30)
-                    icon.pack_configure(padx=(8, 7), pady=6)
-                except tk.TclError:
-                    pass
-            if len(header_children) >= 2:
-                header_children[1].pack_configure(pady=5)
-            for widget in header_children[2:]:
-                widget.pack_configure(padx=(0, 7))
+        for widget in body.winfo_children():
+            if widget is not card.content_stack:
+                widget.pack_forget()
+        if card.content_stack.winfo_manager():
+            card.content_stack.pack_configure(padx=0, pady=0)
+        else:
+            card.content_stack.pack(fill="both", expand=True, padx=0, pady=0)
 
-            for widget in body.winfo_children():
-                if widget is not card.content_stack:
+        for widget in footer.pack_slaves():
+            try:
+                if widget.cget("text") == card.panel.adapter_name.upper():
                     widget.pack_forget()
-            if card.content_stack.winfo_manager():
-                card.content_stack.pack_configure(padx=4, pady=4)
-            else:
-                card.content_stack.pack(fill="both", expand=True, padx=4, pady=4)
-
-            for widget in footer.pack_slaves():
-                info = widget.pack_info()
-                if info.get("side") == "left":
-                    widget.pack_configure(pady=6)
+                    continue
+            except tk.TclError:
+                pass
+            try:
+                widget.configure(font=("DejaVu Sans", 7, "bold"), padx=6, pady=2)
+                widget.pack_configure(padx=(4, 0), pady=3)
+            except tk.TclError:
+                continue
 
     def _render_layout(self) -> None:
         if self._closed:
@@ -171,21 +236,20 @@ class WorkspaceWindow(FocusWorkspaceWindow):
             len(self.cards),
             max(1, self.content.winfo_width()),
             max(1, self.content.winfo_height()),
-            padding=self._wide_padding,
-            gap=self._wide_gap,
+            vertical_share=self._workspace_vertical_share,
         )
         for card, rect in zip(self.cards, rects, strict=True):
             card.place(rect.x, rect.y, rect.width, rect.height)
 
         if rects:
-            average_width = sum(rect.width for rect in rects) // len(rects)
-            average_height = sum(rect.height for rect in rects) // len(rects)
+            horizontal_share = 100 / min(len(rects), 3)
             self.metrics_text.set(
-                f"{len(rects)} PAINÉIS · AMPLO · ~{average_width}×{average_height}"
+                f"{len(rects)} PAINÉIS · {horizontal_share:.1f}% × "
+                f"{self._workspace_vertical_share * 100:.0f}%"
             )
         else:
             self.metrics_text.set("0 PAINÉIS")
-        self.status_text.set("Modo amplo: conteúdo priorizado e molduras reduzidas")
+        self.status_text.set("Área útil máxima: moldura mínima, conteúdo prioritário")
         self._refresh_focus_buttons()
         self.root.after_idle(self._resize_runtimes)
 
@@ -241,8 +305,10 @@ __all__ = [
     "DEFAULT_WORKSPACE",
     "PanelCard",
     "PanelEditorDialog",
+    "PercentageSlot",
     "WideRect",
     "WorkspaceWindow",
+    "calculate_percentage_slots",
     "calculate_wide_grid",
     "main",
 ]

@@ -1,6 +1,6 @@
 """Compatibility entry point for the complete TriView desktop shell."""
 
-from triview_workspace.gui_rc4 import (
+from triview_workspace.gui_rc4_runtime import (
     APP_TITLE,
     DEFAULT_WORKSPACE,
     PanelCard,

@@ -12,7 +12,7 @@ import subprocess
 import time
 from collections.abc import Sequence
 
-from .panel_runtime import PanelLaunchError, X11PanelRuntimeBackend
+from .panel_runtime import X11PanelRuntimeBackend
 
 LOGGER = logging.getLogger(__name__)
 _PATCH_MARKER = "_lea197_cold_start_patch_applied"
@@ -113,7 +113,7 @@ def _embed_window_cold_start(
     parent_window_id: int,
     panel_id: str,
 ) -> bool:
-    """Reparent a settled window using an unmap/reparent/map transaction."""
+    """Reparent a settled window and confirm that the X11 parent stays stable."""
 
     transition_delay = min(0.25, max(0.08, self._poll_interval))
 
@@ -128,16 +128,6 @@ def _embed_window_cold_start(
         )
 
         try:
-            try:
-                self._run_xdotool(xdotool, "windowunmap", window_id)
-            except PanelLaunchError:
-                LOGGER.debug(
-                    "Window %s could not be unmapped before reparent attempt %s.",
-                    window_id,
-                    attempt,
-                    exc_info=True,
-                )
-
             time.sleep(transition_delay)
             self._run_xdotool(
                 xdotool,
@@ -147,7 +137,7 @@ def _embed_window_cold_start(
             )
             time.sleep(transition_delay)
             self._run_xdotool(xdotool, "windowmap", window_id)
-        except PanelLaunchError:
+        except Exception:
             LOGGER.warning(
                 "Reparent transaction %s failed for panel %s.",
                 attempt,

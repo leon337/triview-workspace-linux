@@ -52,5 +52,9 @@ from .workspace_hub import (
     WorkspaceHubError,
     WorkspaceHubRepository,
 )
+from ._panel_runtime_cold_start_patch import apply_patch as _apply_panel_runtime_cold_start_patch
+
+_apply_panel_runtime_cold_start_patch()
+del _apply_panel_runtime_cold_start_patch
 
 __all__ = [name for name in globals() if not name.startswith("_")]

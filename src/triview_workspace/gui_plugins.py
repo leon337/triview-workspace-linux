@@ -39,30 +39,24 @@ class WorkspaceWindow(RecordingWorkspaceWindow):
         super().__init__(root, repository, session_engine)
         self.registry.register(PluginPanelAdapter())
         self.runtime_registry.register(PluginRuntimeController(self.plugin_engine))
-        self._add_plugin_button(root)
-        self._replace_engine_badge(root)
+        self.register_header_action(
+            "plugins",
+            "Plugins",
+            self._manage_plugins,
+            order=30,
+        )
+        self.set_product_stage("PLUGINS")
         self._load_workspace_view("Plugin Engine carregado")
 
-    def _add_plugin_button(self, root: tk.Tk) -> None:
-        header = next(
-            (child for child in root.winfo_children() if isinstance(child, tk.Frame)),
-            None,
+    def _add_plugin_button(self, _root: tk.Tk) -> None:
+        """Compatibility wrapper for older callers."""
+
+        self.register_header_action(
+            "plugins",
+            "Plugins",
+            self._manage_plugins,
+            order=30,
         )
-        if header is None:
-            return
-        tk.Button(
-            header,
-            text="Plugins",
-            command=self._manage_plugins,
-            background="#1e293b",
-            foreground="#e2e8f0",
-            activebackground="#334155",
-            activeforeground="#f8fafc",
-            relief="flat",
-            bd=0,
-            padx=10,
-            pady=5,
-        ).pack(side="right", padx=(0, 8), pady=32)
 
     def _manage_plugins(self) -> None:
         diagnostics = self.plugin_engine.reload()
@@ -103,13 +97,8 @@ class WorkspaceWindow(RecordingWorkspaceWindow):
         )
 
     @staticmethod
-    def _replace_engine_badge(widget: tk.Misc) -> None:
-        for child in widget.winfo_children():
-            if isinstance(child, tk.Label) and str(child.cget("text")).startswith(
-                ("RECORDING ENGINE", "CAPTURE ENGINE", "PDF ENGINE")
-            ):
-                child.configure(text="PLUGIN ENGINE 0.9.0")
-            WorkspaceWindow._replace_engine_badge(child)
+    def _replace_engine_badge(_widget: tk.Misc) -> None:
+        """Deprecated: the product badge now has one explicit source."""
 
 
 def main(

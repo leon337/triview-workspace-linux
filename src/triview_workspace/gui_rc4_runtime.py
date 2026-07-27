@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import tkinter as tk
+from collections.abc import Callable
 from pathlib import Path
 
 from triview_workspace.engines.session import WorkspaceSessionEngine
+from triview_workspace.engines.terminal_embedded import build_embedded_terminal_controller
 from triview_workspace.gui_rc4 import (
     APP_TITLE,
     DEFAULT_WORKSPACE,
@@ -18,8 +21,42 @@ from triview_workspace.gui_rc4 import (
 from triview_workspace.infrastructure import WorkspaceRepository, load_workspace_bundle
 
 
+def deferred_menu_action(
+    root: tk.Misc,
+    menu: tk.Menu,
+    command: Callable[[], object],
+    *,
+    delay_ms: int = 90,
+) -> Callable[[], None]:
+    """Close the Tk menu grab before running capture, recording or panel actions."""
+
+    def invoke() -> None:
+        try:
+            menu.unpost()
+        except tk.TclError:
+            pass
+        try:
+            menu.grab_release()
+        except tk.TclError:
+            pass
+        root.update_idletasks()
+        root.after(max(1, int(delay_ms)), command)
+
+    return invoke
+
+
 class WorkspaceWindow(RC4WorkspaceWindow):
-    """Dispose stale Tk menus before rebuilding a workspace view."""
+    """Dispose stale menus and keep terminal sessions inside their panel hosts."""
+
+    def __init__(
+        self,
+        root: tk.Tk,
+        repository: WorkspaceRepository,
+        session_engine: WorkspaceSessionEngine,
+    ) -> None:
+        super().__init__(root, repository, session_engine)
+        self.runtime_registry.register(build_embedded_terminal_controller())
+        self._configure_panel_states()
 
     def _load_workspace_view(self, message: str) -> None:
         for menu in self._panel_menus.values():
@@ -29,6 +66,67 @@ class WorkspaceWindow(RC4WorkspaceWindow):
                 pass
         self._panel_menus.clear()
         super()._load_workspace_view(message)
+
+    def _menu_action(
+        self,
+        menu: tk.Menu,
+        command: Callable[[], object],
+    ) -> Callable[[], None]:
+        return deferred_menu_action(self.root, menu, command)
+
+    def _show_panel_menu(self, card: PanelCard) -> None:
+        """Open a non-blocking panel menu whose actions run after it disappears."""
+
+        menu = self._panel_menus[card.panel.id]
+        menu.delete(0, "end")
+        menu.add_command(
+            label="Abrir / reabrir",
+            command=self._menu_action(menu, card.open_button.invoke),
+        )
+        menu.add_command(
+            label="Abrir em janela externa",
+            command=self._menu_action(menu, lambda: self._open_external(card)),
+        )
+        menu.add_separator()
+
+        capture = self._find_button(card.frame, "Print")
+        capture_available = capture is not None and str(capture.cget("state")) == "normal"
+        menu.add_command(
+            label="Capturar tela",
+            command=self._menu_action(menu, capture.invoke) if capture is not None else None,
+            state="normal" if capture_available else "disabled",
+        )
+
+        record = self._find_button(card.frame, "Parar") or self._find_button(
+            card.frame,
+            "Gravar",
+        )
+        record_available = record is not None and str(record.cget("state")) == "normal"
+        record_label = (
+            "Parar gravação"
+            if record is not None and record.cget("text") == "Parar"
+            else "Iniciar gravação"
+        )
+        menu.add_command(
+            label=record_label,
+            command=self._menu_action(menu, record.invoke) if record is not None else None,
+            state="normal" if record_available else "disabled",
+        )
+        menu.add_separator()
+        menu.add_command(
+            label="Foco",
+            command=self._menu_action(menu, lambda: self._toggle_focus(card.panel.id)),
+        )
+        menu.add_command(
+            label="Fechar painel",
+            command=self._menu_action(menu, lambda: self._close_panel(card)),
+        )
+
+        button = menu._triview_button  # type: ignore[attr-defined]
+        menu.tk_popup(
+            button.winfo_rootx(),
+            button.winfo_rooty() + button.winfo_height(),
+        )
 
 
 def main(
@@ -44,8 +142,6 @@ def main(
             workspace, layout = load_workspace_bundle(workspace_path)
             catalog = repository.save_workspace(catalog, workspace, layout, make_active=True)
         session_engine = WorkspaceSessionEngine(repository, catalog)
-        import tkinter as tk
-
         root = tk.Tk()
         WorkspaceWindow(root, repository, session_engine)
         root.mainloop()
@@ -61,6 +157,7 @@ __all__ = [
     "PanelCard",
     "PanelEditorDialog",
     "WorkspaceWindow",
+    "deferred_menu_action",
     "global_bar_height",
     "main",
     "panel_header_height",

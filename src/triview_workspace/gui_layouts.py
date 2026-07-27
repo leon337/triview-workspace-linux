@@ -19,7 +19,11 @@ from triview_workspace.gui_plugins import (
     WorkspaceWindow as PluginWorkspaceWindow,
     _configure_logging,
 )
-from triview_workspace.infrastructure import WorkspaceRepository, WorkspaceStorageError, load_workspace_bundle
+from triview_workspace.infrastructure import (
+    WorkspaceRepository,
+    WorkspaceStorageError,
+    load_workspace_bundle,
+)
 from triview_workspace.layout_editor import LayoutEditorDialog
 
 
@@ -34,30 +38,24 @@ class WorkspaceWindow(PluginWorkspaceWindow):
     ) -> None:
         super().__init__(root, repository, session_engine)
         self.workspace_engine = WorkspaceEngine(ResponsiveLayoutEngine(), self.registry)
-        self._add_layout_button(root)
-        self._replace_engine_badge(root)
+        self.register_header_action(
+            "new-layout",
+            "Novo layout",
+            self._create_layout,
+            order=20,
+        )
+        self.set_product_stage("LAYOUTS")
         self._load_workspace_view("Layout Engine avançado carregado")
 
-    def _add_layout_button(self, root: tk.Tk) -> None:
-        header = next(
-            (child for child in root.winfo_children() if isinstance(child, tk.Frame)),
-            None,
+    def _add_layout_button(self, _root: tk.Tk) -> None:
+        """Compatibility wrapper for older callers."""
+
+        self.register_header_action(
+            "new-layout",
+            "Novo layout",
+            self._create_layout,
+            order=20,
         )
-        if header is None:
-            return
-        tk.Button(
-            header,
-            text="Novo layout",
-            command=self._create_layout,
-            background="#1e293b",
-            foreground="#e2e8f0",
-            activebackground="#334155",
-            activeforeground="#f8fafc",
-            relief="flat",
-            bd=0,
-            padx=10,
-            pady=5,
-        ).pack(side="right", padx=(0, 8), pady=32)
 
     def _create_layout(self) -> None:
         dialog = LayoutEditorDialog(
@@ -78,13 +76,8 @@ class WorkspaceWindow(PluginWorkspaceWindow):
         self._load_workspace_view("Novo layout salvo e selecionado")
 
     @staticmethod
-    def _replace_engine_badge(widget: tk.Misc) -> None:
-        for child in widget.winfo_children():
-            if isinstance(child, tk.Label) and str(child.cget("text")).startswith(
-                ("PLUGIN ENGINE", "RECORDING ENGINE", "CAPTURE ENGINE")
-            ):
-                child.configure(text="LAYOUT ENGINE 0.10.0")
-            WorkspaceWindow._replace_engine_badge(child)
+    def _replace_engine_badge(_widget: tk.Misc) -> None:
+        """Deprecated: the product badge now has one explicit source."""
 
 
 def main(

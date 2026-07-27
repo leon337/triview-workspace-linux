@@ -8,6 +8,7 @@ import queue
 import threading
 import tkinter as tk
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
 
@@ -39,10 +40,79 @@ from triview_workspace.infrastructure import (
     WorkspaceStorageError,
     load_workspace_bundle,
 )
+from triview_workspace.ui_design import (
+    APP_BADGE_TEXT,
+    FONT_FAMILY,
+    MONO_FONT_FAMILY,
+    PALETTE,
+    button_colors,
+    header_layout_mode,
+    status_color,
+)
 
 APP_TITLE = "TriView Workspace"
 DEFAULT_WORKSPACE = Path("config/workspaces/three-mobile.json")
-CONTENT_PADDING = 12
+CONTENT_PADDING = 16
+
+
+def _button(
+    parent: tk.Misc,
+    text: str,
+    command: Callable[[], None] | None = None,
+    *,
+    variant: str = "secondary",
+    compact: bool = False,
+    state: str = "normal",
+) -> tk.Button:
+    """Create one consistently styled Tk button."""
+
+    colors = button_colors(variant)
+    return tk.Button(
+        parent,
+        text=text,
+        command=command,
+        state=state,
+        disabledforeground=PALETTE.text_subtle,
+        relief="flat",
+        bd=0,
+        highlightthickness=0,
+        font=(FONT_FAMILY, 8 if compact else 9, "bold"),
+        padx=8 if compact else 12,
+        pady=4 if compact else 6,
+        cursor="hand2",
+        **colors,
+    )
+
+
+def _entry(parent: tk.Misc, variable: tk.StringVar, *, width: int = 24) -> tk.Entry:
+    """Create one dark entry field."""
+
+    return tk.Entry(
+        parent,
+        textvariable=variable,
+        width=width,
+        background=PALETTE.surface_soft,
+        foreground=PALETTE.text,
+        insertbackground=PALETTE.text,
+        selectbackground=PALETTE.accent_dark,
+        selectforeground=PALETTE.text,
+        highlightbackground=PALETTE.border,
+        highlightcolor=PALETTE.border_focus,
+        highlightthickness=1,
+        relief="flat",
+        bd=0,
+        font=(FONT_FAMILY, 9),
+    )
+
+
+@dataclass(frozen=True)
+class HeaderAction:
+    """Declarative extension action rendered by the central header."""
+
+    action_id: str
+    label: str
+    command: Callable[[], None]
+    order: int
 
 
 class PanelEditorDialog:
@@ -51,30 +121,51 @@ class PanelEditorDialog:
     def __init__(self, parent: tk.Misc, panels: tuple[PanelSpec, ...]) -> None:
         self.result: tuple[PanelSpec, ...] | None = None
         self.window = tk.Toplevel(parent)
-        self.window.title("Editar painéis do workspace")
-        self.window.configure(background="#0f172a")
+        self.window.title("Editar painéis")
+        self.window.configure(background=PALETTE.surface)
         self.window.transient(parent)
         self.window.grab_set()
+        self.window.minsize(820, 280)
         self._rows: list[
             tuple[PanelSpec, tk.StringVar, tk.StringVar, tk.StringVar]
         ] = []
 
-        tk.Label(
+        shell = tk.Frame(
             self.window,
-            text="Edite os títulos, tipos e destinos dos painéis",
-            background="#0f172a",
-            foreground="#f8fafc",
-            font=("Sans", 12, "bold"),
-        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=14, pady=(14, 10))
+            background=PALETTE.surface,
+            highlightbackground=PALETTE.border,
+            highlightthickness=1,
+            bd=0,
+        )
+        shell.pack(fill="both", expand=True, padx=16, pady=16)
+
+        title_area = tk.Frame(shell, background=PALETTE.surface)
+        title_area.grid(row=0, column=0, columnspan=4, sticky="ew", padx=16, pady=(16, 12))
+        tk.Label(
+            title_area,
+            text="Configuração dos painéis",
+            background=PALETTE.surface,
+            foreground=PALETTE.text,
+            font=(FONT_FAMILY, 15, "bold"),
+            anchor="w",
+        ).pack(fill="x")
+        tk.Label(
+            title_area,
+            text="Altere nome, tipo e destino sem perder o identificador interno.",
+            background=PALETTE.surface,
+            foreground=PALETTE.text_muted,
+            font=(FONT_FAMILY, 9),
+            anchor="w",
+        ).pack(fill="x", pady=(3, 0))
 
         for column, label in enumerate(("Painel", "Título", "Tipo", "Destino")):
             tk.Label(
-                self.window,
-                text=label,
-                background="#0f172a",
-                foreground="#94a3b8",
-                font=("Sans", 9, "bold"),
-            ).grid(row=1, column=column, sticky="w", padx=8, pady=4)
+                shell,
+                text=label.upper(),
+                background=PALETTE.surface,
+                foreground=PALETTE.text_subtle,
+                font=(FONT_FAMILY, 8, "bold"),
+            ).grid(row=1, column=column, sticky="w", padx=10, pady=(4, 6))
 
         for row, panel in enumerate(panels, start=2):
             title = tk.StringVar(value=panel.title)
@@ -82,41 +173,44 @@ class PanelEditorDialog:
             target = tk.StringVar(value=panel.target)
             self._rows.append((panel, title, kind, target))
             tk.Label(
-                self.window,
+                shell,
                 text=panel.id,
-                background="#0f172a",
-                foreground="#cbd5e1",
-            ).grid(row=row, column=0, sticky="w", padx=8, pady=5)
-            tk.Entry(self.window, textvariable=title, width=22).grid(
-                row=row, column=1, sticky="ew", padx=8, pady=5
+                background=PALETTE.surface,
+                foreground=PALETTE.text_muted,
+                font=(MONO_FONT_FAMILY, 8),
+            ).grid(row=row, column=0, sticky="w", padx=10, pady=6)
+            _entry(shell, title, width=22).grid(
+                row=row, column=1, sticky="ew", padx=10, pady=6, ipady=6
             )
             ttk.Combobox(
-                self.window,
+                shell,
                 textvariable=kind,
                 values=[item.value for item in PanelKind],
                 state="readonly",
                 width=14,
-            ).grid(row=row, column=2, sticky="ew", padx=8, pady=5)
-            tk.Entry(self.window, textvariable=target, width=48).grid(
-                row=row, column=3, sticky="ew", padx=8, pady=5
+                style="TriView.TCombobox",
+            ).grid(row=row, column=2, sticky="ew", padx=10, pady=6, ipady=3)
+            _entry(shell, target, width=48).grid(
+                row=row, column=3, sticky="ew", padx=10, pady=6, ipady=6
             )
 
-        actions = tk.Frame(self.window, background="#0f172a")
+        actions = tk.Frame(shell, background=PALETTE.surface)
         actions.grid(
             row=len(panels) + 2,
             column=0,
             columnspan=4,
             sticky="e",
-            padx=14,
-            pady=14,
+            padx=16,
+            pady=16,
         )
-        tk.Button(actions, text="Cancelar", command=self.window.destroy).pack(
-            side="right", padx=4
+        _button(actions, "Cancelar", self.window.destroy, variant="ghost").pack(
+            side="right", padx=(8, 0)
         )
-        tk.Button(actions, text="Salvar", command=self._save).pack(
-            side="right", padx=4
+        _button(actions, "Salvar alterações", self._save, variant="primary").pack(
+            side="right"
         )
-        self.window.columnconfigure(3, weight=1)
+        shell.columnconfigure(1, weight=1)
+        shell.columnconfigure(3, weight=3)
         self.window.wait_window()
 
     def _save(self) -> None:
@@ -168,8 +262,8 @@ class PanelCard:
         self._on_open = on_open
         self.frame = tk.Frame(
             parent,
-            background="#111827",
-            highlightbackground="#334155",
+            background=PALETTE.surface_raised,
+            highlightbackground=PALETTE.border,
             highlightthickness=1,
             bd=0,
         )
@@ -178,130 +272,161 @@ class PanelCard:
         self._build_footer()
 
     def _build_header(self) -> None:
-        header = tk.Frame(self.frame, background="#172033", height=46)
+        header = tk.Frame(self.frame, background=PALETTE.surface_soft, height=54)
         header.pack(fill="x")
         header.pack_propagate(False)
-        tk.Label(
+
+        icon_box = tk.Frame(
             header,
+            background=PALETTE.accent_dark,
+            width=34,
+            height=34,
+        )
+        icon_box.pack(side="left", padx=(10, 9), pady=10)
+        icon_box.pack_propagate(False)
+        tk.Label(
+            icon_box,
             text=self._icon_for(self.panel.kind),
-            background="#172033",
-            foreground="#f8fafc",
-            font=("Sans", 16),
-        ).pack(side="left", padx=(12, 8))
+            background=PALETTE.accent_dark,
+            foreground=PALETTE.text,
+            font=(MONO_FONT_FAMILY, 12, "bold"),
+        ).pack(fill="both", expand=True)
+
+        identity = tk.Frame(header, background=PALETTE.surface_soft)
+        identity.pack(side="left", fill="both", expand=True, pady=8)
         tk.Label(
-            header,
+            identity,
             text=self.panel.title,
-            background="#172033",
-            foreground="#f8fafc",
-            font=("Sans", 11, "bold"),
+            background=PALETTE.surface_soft,
+            foreground=PALETTE.text,
+            font=(FONT_FAMILY, 11, "bold"),
             anchor="w",
-        ).pack(side="left", fill="x", expand=True)
+        ).pack(fill="x")
+        tk.Label(
+            identity,
+            text=self.panel.kind.upper(),
+            background=PALETTE.surface_soft,
+            foreground=PALETTE.text_subtle,
+            font=(FONT_FAMILY, 7, "bold"),
+            anchor="w",
+        ).pack(fill="x", pady=(1, 0))
+
         self.badge = tk.Label(
             header,
             text="PLANEJADO",
-            background="#475569",
-            foreground="#f8fafc",
-            font=("Sans", 8, "bold"),
+            background=status_color("PLANEJADO"),
+            foreground=PALETTE.text,
+            font=(FONT_FAMILY, 7, "bold"),
             padx=8,
             pady=3,
         )
         self.badge.pack(side="right", padx=10)
 
     def _build_body(self) -> None:
-        body = tk.Frame(self.frame, background="#0f172a")
+        body = tk.Frame(self.frame, background=PALETTE.surface)
         body.pack(fill="both", expand=True, padx=1, pady=1)
-        target_bar = tk.Frame(body, background="#1e293b", height=36)
-        target_bar.pack(fill="x", padx=12, pady=(12, 0))
+
+        target_bar = tk.Frame(body, background=PALETTE.surface_raised, height=38)
+        target_bar.pack(fill="x", padx=10, pady=(10, 0))
         target_bar.pack_propagate(False)
         tk.Label(
             target_bar,
+            text="DESTINO",
+            background=PALETTE.surface_raised,
+            foreground=PALETTE.text_subtle,
+            font=(FONT_FAMILY, 7, "bold"),
+            padx=9,
+        ).pack(side="left")
+        tk.Label(
+            target_bar,
             text=self.panel.target,
-            background="#1e293b",
-            foreground="#cbd5e1",
-            font=("Sans", 8),
+            background=PALETTE.surface_raised,
+            foreground=PALETTE.text_muted,
+            font=(MONO_FONT_FAMILY, 8),
             anchor="w",
-            padx=10,
-        ).pack(fill="both", expand=True)
+            padx=8,
+        ).pack(side="left", fill="both", expand=True)
 
-        self.content_stack = tk.Frame(body, background="#0f172a")
-        self.content_stack.pack(fill="both", expand=True, padx=12, pady=12)
-        self.placeholder = tk.Frame(self.content_stack, background="#0f172a")
+        self.content_stack = tk.Frame(body, background=PALETTE.surface)
+        self.content_stack.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self.placeholder = tk.Frame(self.content_stack, background=PALETTE.surface)
         self.placeholder.pack(fill="both", expand=True)
+
+        center = tk.Frame(self.placeholder, background=PALETTE.surface)
+        center.place(relx=0.5, rely=0.46, anchor="center")
         tk.Label(
-            self.placeholder,
+            center,
             text=self._icon_for(self.panel.kind),
-            background="#0f172a",
-            foreground="#38bdf8",
-            font=("Sans", 34),
-        ).pack(pady=(18, 8))
+            background=PALETTE.surface,
+            foreground=PALETTE.accent_hover,
+            font=(MONO_FONT_FAMILY, 28, "bold"),
+        ).pack(pady=(0, 8))
         tk.Label(
-            self.placeholder,
+            center,
             text=self.panel.title,
-            background="#0f172a",
-            foreground="#f8fafc",
-            font=("Sans", 15, "bold"),
+            background=PALETTE.surface,
+            foreground=PALETTE.text,
+            font=(FONT_FAMILY, 14, "bold"),
         ).pack()
         self.status_message = tk.StringVar(value=self.panel.status)
         tk.Label(
-            self.placeholder,
+            center,
             textvariable=self.status_message,
-            background="#0f172a",
-            foreground="#94a3b8",
-            font=("Sans", 9),
-            wraplength=240,
+            background=PALETTE.surface,
+            foreground=PALETTE.text_muted,
+            font=(FONT_FAMILY, 9),
+            wraplength=250,
             justify="center",
         ).pack(pady=(8, 0))
+
         self.runtime_host = tk.Frame(
             self.content_stack,
-            background="#020617",
-            highlightbackground="#1e293b",
+            background="#030712",
+            highlightbackground=PALETTE.border,
             highlightthickness=1,
             bd=0,
         )
 
     def _build_footer(self) -> None:
-        footer = tk.Frame(self.frame, background="#172033", height=48)
+        footer = tk.Frame(self.frame, background=PALETTE.surface_soft, height=52)
         footer.pack(fill="x")
         footer.pack_propagate(False)
-        self.open_button = tk.Button(
+
+        self.open_button = _button(
             footer,
-            text="Abrir",
-            command=lambda: self._on_open(self.panel, self),
+            "Abrir",
+            lambda: self._on_open(self.panel, self),
+            variant="primary",
+            compact=True,
             state="disabled",
-            disabledforeground="#64748b",
-            background="#1e293b",
-            foreground="#e2e8f0",
-            activebackground="#334155",
-            activeforeground="#f8fafc",
-            relief="flat",
-            bd=0,
-            font=("Sans", 8),
-            padx=8,
         )
-        self.open_button.pack(side="left", padx=(8, 0), pady=9)
+        self.open_button.pack(side="left", padx=(10, 0), pady=10)
+
         for label in ("Print", "Gravar"):
-            tk.Button(
+            _button(
                 footer,
-                text=label,
+                label,
+                variant="ghost",
+                compact=True,
                 state="disabled",
-                disabledforeground="#64748b",
-                background="#1e293b",
-                relief="flat",
-                bd=0,
-                font=("Sans", 8),
-                padx=8,
-            ).pack(side="left", padx=(8, 0), pady=9)
+            ).pack(side="left", padx=(7, 0), pady=10)
+
+        tk.Label(
+            footer,
+            text=self.panel.adapter_name.upper(),
+            background=PALETTE.surface_soft,
+            foreground=PALETTE.text_subtle,
+            font=(FONT_FAMILY, 7, "bold"),
+        ).pack(side="right", padx=10)
 
     def configure_runtime(self, available: bool, message: str) -> None:
         self.open_button.configure(state="normal" if available else "disabled")
-        self.set_status(
-            "DISPONÍVEL" if available else "INDISPONÍVEL",
-            message,
-            "#0f766e" if available else "#991b1b",
-        )
+        state = "DISPONÍVEL" if available else "INDISPONÍVEL"
+        self.set_status(state, message, status_color(state))
 
-    def set_status(self, badge: str, message: str, background: str) -> None:
-        self.badge.configure(text=badge, background=background)
+    def set_status(self, badge: str, message: str, background: str | None = None) -> None:
+        self.badge.configure(text=badge, background=background or status_color(badge))
         self.status_message.set(message)
 
     def set_open(self, enabled: bool, label: str) -> None:
@@ -338,10 +463,11 @@ class PanelCard:
     @staticmethod
     def _icon_for(kind: str) -> str:
         return {
-            "browser": "🌐",
+            "browser": "◎",
             "application": "▣",
             "terminal": ">_",
             "pdf": "PDF",
+            "plugin": "◇",
         }.get(kind, "◇")
 
 
@@ -381,34 +507,69 @@ class WorkspaceWindow:
             tuple[str, str, str | None, int, bool, bool]
         ] = queue.SimpleQueue()
         self._resize_job: str | None = None
+        self._header_job: str | None = None
+        self._header_mode: str | None = None
         self._closed = False
         self._updating_controls = False
+        self._header_actions: dict[str, HeaderAction] = {}
         self.cards: list[PanelCard] = []
         self.cards_by_id: dict[str, PanelCard] = {}
         self.panel_specs: dict[str, PanelSpec] = {}
 
-        root.geometry("1280x760")
-        root.minsize(900, 560)
-        root.configure(background="#020617")
+        root.geometry("1366x820")
+        root.minsize(960, 600)
+        root.configure(background=PALETTE.app)
         root.protocol("WM_DELETE_WINDOW", self._close)
         self._configure_style()
         self._build_header()
-        self.content = tk.Frame(root, background="#020617")
+
+        self.content = tk.Frame(root, background=PALETTE.app)
         self.content.pack(fill="both", expand=True)
+
         self.status_text = tk.StringVar(value="Workspace persistente carregado")
-        tk.Label(
+        self.metrics_text = tk.StringVar(value="")
+        self.stage_text = tk.StringVar(value="CORE")
+
+        status_bar = tk.Frame(
             root,
+            background=PALETTE.surface,
+            highlightbackground=PALETTE.border,
+            highlightthickness=1,
+            height=30,
+        )
+        status_bar.pack(fill="x", side="bottom")
+        status_bar.pack_propagate(False)
+        tk.Label(
+            status_bar,
             textvariable=self.status_text,
             anchor="w",
-            background="#0f172a",
-            foreground="#94a3b8",
-            font=("Sans", 8),
-            padx=12,
-            height=1,
-        ).pack(fill="x", side="bottom")
+            background=PALETTE.surface,
+            foreground=PALETTE.text_muted,
+            font=(FONT_FAMILY, 8),
+            padx=14,
+        ).pack(side="left", fill="both", expand=True)
+        tk.Label(
+            status_bar,
+            textvariable=self.stage_text,
+            background=PALETTE.surface,
+            foreground=PALETTE.accent_hover,
+            font=(FONT_FAMILY, 7, "bold"),
+            padx=10,
+        ).pack(side="right")
+        tk.Label(
+            status_bar,
+            textvariable=self.metrics_text,
+            background=PALETTE.surface,
+            foreground=PALETTE.text_subtle,
+            font=(MONO_FONT_FAMILY, 7),
+            padx=10,
+        ).pack(side="right")
+
         self.content.bind("<Configure>", self._schedule_layout)
+        root.bind("<Configure>", self._schedule_header_layout, add="+")
         self._load_workspace_view("Workspace restaurado automaticamente")
         root.after(80, self._drain_results)
+        root.after_idle(self._apply_header_layout)
         if repository.last_recovery_message:
             root.after(150, self._show_recovery_warning)
 
@@ -419,66 +580,206 @@ class WorkspaceWindow:
             style.theme_use("clam")
         except tk.TclError:
             pass
+        style.configure(
+            "TriView.TCombobox",
+            fieldbackground=PALETTE.surface_raised,
+            background=PALETTE.surface_soft,
+            foreground=PALETTE.text,
+            arrowcolor=PALETTE.text_muted,
+            bordercolor=PALETTE.border,
+            lightcolor=PALETTE.border,
+            darkcolor=PALETTE.border,
+            padding=5,
+        )
+        style.map(
+            "TriView.TCombobox",
+            fieldbackground=[("readonly", PALETTE.surface_raised)],
+            foreground=[("readonly", PALETTE.text)],
+            selectbackground=[("readonly", PALETTE.surface_raised)],
+            selectforeground=[("readonly", PALETTE.text)],
+        )
 
     def _build_header(self) -> None:
-        header = tk.Frame(self.root, background="#0f172a", height=104)
-        header.pack(fill="x", side="top")
-        header.pack_propagate(False)
-        left = tk.Frame(header, background="#0f172a")
-        left.pack(side="left", fill="both", expand=True, padx=18, pady=8)
-        tk.Label(
-            left,
-            text=APP_TITLE,
-            background="#0f172a",
-            foreground="#f8fafc",
-            font=("Sans", 16, "bold"),
-        ).grid(row=0, column=0, sticky="w")
-        self.workspace_name_text = tk.StringVar()
-        tk.Label(
-            left,
-            textvariable=self.workspace_name_text,
-            background="#0f172a",
-            foreground="#94a3b8",
-            font=("Sans", 9),
-        ).grid(row=1, column=0, sticky="w", pady=(0, 6))
+        self.header = tk.Frame(
+            self.root,
+            background=PALETTE.surface,
+            highlightbackground=PALETTE.border,
+            highlightthickness=1,
+            height=116,
+        )
+        self.header.pack(fill="x", side="top")
+        self.header.pack_propagate(False)
+        self.header.columnconfigure(0, weight=1)
 
-        controls = tk.Frame(left, background="#0f172a")
-        controls.grid(row=2, column=0, sticky="w")
-        self.workspace_selector = ttk.Combobox(controls, state="readonly", width=30)
+        brand = tk.Frame(self.header, background=PALETTE.surface)
+        brand.grid(row=0, column=0, sticky="w", padx=18, pady=(10, 4))
+        tk.Label(
+            brand,
+            text="TRIVIEW",
+            background=PALETTE.surface,
+            foreground=PALETTE.accent_hover,
+            font=(FONT_FAMILY, 9, "bold"),
+            anchor="w",
+        ).pack(side="left", padx=(0, 9))
+        tk.Label(
+            brand,
+            text=APP_TITLE,
+            background=PALETTE.surface,
+            foreground=PALETTE.text,
+            font=(FONT_FAMILY, 17, "bold"),
+            anchor="w",
+        ).pack(side="left")
+
+        self.product_badge = tk.Label(
+            self.header,
+            text=APP_BADGE_TEXT,
+            background=PALETTE.accent_dark,
+            foreground=PALETTE.text,
+            font=(FONT_FAMILY, 8, "bold"),
+            padx=12,
+            pady=6,
+        )
+        self.product_badge.grid(row=0, column=1, sticky="e", padx=18, pady=(10, 4))
+
+        self.workspace_toolbar = tk.Frame(self.header, background=PALETTE.surface)
+        self.workspace_toolbar.grid(row=1, column=0, sticky="w", padx=18, pady=(4, 12))
+
+        selector_group = tk.Frame(self.workspace_toolbar, background=PALETTE.surface)
+        selector_group.pack(side="left")
+        self.workspace_selector = ttk.Combobox(
+            selector_group,
+            state="readonly",
+            width=29,
+            style="TriView.TCombobox",
+        )
         self.workspace_selector.pack(side="left", padx=(0, 6))
         self.workspace_selector.bind("<<ComboboxSelected>>", self._select_workspace)
-        self.layout_selector = ttk.Combobox(controls, state="readonly", width=22)
-        self.layout_selector.pack(side="left", padx=(0, 8))
+        self.layout_selector = ttk.Combobox(
+            selector_group,
+            state="readonly",
+            width=22,
+            style="TriView.TCombobox",
+        )
+        self.layout_selector.pack(side="left", padx=(0, 10))
         self.layout_selector.bind("<<ComboboxSelected>>", self._select_layout)
-        for label, command in (
-            ("Novo", self._duplicate_workspace),
-            ("Renomear", self._rename_workspace),
-            ("Editar painéis", self._edit_panels),
-            ("Excluir", self._delete_workspace),
-        ):
-            tk.Button(
-                controls,
-                text=label,
-                command=command,
-                background="#1e293b",
-                foreground="#e2e8f0",
-                activebackground="#334155",
-                activeforeground="#f8fafc",
-                relief="flat",
-                bd=0,
-                padx=8,
-                pady=4,
-            ).pack(side="left", padx=3)
 
-        tk.Label(
-            header,
-            text="TERMINAL ENGINE 0.5.0",
-            background="#1d4ed8",
-            foreground="#eff6ff",
-            font=("Sans", 8, "bold"),
-            padx=10,
-            pady=5,
-        ).pack(side="right", padx=16, pady=32)
+        workspace_actions = tk.Frame(self.workspace_toolbar, background=PALETTE.surface)
+        workspace_actions.pack(side="left")
+        for label, command, variant in (
+            ("Novo", self._duplicate_workspace, "primary"),
+            ("Renomear", self._rename_workspace, "secondary"),
+            ("Editar painéis", self._edit_panels, "secondary"),
+            ("Excluir", self._delete_workspace, "danger"),
+        ):
+            _button(
+                workspace_actions,
+                label,
+                command,
+                variant=variant,
+                compact=True,
+            ).pack(side="left", padx=(0, 6))
+
+        self.extension_actions_frame = tk.Frame(self.header, background=PALETTE.surface)
+        self.extension_actions_frame.grid(
+            row=1,
+            column=1,
+            sticky="e",
+            padx=18,
+            pady=(4, 12),
+        )
+
+        self.workspace_name_text = tk.StringVar()
+        self.workspace_context = tk.Label(
+            self.header,
+            textvariable=self.workspace_name_text,
+            background=PALETTE.surface,
+            foreground=PALETTE.text_muted,
+            font=(FONT_FAMILY, 8),
+            anchor="w",
+        )
+        self.workspace_context.place_forget()
+
+    def register_header_action(
+        self,
+        action_id: str,
+        label: str,
+        command: Callable[[], None],
+        *,
+        order: int = 100,
+    ) -> None:
+        """Register or replace a stable extension action in the central header."""
+
+        self._header_actions[action_id] = HeaderAction(action_id, label, command, order)
+        self._render_header_actions()
+        self.root.after_idle(self._apply_header_layout)
+
+    def unregister_header_action(self, action_id: str) -> None:
+        """Remove one extension action from the central header."""
+
+        self._header_actions.pop(action_id, None)
+        self._render_header_actions()
+        self.root.after_idle(self._apply_header_layout)
+
+    def _render_header_actions(self) -> None:
+        for child in self.extension_actions_frame.winfo_children():
+            child.destroy()
+        for action in sorted(
+            self._header_actions.values(),
+            key=lambda item: (item.order, item.action_id),
+        ):
+            _button(
+                self.extension_actions_frame,
+                action.label,
+                action.command,
+                variant="ghost",
+                compact=True,
+            ).pack(side="left", padx=(6, 0))
+
+    def set_product_stage(self, stage: str) -> None:
+        """Expose the active application layer without mutating the product version."""
+
+        self.stage_text.set(stage.upper())
+
+    def set_product_badge(self, text: str = APP_BADGE_TEXT) -> None:
+        """Set the product badge from one explicit source."""
+
+        self.product_badge.configure(text=text)
+
+    def _schedule_header_layout(self, event: tk.Event[tk.Misc]) -> None:
+        if event.widget is not self.root or self._closed:
+            return
+        if self._header_job is not None:
+            self.root.after_cancel(self._header_job)
+        self._header_job = self.root.after(40, self._apply_header_layout)
+
+    def _apply_header_layout(self) -> None:
+        if self._closed:
+            return
+        self._header_job = None
+        mode = header_layout_mode(max(1, self.root.winfo_width()))
+        if mode == self._header_mode:
+            return
+        self._header_mode = mode
+        self.extension_actions_frame.grid_forget()
+        if mode == "wide":
+            self.header.configure(height=116)
+            self.extension_actions_frame.grid(
+                row=1,
+                column=1,
+                sticky="e",
+                padx=18,
+                pady=(4, 12),
+            )
+        else:
+            self.header.configure(height=154)
+            self.extension_actions_frame.grid(
+                row=2,
+                column=0,
+                columnspan=2,
+                sticky="w",
+                padx=12,
+                pady=(0, 10),
+            )
 
     def _refresh_controls(self) -> None:
         self._updating_controls = True
@@ -606,7 +907,7 @@ class WorkspaceWindow:
         for card in self.cards:
             controller = self.runtime_registry.get(card.panel.adapter_name)
             if controller is None:
-                card.set_status("PLANEJADO", card.panel.status, "#475569")
+                card.set_status("PLANEJADO", card.panel.status)
                 continue
             availability = controller.availability(self.panel_specs[card.panel.id])
             message = availability.reason
@@ -631,7 +932,7 @@ class WorkspaceWindow:
         self._launching.add(view.id)
         card.show_host()
         card.set_open(False, "Abrindo…")
-        card.set_status("ABRINDO", f"Inicializando {view.title}.", "#a16207")
+        card.set_status("ABRINDO", f"Inicializando {view.title}.")
         self.root.update_idletasks()
         host_id = card.native_host_id()
         width, height = card.host_dimensions()
@@ -679,7 +980,8 @@ class WorkspaceWindow:
             if state == "error":
                 card.show_placeholder()
                 card.set_open(True, "Tentar novamente")
-                card.set_status("ERRO", error or "Falha desconhecida.", "#991b1b")
+                card.set_status("ERRO", error or "Falha desconhecida.")
+                self.status_text.set(f"Falha ao abrir {card.panel.title}")
                 continue
             card.set_open(True, "Reabrir")
             if embedded:
@@ -687,14 +989,12 @@ class WorkspaceWindow:
                 card.set_status(
                     "ATIVO",
                     f"{card.panel.title} está executando dentro do painel.",
-                    "#15803d",
                 )
             elif external:
                 card.show_placeholder()
                 card.set_status(
                     "EXTERNO",
                     f"{card.panel.title} está em uma janela externa controlada.",
-                    "#7c3aed",
                 )
             self.status_text.set(f"Painel {card.panel.title} aberto")
             self._resize_runtimes()
@@ -722,10 +1022,12 @@ class WorkspaceWindow:
                 bounds.width,
                 bounds.height,
             )
-        active_types = sorted({item.adapter_name for item in views if item.adapter_name != "placeholder"})
-        self.status_text.set(
-            f"{self.workspace.name} · {len(views)} painéis · "
-            f"engines: {', '.join(active_types) or 'nenhum'} · {width} × {height}"
+        active_types = sorted(
+            {item.adapter_name for item in views if item.adapter_name != "placeholder"}
+        )
+        self.metrics_text.set(
+            f"{len(views)} PAINÉIS · {width}×{height} · "
+            f"{'/'.join(active_types) or 'SEM ENGINE'}"
         )
         self.root.after_idle(self._resize_runtimes)
 

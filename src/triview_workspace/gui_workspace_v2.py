@@ -141,11 +141,13 @@ class WorkspaceWindow(FocusWorkspaceWindow):
             for widget in header_children[2:]:
                 widget.pack_configure(padx=(0, 7))
 
-            body_children = body.pack_slaves()
-            if body_children:
-                body_children[0].pack_forget()
-            if len(body_children) >= 2:
-                body_children[1].pack_configure(padx=4, pady=4)
+            for widget in body.winfo_children():
+                if widget is not card.content_stack:
+                    widget.pack_forget()
+            if card.content_stack.winfo_manager():
+                card.content_stack.pack_configure(padx=4, pady=4)
+            else:
+                card.content_stack.pack(fill="both", expand=True, padx=4, pady=4)
 
             for widget in footer.pack_slaves():
                 info = widget.pack_info()

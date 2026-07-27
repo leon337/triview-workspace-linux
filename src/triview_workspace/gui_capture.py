@@ -8,7 +8,10 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
 
-from triview_workspace.engines import CaptureEngine, CaptureEngineError, WorkspaceSessionEngine
+from triview_workspace.engines import (
+    CaptureEngine,
+    WorkspaceSessionEngine,
+)
 from triview_workspace.gui_pdf import (
     APP_TITLE,
     DEFAULT_WORKSPACE,
@@ -34,7 +37,7 @@ class WorkspaceWindow(PdfWorkspaceWindow):
             tuple[str, str | None, str | None, int]
         ] = queue.SimpleQueue()
         super().__init__(root, repository, session_engine)
-        self._replace_engine_badge(root)
+        self.set_product_stage("CAPTURE")
         root.after(100, self._drain_capture_results)
 
     def _load_workspace_view(self, message: str) -> None:
@@ -49,7 +52,10 @@ class WorkspaceWindow(PdfWorkspaceWindow):
                 continue
             button.configure(
                 state="normal" if report.available else "disabled",
-                command=lambda item=card, control=button: self._capture_panel(item, control),
+                command=lambda item=card, control=button: self._capture_panel(
+                    item,
+                    control,
+                ),
             )
             if not report.available:
                 button.configure(disabledforeground="#64748b")
@@ -100,7 +106,8 @@ class WorkspaceWindow(PdfWorkspaceWindow):
                 continue
             card = self.cards_by_id[panel_id]
             button = self._find_button(card.frame, "Capturando…") or self._find_button(
-                card.frame, "Print"
+                card.frame,
+                "Print",
             )
             if button is not None:
                 button.configure(state="normal", text="Print")
@@ -127,13 +134,8 @@ class WorkspaceWindow(PdfWorkspaceWindow):
         return None
 
     @staticmethod
-    def _replace_engine_badge(widget: tk.Misc) -> None:
-        for child in widget.winfo_children():
-            if isinstance(child, tk.Label) and str(child.cget("text")).startswith(
-                ("PDF ENGINE", "TERMINAL ENGINE")
-            ):
-                child.configure(text="CAPTURE ENGINE 0.7.0")
-            WorkspaceWindow._replace_engine_badge(child)
+    def _replace_engine_badge(_widget: tk.Misc) -> None:
+        """Deprecated: the product badge now has one explicit source."""
 
 
 def main(

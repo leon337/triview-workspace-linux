@@ -34,7 +34,7 @@ class WorkspaceWindow(CaptureWorkspaceWindow):
             tuple[str, str, str | None, str | None, int]
         ] = queue.SimpleQueue()
         super().__init__(root, repository, session_engine)
-        self._replace_engine_badge(root)
+        self.set_product_stage("RECORDING")
         root.after(100, self._drain_recording_results)
 
     def _load_workspace_view(self, message: str) -> None:
@@ -51,7 +51,8 @@ class WorkspaceWindow(CaptureWorkspaceWindow):
             button.configure(
                 state="normal" if report.available else "disabled",
                 command=lambda item=card, control=button: self._toggle_recording(
-                    item, control
+                    item,
+                    control,
                 ),
             )
         if not report.available:
@@ -156,7 +157,6 @@ class WorkspaceWindow(CaptureWorkspaceWindow):
                 card.set_status(
                     "GRAVANDO",
                     f"Gravando somente o painel {card.panel.title}.",
-                    "#b91c1c",
                 )
                 self.status_text.set(f"Gravação iniciada: {path}")
             elif state == "stopped":
@@ -165,7 +165,6 @@ class WorkspaceWindow(CaptureWorkspaceWindow):
                 card.set_status(
                     "GRAVADO",
                     f"Vídeo do painel salvo em {path}",
-                    "#15803d",
                 )
                 self.status_text.set(f"Gravação salva: {path}")
                 messagebox.showinfo(
@@ -176,7 +175,7 @@ class WorkspaceWindow(CaptureWorkspaceWindow):
             else:
                 if button is not None:
                     button.configure(state="normal", text="Gravar")
-                card.set_status("ERRO", error or "Falha desconhecida.", "#991b1b")
+                card.set_status("ERRO", error or "Falha desconhecida.")
                 self.status_text.set(error or "Falha na gravação")
                 messagebox.showerror(
                     "Falha na gravação",
@@ -186,13 +185,8 @@ class WorkspaceWindow(CaptureWorkspaceWindow):
         self.root.after(100, self._drain_recording_results)
 
     @staticmethod
-    def _replace_engine_badge(widget: tk.Misc) -> None:
-        for child in widget.winfo_children():
-            if isinstance(child, tk.Label) and str(child.cget("text")).startswith(
-                ("CAPTURE ENGINE", "PDF ENGINE", "TERMINAL ENGINE")
-            ):
-                child.configure(text="RECORDING ENGINE 0.8.0")
-            WorkspaceWindow._replace_engine_badge(child)
+    def _replace_engine_badge(_widget: tk.Misc) -> None:
+        """Deprecated: the product badge now has one explicit source."""
 
     def _close(self) -> None:
         self.recording_engine.stop_all()

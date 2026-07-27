@@ -26,7 +26,7 @@ def deferred_menu_action(
     menu: tk.Menu,
     command: Callable[[], object],
     *,
-    delay_ms: int = 90,
+    delay_ms: int = 120,
 ) -> Callable[[], None]:
     """Close the Tk menu grab before running capture, recording or panel actions."""
 
@@ -75,7 +75,7 @@ class WorkspaceWindow(RC4WorkspaceWindow):
         return deferred_menu_action(self.root, menu, command)
 
     def _show_panel_menu(self, card: PanelCard) -> None:
-        """Open a non-blocking panel menu whose actions run after it disappears."""
+        """Open a panel menu whose actions run only after the menu disappears."""
 
         menu = self._panel_menus[card.panel.id]
         menu.delete(0, "end")

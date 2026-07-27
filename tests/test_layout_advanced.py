@@ -12,9 +12,9 @@ from triview_workspace.domain import (
     Viewport,
     WorkspaceSpec,
 )
+from triview_workspace.engines import ResponsiveLayoutEngine
 from triview_workspace.engines.layout_advanced import (
     LayoutValidationError,
-    ResponsiveLayoutEngine,
     build_preset_layout,
     create_layout,
     preset_slots,

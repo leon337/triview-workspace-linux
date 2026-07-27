@@ -12,6 +12,14 @@ from .browser import (
 )
 from .capture import CaptureAvailability, CaptureBackend, CaptureEngine, CaptureEngineError, CaptureRequest, CaptureResult, X11CaptureBackend
 from .layout import LayoutEngine
+from .layout_advanced import (
+    LayoutValidationError,
+    ResponsiveLayoutEngine,
+    build_preset_layout,
+    create_layout,
+    preset_slots,
+    validate_layout,
+)
 from .panel_runtime import (
     PanelBackendUnavailable,
     PanelLaunchError,

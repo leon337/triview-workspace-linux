@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 import tkinter as tk
+from pathlib import Path
 
 import pytest
 
@@ -21,7 +22,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_nested_client_is_contained_before_its_first_map() -> None:
+def test_nested_client_is_contained_and_receives_host_wheel(
+    tmp_path: Path,
+) -> None:
     xephyr = shutil.which("Xephyr")
     xdotool = shutil.which("xdotool")
     xwininfo = shutil.which("xwininfo")
@@ -57,6 +60,7 @@ def test_nested_client_is_contained_before_its_first_map() -> None:
         start_new_session=True,
     )
     nested_client: subprocess.Popen[bytes] | None = None
+    marker = tmp_path / "nested-wheel.txt"
     try:
         backend._wait_for_display(display_name, process)
         xephyr_window_id = backend._wait_for_host_window(
@@ -72,11 +76,15 @@ def test_nested_client_is_contained_before_its_first_map() -> None:
                 sys.executable,
                 "-c",
                 (
-                    "import tkinter as tk; "
+                    "import pathlib,sys,tkinter as tk; "
+                    "marker=pathlib.Path(sys.argv[1]); "
                     "root=tk.Tk(); root.title('TRIVIEW_NESTED_TEST_CLIENT'); "
-                    "root.geometry('320x220+0+0'); root.after(6000, root.destroy); "
-                    "root.mainloop()"
+                    "root.geometry('320x220+0+0'); "
+                    "root.bind('<ButtonRelease-5>', lambda event: "
+                    "marker.write_text(str(event.num), encoding='utf-8')); "
+                    "root.after(10000, root.destroy); root.mainloop()"
                 ),
+                str(marker),
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -115,6 +123,21 @@ def test_nested_client_is_contained_before_its_first_map() -> None:
             xephyr_window_id,
             host.winfo_id(),
         )
+
+        subprocess.run(
+            [xdotool, "mousemove", "--window", xephyr_window_id, "120", "120"],
+            check=True,
+            timeout=3,
+        )
+        subprocess.run(
+            [xdotool, "click", "--window", xephyr_window_id, "5"],
+            check=True,
+            timeout=3,
+        )
+        deadline = time.monotonic() + 4.0
+        while time.monotonic() < deadline and not marker.exists():
+            time.sleep(0.05)
+        assert marker.read_text(encoding="utf-8") == "5"
     finally:
         if nested_client is not None:
             terminate_process_group(nested_client)

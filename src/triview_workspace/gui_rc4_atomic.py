@@ -8,8 +8,8 @@ from pathlib import Path
 
 from triview_workspace.catalog_migrations import migrate_persisted_terminal_panel
 from triview_workspace.engines.browser import BrowserEngine
-from triview_workspace.engines.browser_final_client import (
-    FinalClientX11BraveBrowserBackend,
+from triview_workspace.engines.browser_final_client_xfwm4 import (
+    Xfwm4FinalClientX11BraveBrowserBackend,
 )
 from triview_workspace.engines.runtime_controllers import BrowserRuntimeController
 from triview_workspace.engines.session import WorkspaceSessionEngine
@@ -38,7 +38,7 @@ from triview_workspace.runtime_observability import (
     write_runtime_snapshot,
 )
 
-BROWSER_BACKEND_NAME = "FinalClientX11BraveBrowserBackend"
+BROWSER_BACKEND_NAME = "Xfwm4FinalClientX11BraveBrowserBackend"
 
 
 class WorkspaceWindow(MigratedWorkspaceWindow):
@@ -51,7 +51,7 @@ class WorkspaceWindow(MigratedWorkspaceWindow):
         session_engine: WorkspaceSessionEngine,
     ) -> None:
         super().__init__(root, repository, session_engine)
-        backend = FinalClientX11BraveBrowserBackend()
+        backend = Xfwm4FinalClientX11BraveBrowserBackend()
         self.runtime_registry.register(BrowserRuntimeController(BrowserEngine(backend)))
         record_runtime_event(
             "browser_backend_registered",

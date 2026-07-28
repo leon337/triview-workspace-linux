@@ -5,6 +5,10 @@ from __future__ import annotations
 from triview_workspace.domain import PanelKind, PanelSpec, WorkspaceSpec
 from triview_workspace.infrastructure import WorkspaceCatalog, WorkspaceRepository
 
+DEVELOPMENT_WORKSPACE_ID = "development-demo"
+TERMINAL_PANEL_ID = "terminal"
+TERMINAL_TITLE = "Terminal"
+TERMINAL_TARGET = "bash -l"
 LEGACY_TERMINAL_TARGETS = frozenset(
     {
         "x-terminal-emulator",
@@ -12,17 +16,24 @@ LEGACY_TERMINAL_TARGETS = frozenset(
         "xed",
     }
 )
-TERMINAL_TARGET = "bash -l"
 
 
-def _is_known_legacy_terminal(panel: PanelSpec) -> bool:
-    """Recognize only the proven legacy/diagnostic Terminal configuration."""
+def _is_canonical_development_terminal(workspace: WorkspaceSpec, panel: PanelSpec) -> bool:
+    return (
+        workspace.id.casefold() == DEVELOPMENT_WORKSPACE_ID
+        and panel.id.casefold() == TERMINAL_PANEL_ID
+        and panel.title == TERMINAL_TITLE
+        and panel.kind is PanelKind.TERMINAL
+        and panel.target == TERMINAL_TARGET
+    )
+
+
+def _is_development_terminal_slot(workspace: WorkspaceSpec, panel: PanelSpec) -> bool:
+    """Identify only the canonical Terminal slot of the Development workspace."""
 
     return (
-        panel.id.casefold() == "terminal"
-        and panel.title.strip().casefold() == "terminal"
-        and panel.kind is PanelKind.APPLICATION
-        and panel.target.strip().casefold() in LEGACY_TERMINAL_TARGETS
+        workspace.id.casefold() == DEVELOPMENT_WORKSPACE_ID
+        and panel.id.casefold() == TERMINAL_PANEL_ID
     )
 
 
@@ -30,13 +41,14 @@ def migrate_persisted_terminal_panel(
     repository: WorkspaceRepository,
     catalog: WorkspaceCatalog,
 ) -> tuple[WorkspaceCatalog, int]:
-    """Route known legacy Terminal panels to the embedded terminal engine.
+    """Restore the Development workspace Terminal contract without touching others.
 
-    The migration is deliberately narrow: it only changes a panel whose stable
-    identity is ``terminal`` and whose application target matches one of the
-    configurations observed during the Linux Mint acceptance loop. All layouts,
-    active workspace selection, unrelated workspaces, panel titles and metadata
-    are preserved. Re-running the migration is a no-op.
+    The stable contract is workspace ``development-demo`` plus panel ``terminal``.
+    Earlier acceptance tests changed that slot to an application or a third ChatGPT
+    browser. This migration restores only that stable slot to ``Terminal`` / terminal
+    / ``bash -l``. The separate ``three-gpt-chats`` workspace and every unrelated
+    workspace remain byte-for-byte equivalent at the domain level. Re-running the
+    migration is a no-op.
     """
 
     updated_catalog = catalog
@@ -47,14 +59,17 @@ def migrate_persisted_terminal_panel(
         panels: list[PanelSpec] = []
 
         for panel in workspace.panels:
-            if not _is_known_legacy_terminal(panel):
+            if not _is_development_terminal_slot(workspace, panel):
+                panels.append(panel)
+                continue
+            if _is_canonical_development_terminal(workspace, panel):
                 panels.append(panel)
                 continue
 
             panels.append(
                 PanelSpec(
                     id=panel.id,
-                    title=panel.title,
+                    title=TERMINAL_TITLE,
                     kind=PanelKind.TERMINAL,
                     target=TERMINAL_TARGET,
                     metadata=panel.metadata,
@@ -82,7 +97,10 @@ def migrate_persisted_terminal_panel(
 
 
 __all__ = [
+    "DEVELOPMENT_WORKSPACE_ID",
     "LEGACY_TERMINAL_TARGETS",
+    "TERMINAL_PANEL_ID",
     "TERMINAL_TARGET",
+    "TERMINAL_TITLE",
     "migrate_persisted_terminal_panel",
 ]

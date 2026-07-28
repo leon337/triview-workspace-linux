@@ -13,6 +13,7 @@ from triview_workspace.diagnostic_blackbox_final import (
     strict_sanitize_runtime_value,
     strict_sanitized_arguments,
 )
+from triview_workspace.diagnostic_blackbox_verified import VerifiedBlackboxCollector
 from triview_workspace.engines.browser_wheel_bridge import BrowserWheelRoute
 from triview_workspace.engines.browser_wheel_worker import WHEEL_BUTTONS
 
@@ -263,9 +264,10 @@ def test_atomic_window_integrates_bridge_and_runtime_snapshots() -> None:
     assert "bridge.close" in close_source
 
 
-def test_candidate_diagnostic_uses_final_collector() -> None:
+def test_candidate_diagnostic_uses_verified_final_collector() -> None:
     script = Path("scripts/candidate-diagnose.sh").read_text(encoding="utf-8")
 
-    assert "triview_workspace.diagnostic_blackbox_final" in script
+    assert issubclass(VerifiedBlackboxCollector, FinalBlackboxCollector)
+    assert "triview_workspace.diagnostic_blackbox_verified" in script
     assert "--auto-launch" in script
     assert "--auto-stop-on-application-exit" in script

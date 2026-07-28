@@ -1,8 +1,8 @@
 """Select the final Chromium app client before X11 embedding.
 
 The XFCE/Xfwm4 diagnostic showed that Brave can expose more than one X11
-window with the requested TriView class.  The first one is a transient or
-placeholder client whose title is empty or equal to the requested class.  The
+window with the requested TriView class. The first one is a transient or
+placeholder client whose title is empty or equal to the requested class. The
 real application window appears shortly afterwards with the page title and a
 PID in the browser process group.
 """
@@ -20,7 +20,10 @@ from triview_workspace.engines.browser import (
     BrowserLaunchRequest,
     BrowserSession,
 )
-from triview_workspace.engines.browser_embedded import AtomicX11BraveBrowserBackend
+from triview_workspace.engines.browser_embedded import (
+    AtomicX11BraveBrowserBackend,
+    exact_x11_pattern,
+)
 from triview_workspace.runtime_observability import record_runtime_event
 
 
@@ -195,11 +198,10 @@ class FinalClientX11BraveBrowserBackend(AtomicX11BraveBrowserBackend):
     ) -> list[str]:
         """Search only the exact WM_CLASS, avoiding title and instance collisions."""
 
-        pattern = f"^{value.replace('\\', '\\\\').replace('.', '\\.').replace('-', '\\-')}$"
         arguments = [xdotool, "search"]
         if only_visible:
             arguments.append("--onlyvisible")
-        arguments.extend(("--class", pattern))
+        arguments.extend(("--class", exact_x11_pattern(value)))
         result = subprocess.run(  # noqa: S603
             arguments,
             capture_output=True,

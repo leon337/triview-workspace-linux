@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-import subprocess
+import threading
 import tkinter as tk
 from collections.abc import Callable
 from pathlib import Path
@@ -21,11 +21,17 @@ from triview_workspace.gui_rc4 import (
     panel_header_height,
 )
 from triview_workspace.infrastructure import WorkspaceRepository, load_workspace_bundle
-from triview_workspace.ui_design import MONO_FONT_FAMILY, PALETTE, button_colors
+from triview_workspace.ui_design import (
+    FONT_FAMILY,
+    MONO_FONT_FAMILY,
+    PALETTE,
+    button_colors,
+)
 
 
 WorkArea = tuple[int, int, int, int]
 PanelBound = tuple[int, int]
+EMERGENCY_SHORTCUTS = ("<Control-Alt-q>", "<Control-Shift-Escape>")
 
 
 def proportional_panel_bounds(total_width: int, panel_count: int) -> tuple[PanelBound, ...]:
@@ -47,12 +53,30 @@ def parse_work_area(
     fallback_width: int,
     fallback_height: int,
 ) -> WorkArea:
-    """Parse the first EWMH work area and fall back to the physical screen size."""
+    """Parse the first EWMH work area for diagnostics and compatibility tests."""
 
     values = [int(value) for value in re.findall(r"-?\d+", output)]
     if len(values) >= 4 and values[2] > 0 and values[3] > 0:
         return values[0], values[1], values[2], values[3]
     return 0, 0, max(1, int(fallback_width)), max(1, int(fallback_height))
+
+
+def release_menu_grab(menu: tk.Menu) -> None:
+    """Best-effort release of a menu grab without hiding the original failure."""
+
+    try:
+        menu.grab_release()
+    except (tk.TclError, AttributeError):
+        pass
+
+
+def safe_popup_menu(menu: tk.Menu, x: int, y: int) -> None:
+    """Post a Tk popup and guarantee that its global input grab is released."""
+
+    try:
+        menu.tk_popup(int(x), int(y))
+    finally:
+        release_menu_grab(menu)
 
 
 def deferred_menu_action(
@@ -67,20 +91,31 @@ def deferred_menu_action(
     def invoke() -> None:
         try:
             menu.unpost()
-        except tk.TclError:
+        except (tk.TclError, AttributeError):
             pass
-        try:
-            menu.grab_release()
-        except tk.TclError:
-            pass
-        root.update_idletasks()
+        release_menu_grab(menu)
         root.after(max(1, int(delay_ms)), command)
 
     return invoke
 
 
+def request_managed_maximize(root: tk.Misc) -> bool:
+    """Ask the window manager to maximize the normal managed window."""
+
+    try:
+        root.wm_attributes("-zoomed", True)
+        return True
+    except (tk.TclError, TypeError, AttributeError):
+        pass
+    try:
+        root.state("zoomed")
+        return True
+    except (tk.TclError, TypeError, AttributeError):
+        return False
+
+
 class WorkspaceWindow(RC4WorkspaceWindow):
-    """Use the complete workspace, borderless chrome and embedded-only terminals."""
+    """Use a Cinnamon/Muffin-managed window and embedded-only terminals."""
 
     def __init__(
         self,
@@ -88,16 +123,17 @@ class WorkspaceWindow(RC4WorkspaceWindow):
         repository: WorkspaceRepository,
         session_engine: WorkspaceSessionEngine,
     ) -> None:
-        self._drag_offset: tuple[int, int] | None = None
-        self._normal_geometry: str | None = None
-        self._maximized = False
-        self._restore_borderless_after_map = False
-        root.overrideredirect(True)
+        self._compact_in_progress = False
+        self._last_compact_root_size: tuple[int, int] | None = None
+        self._last_compact_panel_sizes: dict[str, tuple[int, int]] = {}
         super().__init__(root, repository, session_engine)
         self.runtime_registry.register(build_embedded_terminal_controller())
         self._configure_panel_states()
-        self._install_window_chrome()
-        root.after_idle(self._maximize_to_work_area)
+        self._install_managed_window_contract()
+        root.after_idle(self._request_managed_maximize)
+        self.status_text.set(
+            "RC4 gerenciada pelo Cinnamon/Muffin · saída de emergência: Ctrl+Alt+Q"
+        )
 
     def _load_workspace_view(self, message: str) -> None:
         for menu in self._panel_menus.values():
@@ -106,10 +142,11 @@ class WorkspaceWindow(RC4WorkspaceWindow):
             except Exception:  # noqa: BLE001
                 pass
         self._panel_menus.clear()
+        self._last_compact_panel_sizes.clear()
         super()._load_workspace_view(message)
 
     def _render_layout(self) -> None:
-        """Make all three panels consume 100% of the 96% content workspace."""
+        """Make all three panels consume the complete content workspace."""
 
         if getattr(self, "_view_mode", "all") != "all":
             super()._render_layout()
@@ -118,7 +155,6 @@ class WorkspaceWindow(RC4WorkspaceWindow):
             return
 
         self._resize_job = None
-        self.content.update_idletasks()
         width = max(1, self.content.winfo_width())
         height = max(1, self.content.winfo_height())
         cards = list(self.cards)
@@ -137,117 +173,162 @@ class WorkspaceWindow(RC4WorkspaceWindow):
 
         self.metrics_text.set(f"{len(cards)} PAINÉIS · 100% WORKSPACE · {width}×{height}")
         self._refresh_focus_buttons()
-        self._apply_compact_chrome()
+        self._queue_compact_chrome(20)
         self.root.after_idle(self._resize_runtimes)
 
-    def _install_window_chrome(self) -> None:
-        """Replace the white desktop title bar with controls inside the global bar."""
+    def _schedule_compact_chrome(self, event: tk.Event[tk.Misc]) -> None:
+        """Debounce root geometry changes without forcing synchronous Tk layout."""
 
-        for widget in (
-            self.extension_actions_frame,
-            self.product_badge,
-            self._global_menu_button,
-        ):
-            widget.pack_forget()
-
-        self._window_controls = tk.Frame(self.header, background=PALETTE.surface)
-        self._window_controls.pack(side="right", fill="y")
-        self._window_buttons: dict[str, tk.Button] = {}
-        for key, label, command, variant in (
-            ("minimize", "─", self._minimize_window, "ghost"),
-            ("maximize", "□", self._toggle_maximize, "ghost"),
-            ("close", "×", self._close, "danger"),
-        ):
-            button = tk.Button(
-                self._window_controls,
-                text=label,
-                command=command,
-                relief="flat",
-                bd=0,
-                highlightthickness=0,
-                font=(MONO_FONT_FAMILY, 10, "bold"),
-                padx=9,
-                pady=2,
-                cursor="hand2",
-                **button_colors(variant),
-            )
-            button.pack(side="left", fill="y")
-            self._window_buttons[key] = button
-
-        self.extension_actions_frame.pack(side="right", padx=(0, 2), fill="y")
-        self.product_badge.pack(side="right", padx=(3, 5), pady=3)
-        self._global_menu_button.pack(side="right", padx=(2, 2), pady=3)
-
-        self.header.bind("<ButtonPress-1>", self._start_window_drag, add="+")
-        self.header.bind("<B1-Motion>", self._drag_window, add="+")
-        self.header.bind("<Double-Button-1>", lambda _event: self._toggle_maximize(), add="+")
-        self.root.bind("<Map>", self._restore_borderless_on_map, add="+")
-
-    def _work_area(self) -> WorkArea:
-        fallback_width = self.root.winfo_screenwidth()
-        fallback_height = self.root.winfo_screenheight()
-        try:
-            result = subprocess.run(
-                ["xprop", "-root", "_NET_WORKAREA"],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=2,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return parse_work_area("", fallback_width, fallback_height)
-        return parse_work_area(result.stdout, fallback_width, fallback_height)
-
-    def _maximize_to_work_area(self) -> None:
-        self.root.update_idletasks()
-        x, y, width, height = self._work_area()
-        if self._normal_geometry is None:
-            normal_width = max(720, round(width * 0.84))
-            normal_height = max(520, round(height * 0.84))
-            normal_x = x + max(0, (width - normal_width) // 2)
-            normal_y = y + max(0, (height - normal_height) // 2)
-            self._normal_geometry = (
-                f"{normal_width}x{normal_height}+{normal_x}+{normal_y}"
-            )
-        self.root.geometry(f"{width}x{height}+{x}+{y}")
-        self._maximized = True
-        self._window_buttons.get("maximize", tk.Button()).configure(text="❐")
-
-    def _toggle_maximize(self) -> None:
-        if self._maximized:
-            if self._normal_geometry is not None:
-                self.root.geometry(self._normal_geometry)
-            self._maximized = False
-            self._window_buttons["maximize"].configure(text="□")
+        if event.widget is not self.root or self._closed:
             return
-        self._normal_geometry = self.root.geometry()
-        self._maximize_to_work_area()
+        self._queue_compact_chrome(60)
 
-    def _minimize_window(self) -> None:
-        self._restore_borderless_after_map = True
-        self.root.overrideredirect(False)
-        self.root.iconify()
-
-    def _restore_borderless_on_map(self, _event: tk.Event[tk.Misc]) -> None:
-        if not self._restore_borderless_after_map:
+    def _queue_compact_chrome(self, delay_ms: int) -> None:
+        if self._closed:
             return
-        self._restore_borderless_after_map = False
-        self.root.after_idle(lambda: self.root.overrideredirect(True))
-
-    def _start_window_drag(self, event: tk.Event[tk.Misc]) -> None:
-        if self._maximized:
-            self._drag_offset = None
-            return
-        self._drag_offset = (
-            event.x_root - self.root.winfo_x(),
-            event.y_root - self.root.winfo_y(),
+        if self._compact_job is not None:
+            try:
+                self.root.after_cancel(self._compact_job)
+            except tk.TclError:
+                pass
+        self._compact_job = self.root.after(
+            max(0, int(delay_ms)),
+            self._apply_compact_chrome,
         )
 
-    def _drag_window(self, event: tk.Event[tk.Misc]) -> None:
-        if self._drag_offset is None or self._maximized:
+    def _apply_compact_chrome(self) -> None:
+        """Apply compact chrome once per stable geometry, without update_idletasks."""
+
+        self._compact_job = None
+        if self._closed or self._compact_in_progress:
             return
-        offset_x, offset_y = self._drag_offset
-        self.root.geometry(f"+{event.x_root - offset_x}+{event.y_root - offset_y}")
+
+        self._compact_in_progress = True
+        try:
+            root_size = (self.root.winfo_width(), self.root.winfo_height())
+            if root_size != self._last_compact_root_size:
+                self._apply_header_layout()
+                self._last_compact_root_size = root_size
+
+            active_ids: set[str] = set()
+            for card in self.cards:
+                panel_id = card.panel.id
+                active_ids.add(panel_id)
+                panel_size = (card.frame.winfo_width(), card.frame.winfo_height())
+                if self._last_compact_panel_sizes.get(panel_id) == panel_size:
+                    continue
+                self._compact_panel(card)
+                self._last_compact_panel_sizes[panel_id] = panel_size
+
+            stale_ids = set(self._last_compact_panel_sizes) - active_ids
+            for panel_id in stale_ids:
+                self._last_compact_panel_sizes.pop(panel_id, None)
+        finally:
+            self._compact_in_progress = False
+
+    def _compact_panel(self, card: PanelCard) -> None:
+        """Compact one panel without synchronously flushing Tk geometry events."""
+
+        children = card.frame.winfo_children()
+        if len(children) < 3:
+            return
+        header, body, footer = children[0], children[1], children[-1]
+        height = panel_header_height(card.frame.winfo_height())
+        header.configure(height=height)
+        header.pack_propagate(False)
+
+        header_children = header.winfo_children()
+        if header_children:
+            icon_box = header_children[0]
+            icon_size = max(18, round(height * 0.72))
+            icon_box.configure(width=icon_size, height=icon_size)
+            icon_box.pack_configure(
+                padx=(5, 5),
+                pady=max(1, (height - icon_size) // 2),
+            )
+        if len(header_children) > 1:
+            identity = header_children[1]
+            identity.pack_configure(pady=1)
+            labels = identity.winfo_children()
+            if labels:
+                labels[0].configure(font=(FONT_FAMILY, 8, "bold"))
+            if len(labels) > 1:
+                labels[1].pack_forget()
+        card.badge.configure(font=(FONT_FAMILY, 6, "bold"), padx=5, pady=1)
+        card.badge.pack_configure(padx=4)
+
+        body_children = body.winfo_children()
+        if body_children:
+            body_children[0].pack_forget()
+        card.content_stack.pack_configure(padx=0, pady=0)
+        footer.pack_forget()
+        self._ensure_panel_menu(card, header)
+
+    def _install_managed_window_contract(self) -> None:
+        """Keep the native title bar and delegate window lifecycle to Muffin."""
+
+        self.root.title(APP_TITLE)
+        self.root.resizable(True, True)
+        try:
+            self.root.wm_attributes("-topmost", False)
+        except (tk.TclError, TypeError, AttributeError):
+            pass
+        for shortcut in EMERGENCY_SHORTCUTS:
+            self.root.bind_all(shortcut, self._emergency_exit, add="+")
+
+    def _request_managed_maximize(self) -> None:
+        if self._closed:
+            return
+        request_managed_maximize(self.root)
+
+    def _release_popup_grabs(self) -> None:
+        menus = list(self._panel_menus.values())
+        if hasattr(self, "_global_menu"):
+            menus.append(self._global_menu)
+        for menu in menus:
+            try:
+                menu.unpost()
+            except (tk.TclError, AttributeError):
+                pass
+            release_menu_grab(menu)
+        try:
+            self.root.grab_release()
+        except (tk.TclError, AttributeError):
+            pass
+
+    def _close(self) -> None:
+        """Destroy the managed window before best-effort runtime cleanup."""
+
+        if self._closed:
+            return
+        self._closed = True
+        self._release_popup_grabs()
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
+        try:
+            self.runtime_registry.close_all()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _emergency_exit(self, _event: tk.Event[tk.Misc] | None = None) -> str:
+        """Release the desktop immediately and clean runtimes in a daemon thread."""
+
+        if self._closed:
+            return "break"
+        self._closed = True
+        self._release_popup_grabs()
+        threading.Thread(
+            target=self.runtime_registry.close_all,
+            name="triview-emergency-cleanup",
+            daemon=True,
+        ).start()
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
+        return "break"
 
     def _menu_action(
         self,
@@ -255,6 +336,14 @@ class WorkspaceWindow(RC4WorkspaceWindow):
         command: Callable[[], object],
     ) -> Callable[[], None]:
         return deferred_menu_action(self.root, menu, command)
+
+    def _show_global_menu(self) -> None:
+        """Open the global menu and always release its grab."""
+
+        self._rebuild_global_menu()
+        x = self._global_menu_button.winfo_rootx()
+        y = self._global_menu_button.winfo_rooty() + self._global_menu_button.winfo_height()
+        safe_popup_menu(self._global_menu, x, y)
 
     def _show_panel_menu(self, card: PanelCard) -> None:
         """Open a panel menu whose actions run only after the menu disappears."""
@@ -305,7 +394,8 @@ class WorkspaceWindow(RC4WorkspaceWindow):
         )
 
         button = menu._triview_button  # type: ignore[attr-defined]
-        menu.tk_popup(
+        safe_popup_menu(
+            menu,
             button.winfo_rootx(),
             button.winfo_rooty() + button.winfo_height(),
         )
@@ -336,6 +426,7 @@ def main(
 __all__ = [
     "APP_TITLE",
     "DEFAULT_WORKSPACE",
+    "EMERGENCY_SHORTCUTS",
     "PanelCard",
     "PanelEditorDialog",
     "WorkspaceWindow",
@@ -345,4 +436,11 @@ __all__ = [
     "panel_header_height",
     "parse_work_area",
     "proportional_panel_bounds",
+    "release_menu_grab",
+    "request_managed_maximize",
+    "safe_popup_menu",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

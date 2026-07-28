@@ -15,8 +15,8 @@ from triview_workspace.engines.browser_live_rc import (
 def test_active_entry_uses_hardened_release_candidate_runtime() -> None:
     assert active_gui.main is atomic_gui.main
     assert active_gui.WorkspaceWindow is atomic_gui.WorkspaceWindow
-    assert atomic_gui.LIVE_BROWSER_BACKEND_NAME == HARDENED_BROWSER_BACKEND_NAME
-    assert atomic_gui.LIVE_BROWSER_BACKEND_NAME == (
+    assert atomic_gui.RC_BROWSER_BACKEND_NAME == HARDENED_BROWSER_BACKEND_NAME
+    assert atomic_gui.RC_BROWSER_BACKEND_NAME == (
         "ImmediateHideXfwm4FinalClientX11BraveBrowserBackend"
     )
 

@@ -4,6 +4,7 @@ set -Eeuo pipefail
 CANDIDATE_ID="${1:?Informe o identificador, por exemplo RC4-1.0.0A1}"
 SOURCE_REF="${2:?Informe uma branch, tag ou SHA completo}"
 MODULE="${3:?Informe o módulo gráfico, por exemplo triview_workspace.gui}"
+UPDATE_REF="${4:-${TRIVIEW_CANDIDATE_UPDATE_REF:-$SOURCE_REF}}"
 REPO="${TRIVIEW_REPO:-leon337/triview-workspace-linux}"
 SAFE_ID="$(printf '%s' "$CANDIDATE_ID" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9._-')"
 [[ -n "$SAFE_ID" ]] || { printf 'Identificador inválido.\n' >&2; exit 2; }
@@ -95,30 +96,45 @@ PY
 mkdir -p "$tmp_dir/extracted"
 tar -xzf "$tmp_dir/source.tar.gz" -C "$tmp_dir/extracted" --strip-components=1
 [[ -f "$tmp_dir/extracted/pyproject.toml" ]] || fail "Pacote inválido: pyproject.toml ausente."
+[[ -f "$tmp_dir/extracted/scripts/candidate-launch.sh" ]] || fail "Lançador observável ausente."
+[[ -f "$tmp_dir/extracted/scripts/candidate-update.sh" ]] || fail "Atualizador controlado ausente."
+[[ -f "$tmp_dir/extracted/scripts/candidate-diagnose.sh" ]] || fail "Diagnóstico independente ausente."
 python3 -m compileall -q "$tmp_dir/extracted/src"
+for script in \
+  "$tmp_dir/extracted/scripts/install-module-candidate.sh" \
+  "$tmp_dir/extracted/scripts/candidate-launch.sh" \
+  "$tmp_dir/extracted/scripts/candidate-update.sh" \
+  "$tmp_dir/extracted/scripts/candidate-diagnose.sh"; do
+  bash -n "$script"
+done
 
 release_dir="$(mktemp -d "$APP_ROOT/releases/${timestamp}-${RESOLVED_SHA:0:12}-XXXXXX")"
 cp -a "$tmp_dir/extracted/." "$release_dir/"
 export PYTHONPATH="$release_dir/src"
 export XDG_DATA_HOME="$DATA_ROOT"
 export XDG_STATE_HOME="$STATE_ROOT"
+export TRIVIEW_RUNTIME_ROOT="$release_dir"
+export TRIVIEW_RUNTIME_SHA="$RESOLVED_SHA"
+export TRIVIEW_RUNTIME_MODULE="$MODULE"
 cd "$release_dir"
 python3 -m triview_workspace.cli --diagnostic \
   --workspace "$release_dir/config/workspaces/three-mobile.json" \
   --data-file "$DATA_ROOT/diagnostic-workspaces.json" >/dev/null
 python3 -c "import importlib; module=importlib.import_module('$MODULE'); assert callable(module.main)"
+python3 -c "import triview_workspace.runtime_observability as module; assert callable(module.write_diagnostic_report)"
 
-python3 - "$release_dir/candidate-release.json" "$CANDIDATE_ID" "$REPO" "$SOURCE_REF" "$RESOLVED_SHA" "$MODULE" <<'PY'
+python3 - "$release_dir/candidate-release.json" "$CANDIDATE_ID" "$REPO" "$SOURCE_REF" "$UPDATE_REF" "$RESOLVED_SHA" "$MODULE" <<'PY'
 import datetime as dt
 import json
 import sys
 
-path, candidate_id, repository, source_ref, resolved_sha, module = sys.argv[1:]
+path, candidate_id, repository, source_ref, update_ref, resolved_sha, module = sys.argv[1:]
 payload = {
-    "schema_version": 1,
+    "schema_version": 2,
     "candidate_id": candidate_id,
     "repository": repository,
     "source_ref": source_ref,
+    "update_ref": update_ref,
     "resolved_sha": resolved_sha,
     "module": module,
     "installed_at": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -144,20 +160,48 @@ ln -s "$release_dir" "$current_temp"
 mv -Tf "$current_temp" "$current_link"
 
 launcher="$BIN_DIR/triview-workspace-$SAFE_ID"
+updater="$BIN_DIR/triview-workspace-$SAFE_ID-update"
+diagnostic="$BIN_DIR/triview-workspace-$SAFE_ID-diagnose"
+
 cat > "$launcher" <<EOF
 #!/usr/bin/env bash
 set -Eeuo pipefail
-CURRENT="$current_link"
-export XDG_DATA_HOME="$DATA_ROOT"
-export XDG_STATE_HOME="$STATE_ROOT"
-export PYTHONPATH="\$CURRENT/src\${PYTHONPATH:+:\$PYTHONPATH}"
-cd "\$CURRENT"
-exec python3 -m "$MODULE"
+exec bash "$current_link/scripts/candidate-launch.sh" \
+  "$APP_ROOT" \
+  "$DATA_ROOT" \
+  "$STATE_ROOT" \
+  "$MODULE"
 EOF
-chmod +x "$launcher"
 
-desktop="$APPLICATIONS_DIR/triview-workspace-$SAFE_ID.desktop"
-cat > "$desktop" <<EOF
+cat > "$updater" <<EOF
+#!/usr/bin/env bash
+set -Eeuo pipefail
+exec bash "$current_link/scripts/candidate-update.sh" \
+  "$CANDIDATE_ID" \
+  "$APP_ROOT" \
+  "$DATA_ROOT" \
+  "$STATE_ROOT" \
+  "$MODULE" \
+  "$UPDATE_REF" \
+  "$REPO"
+EOF
+
+cat > "$diagnostic" <<EOF
+#!/usr/bin/env bash
+set -Eeuo pipefail
+exec bash "$current_link/scripts/candidate-diagnose.sh" \
+  "$APP_ROOT" \
+  "$DATA_ROOT" \
+  "$STATE_ROOT" \
+  "$MODULE"
+EOF
+chmod +x "$launcher" "$updater" "$diagnostic"
+
+main_desktop="$APPLICATIONS_DIR/triview-workspace-$SAFE_ID.desktop"
+update_desktop="$APPLICATIONS_DIR/triview-workspace-$SAFE_ID-update.desktop"
+diagnostic_desktop="$APPLICATIONS_DIR/triview-workspace-$SAFE_ID-diagnose.desktop"
+
+cat > "$main_desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=TriView Workspace — $CANDIDATE_ID
@@ -168,10 +212,37 @@ Terminal=false
 Categories=Utility;Development;
 StartupNotify=true
 EOF
-chmod +x "$desktop"
+
+cat > "$update_desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Atualizar TriView Workspace — $CANDIDATE_ID
+Comment=Atualização controlada com log persistente e resultado visível
+Exec=$updater
+Icon=system-software-update
+Terminal=true
+Categories=Utility;Development;
+StartupNotify=true
+EOF
+
+cat > "$diagnostic_desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Diagnosticar TriView Workspace — $CANDIDATE_ID
+Comment=Coleta proveniência, processos, X11 e logs do candidato ativo
+Exec=$diagnostic
+Icon=utilities-system-monitor
+Terminal=false
+Categories=Utility;Development;
+StartupNotify=true
+EOF
+
+chmod +x "$main_desktop" "$update_desktop" "$diagnostic_desktop"
 update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
 log "Candidato instalado no commit $RESOLVED_SHA."
 log "Atalho: TriView Workspace — $CANDIDATE_ID"
+log "Atalho: Atualizar TriView Workspace — $CANDIDATE_ID"
+log "Atalho: Diagnosticar TriView Workspace — $CANDIDATE_ID"
 log "Dados: $DATA_ROOT"
 log "Estado: $STATE_ROOT"
 log "Metadados: $release_dir/candidate-release.json"

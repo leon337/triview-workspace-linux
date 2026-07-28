@@ -150,7 +150,7 @@ def test_physical_wheel_route_reaches_only_the_target_x11_child() -> None:
         [
             sys.executable,
             "-m",
-            "triview_workspace.engines.browser_wheel_worker",
+            "triview_workspace.engines.browser_wheel_worker_rc",
         ],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,

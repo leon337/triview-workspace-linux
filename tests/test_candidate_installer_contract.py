@@ -9,9 +9,21 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_INSTALLER = ROOT / "scripts" / "install-module-candidate.sh"
 RC4_INSTALLER = ROOT / "scripts" / "install-train-candidate.sh"
+CANDIDATE_LAUNCHER = ROOT / "scripts" / "candidate-launch.sh"
+CANDIDATE_UPDATER = ROOT / "scripts" / "candidate-update.sh"
+CANDIDATE_DIAGNOSTIC = ROOT / "scripts" / "candidate-diagnose.sh"
 
 
-@pytest.mark.parametrize("script", [MODULE_INSTALLER, RC4_INSTALLER])
+@pytest.mark.parametrize(
+    "script",
+    [
+        MODULE_INSTALLER,
+        RC4_INSTALLER,
+        CANDIDATE_LAUNCHER,
+        CANDIDATE_UPDATER,
+        CANDIDATE_DIAGNOSTIC,
+    ],
+)
 def test_candidate_installer_has_valid_bash_syntax(script: Path) -> None:
     subprocess.run(["bash", "-n", str(script)], check=True)
 
@@ -30,6 +42,7 @@ def test_module_installer_records_release_identity_and_previous_candidate() -> N
 
     assert "candidate-release.json" in script
     assert '"resolved_sha": resolved_sha' in script
+    assert '"update_ref": update_ref' in script
     assert 'previous_link="$APP_ROOT/previous"' in script
     assert 'mv -Tf "$current_temp" "$current_link"' in script
 
@@ -41,11 +54,44 @@ def test_module_installer_rejects_unsafe_archive_entries() -> None:
     assert '".." in path.parts' in script
 
 
+def test_module_installer_creates_open_update_and_diagnostic_launchers() -> None:
+    script = MODULE_INSTALLER.read_text(encoding="utf-8")
+
+    assert "candidate-launch.sh" in script
+    assert "candidate-update.sh" in script
+    assert "candidate-diagnose.sh" in script
+    assert "Atualizar TriView Workspace" in script
+    assert "Diagnosticar TriView Workspace" in script
+    assert "runtime_observability" in script
+
+
+def test_candidate_launcher_records_exact_runtime_before_exec() -> None:
+    script = CANDIDATE_LAUNCHER.read_text(encoding="utf-8")
+
+    assert "current_target=" in script
+    assert "resolved_sha=" in script
+    assert "TRIVIEW_RUNTIME_ROOT" in script
+    assert "TRIVIEW_RUNTIME_SHA" in script
+    assert "TRIVIEW_RUNTIME_MODULE" in script
+    assert "launcher.log" in script
+    assert "app.stderr.log" in script
+
+
+def test_candidate_diagnostic_collects_x11_processes_and_runtime_events() -> None:
+    script = CANDIDATE_DIAGNOSTIC.read_text(encoding="utf-8")
+
+    assert "runtime_observability" in script
+    assert "xwininfo -root -tree" in script
+    assert "runtime-events.jsonl" in script
+    assert "candidate-release.json" in script
+    assert "ps -eo pid,ppid,pgid,lstart,args" in script
+
+
 def test_rc4_installer_requires_full_sha_and_opens_approved_gui() -> None:
     script = RC4_INSTALLER.read_text(encoding="utf-8")
 
     assert "TRIVIEW_CANDIDATE_REF" in script
-    assert "git -C \"$REPO_ROOT\" rev-parse HEAD" in script
+    assert 'git -C "$REPO_ROOT" rev-parse HEAD' in script
     assert '[[ ! "$SOURCE_REF" =~ ^[0-9a-fA-F]{40}$ ]]' in script
     assert '"RC4-1.0.0A1"' in script
     assert '"triview_workspace.gui"' in script

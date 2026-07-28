@@ -1,4 +1,4 @@
-"""Release-candidate entry point for live workspaces and hardened X11 startup."""
+"""Release-candidate entry point with live workspaces and nested X11 containment."""
 
 from __future__ import annotations
 
@@ -16,13 +16,14 @@ from triview_workspace.engines.browser_live import (
     LiveBrowserEngine,
     NO_FLASH_BROWSER_BACKEND_NAME,
 )
-from triview_workspace.engines.browser_live_rc import (
-    HARDENED_BROWSER_BACKEND_NAME,
-    ImmediateHideXfwm4FinalClientX11BraveBrowserBackend,
+from triview_workspace.engines.browser_wheel_bridge_xephyr import (
+    XephyrBrowserWheelBridge,
+    XephyrBrowserWheelRoute,
+    x11_window_ancestry,
 )
-from triview_workspace.engines.browser_wheel_bridge import (
-    BrowserWheelBridge,
-    BrowserWheelRoute,
+from triview_workspace.engines.browser_xephyr import (
+    XEPHYR_BROWSER_BACKEND_NAME,
+    XephyrEmbeddedBraveBrowserBackend,
 )
 from triview_workspace.engines.runtime_controllers import BrowserRuntimeController
 from triview_workspace.engines.session import WorkspaceSessionEngine
@@ -56,15 +57,14 @@ from triview_workspace.runtime_observability import (
     write_runtime_snapshot,
 )
 
-# Preserve the first LEA-247 public constant for compatibility with the initial
-# tests and diagnostics. The actual RC backend is explicitly named separately.
+# Preserve public compatibility constants while the active RC uses nested Xephyr.
 LIVE_BROWSER_BACKEND_NAME = NO_FLASH_BROWSER_BACKEND_NAME
-RC_BROWSER_BACKEND_NAME = HARDENED_BROWSER_BACKEND_NAME
+RC_BROWSER_BACKEND_NAME = XEPHYR_BROWSER_BACKEND_NAME
 WHEEL_ROUTE_SYNC_MS = 250
 
 
 class WorkspaceWindow(LiveWorkspaceWindow):
-    """Final RC runtime with live sessions, exact wheel routing and audit snapshots."""
+    """Live sessions with nested Browser containment and auditable wheel routes."""
 
     def __init__(
         self,
@@ -72,31 +72,30 @@ class WorkspaceWindow(LiveWorkspaceWindow):
         repository: WorkspaceRepository,
         session_engine: WorkspaceSessionEngine,
     ) -> None:
-        self._wheel_bridge: BrowserWheelBridge | None = None
+        self._wheel_bridge: XephyrBrowserWheelBridge | None = None
         super().__init__(root, repository, session_engine)
 
-        # Replace the initial no-flash backend before any user-triggered panel
-        # opening. The hardened selector hides every candidate window at first
-        # observation, not only after final-client stability.
-        backend = ImmediateHideXfwm4FinalClientX11BraveBrowserBackend()
+        backend = XephyrEmbeddedBraveBrowserBackend()
         self.runtime_registry.register(
             BrowserRuntimeController(LiveBrowserEngine(backend))
         )
         self._configure_panel_states()
         self._sync_cards_from_runtime()
         record_runtime_event(
-            "browser_backend_hardened",
+            "browser_backend_nested_containment_ready",
             backend=RC_BROWSER_BACKEND_NAME,
             compatibility_name=BROWSER_BACKEND_NAME,
             backend_module=type(backend).__module__,
+            containment="nested_xephyr",
+            external_root_mapping_possible=False,
         )
 
-        self._wheel_bridge = BrowserWheelBridge()
+        self._wheel_bridge = XephyrBrowserWheelBridge()
         self._wheel_bridge.start()
         root.after(WHEEL_ROUTE_SYNC_MS, self._sync_wheel_bridge_routes)
 
     def _load_workspace_view(self, message: str) -> None:
-        """Invalidate stale UI jobs, preserve runtimes and snapshot the restored state."""
+        """Invalidate stale UI jobs, preserve runtimes and snapshot restored state."""
 
         if hasattr(self, "_generation"):
             self._generation += 1
@@ -113,21 +112,21 @@ class WorkspaceWindow(LiveWorkspaceWindow):
     def _poll_browser_pointer_focus(self) -> None:
         """Do not implement focus-follows-mouse.
 
-        Continuous pointer polling can steal keyboard focus from a conversation
-        while the user is typing in another Browser Panel. The wheel bridge
-        captures only buttons 4 and 5 on the Browser host and never observes or
-        changes keyboard focus.
+        The wheel bridge captures only buttons 4 and 5 on the Browser host and
+        never observes or changes keyboard focus.
         """
 
         return
 
     def _sync_wheel_bridge_routes(self) -> None:
+        """Publish live host/browser ancestry for exact physical correlation."""
+
         if self._closed:
             return
         bridge = self._wheel_bridge
         controller = self.runtime_registry.get("browser")
         engine = getattr(controller, "engine", None)
-        routes: list[BrowserWheelRoute] = []
+        routes: list[XephyrBrowserWheelRoute] = []
         if bridge is not None and engine is not None and hasattr(engine, "session"):
             for state in self._workspace_views.values():
                 for panel_id, runtime_id in state.runtime_ids.items():
@@ -141,11 +140,14 @@ class WorkspaceWindow(LiveWorkspaceWindow):
                         host_window_id = int(card.native_host_id())
                     except (AttributeError, tk.TclError, ValueError):
                         continue
+                    browser_window_id = str(session.window_id)
                     routes.append(
-                        BrowserWheelRoute(
+                        XephyrBrowserWheelRoute(
                             runtime_id=runtime_id,
                             host_window_id=host_window_id,
-                            browser_window_id=str(session.window_id),
+                            browser_window_id=browser_window_id,
+                            host_ancestry=x11_window_ancestry(host_window_id),
+                            browser_ancestry=x11_window_ancestry(browser_window_id),
                         )
                     )
             bridge.sync(routes)
@@ -225,7 +227,7 @@ def main(
     workspace_path: Path | None = None,
     data_file: Path | None = None,
 ) -> int:
-    """Start the hardened live-workspace RC4 candidate."""
+    """Start the nested-X11 live-workspace RC4 candidate."""
 
     log_path = _configure_logging()
     provenance_path = write_runtime_snapshot(
@@ -283,7 +285,7 @@ def main(
         record_runtime_event("application_stopped", reason="mainloop_returned")
         return 0
     except Exception as exc:  # noqa: BLE001
-        logging.exception("Unable to start hardened live-workspace TriView RC4")
+        logging.exception("Unable to start nested-X11 TriView RC4")
         record_runtime_event(
             "application_start_failed",
             error_type=type(exc).__name__,

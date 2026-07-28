@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from triview_workspace.engines.terminal_embedded import EmbeddedFirstX11PanelRuntimeBackend
+from triview_workspace.engines.browser_embedded import exact_x11_pattern
+from triview_workspace.engines.terminal_embedded import (
+    EmbeddedFirstX11PanelRuntimeBackend,
+    build_staged_terminal_command,
+)
 
 
 class _FakeProcess:
@@ -13,9 +17,27 @@ class _FakeProcess:
         return None
 
 
-def test_terminal_candidate_search_includes_unmapped_windows(monkeypatch: Any) -> None:
+def test_xfce_terminal_command_is_staged_offscreen() -> None:
+    command = build_staged_terminal_command(
+        "/usr/bin/xfce4-terminal",
+        "TriView-Terminal-terminal",
+        ("/usr/bin/bash", "-l"),
+    )
+
+    assert "--disable-server" in command
+    assert "--title=TriView-Terminal-terminal" in command
+    assert "--geometry=80x24-32000-32000" in command
+    assert command[-2:] == ("/usr/bin/bash", "-l")
+
+
+def test_terminal_selects_unique_title_instead_of_first_pid_helper(
+    monkeypatch: Any,
+) -> None:
     runtime = EmbeddedFirstX11PanelRuntimeBackend()
-    calls: list[tuple[str, str, bool]] = []
+    staged: list[str] = []
+    searches: list[tuple[str, str, bool]] = []
+
+    monkeypatch.setattr(runtime, "_process_family", lambda _pid: {4321})
 
     def search(
         _xdotool: str,
@@ -24,50 +46,58 @@ def test_terminal_candidate_search_includes_unmapped_windows(monkeypatch: Any) -
         *,
         only_visible: bool = True,
     ) -> list[str]:
-        calls.append((selector, value, only_visible))
-        return ["77"] if selector == "--pid" else []
+        searches.append((selector, value, only_visible))
+        return ["helper-window", "terminal-window"]
 
     monkeypatch.setattr(runtime, "_search_windows", search)
-    monkeypatch.setattr(runtime, "_window_pid", lambda *_args: 4321)
-
-    result = runtime._candidate_window_ids("xdotool", {4321}, ("Terminal",), set())
-
-    assert result == ["77"]
-    assert calls
-    assert all(only_visible is False for _selector, _value, only_visible in calls)
-
-
-def test_terminal_is_staged_without_waiting_until_viewable(monkeypatch: Any) -> None:
-    runtime = EmbeddedFirstX11PanelRuntimeBackend()
-    calls: list[tuple[str, ...]] = []
-
-    monkeypatch.setattr(runtime, "_process_family", lambda _pid: {4321})
     monkeypatch.setattr(
         runtime,
-        "_candidate_window_ids",
-        lambda *_args, **_kwargs: ["77"],
+        "_window_pid",
+        lambda _xdotool, window_id: 9999 if window_id == "helper-window" else 4321,
     )
-    monkeypatch.setattr(
-        runtime,
-        "_window_is_viewable",
-        lambda *_args: (_ for _ in ()).throw(AssertionError("must not wait for MapState")),
-    )
-    monkeypatch.setattr(
-        runtime,
-        "_run_xdotool",
-        lambda _xdotool, *args: calls.append(tuple(args)),
-    )
+    monkeypatch.setattr(runtime, "_stage_window", lambda _xdotool, window_id: staged.append(window_id))
 
     result = runtime._wait_for_window(
         "xdotool",
         "xwininfo",
         _FakeProcess(),  # type: ignore[arg-type]
-        ("TriView Terminal",),
+        ("TriView-Terminal-terminal",),
         set(),
     )
 
-    assert result == "77"
-    assert calls == [
-        ("windowmove", "77", "-32000", "-32000"),
-        ("windowunmap", "77"),
+    assert result == "terminal-window"
+    assert staged == ["terminal-window"]
+    assert searches == [
+        (
+            "--name",
+            exact_x11_pattern("TriView-Terminal-terminal"),
+            False,
+        )
     ]
+
+
+def test_terminal_ignores_preexisting_unique_title_window(monkeypatch: Any) -> None:
+    runtime = EmbeddedFirstX11PanelRuntimeBackend()
+    calls = 0
+
+    monkeypatch.setattr(runtime, "_process_family", lambda _pid: {4321})
+
+    def search(*_args: object, **_kwargs: object) -> list[str]:
+        nonlocal calls
+        calls += 1
+        return ["old-window", "new-window"]
+
+    monkeypatch.setattr(runtime, "_search_windows", search)
+    monkeypatch.setattr(runtime, "_window_pid", lambda *_args: 4321)
+    monkeypatch.setattr(runtime, "_stage_window", lambda *_args: None)
+
+    result = runtime._wait_for_window(
+        "xdotool",
+        "xwininfo",
+        _FakeProcess(),  # type: ignore[arg-type]
+        ("TriView-Terminal-terminal",),
+        {"old-window"},
+    )
+
+    assert calls == 1
+    assert result == "new-window"

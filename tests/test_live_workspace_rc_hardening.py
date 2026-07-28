@@ -5,21 +5,20 @@ from pathlib import Path
 
 import triview_workspace.gui as active_gui
 import triview_workspace.gui_rc4_atomic as atomic_gui
+import triview_workspace.gui_rc4_xephyr as xephyr_gui
 from triview_workspace.diagnostic_blackbox_rc import ByteSafeBlackboxCollector
 from triview_workspace.diagnostic_blackbox_verified import VerifiedBlackboxCollector
-from triview_workspace.engines.browser_live_rc import (
-    HARDENED_BROWSER_BACKEND_NAME,
-    ImmediateHideXfwm4FinalClientX11BraveBrowserBackend,
+from triview_workspace.engines.browser_xephyr import (
+    XEPHYR_BROWSER_BACKEND_NAME,
+    XephyrEmbeddedBraveBrowserBackend,
 )
 
 
-def test_active_entry_uses_hardened_release_candidate_runtime() -> None:
-    assert active_gui.main is atomic_gui.main
-    assert active_gui.WorkspaceWindow is atomic_gui.WorkspaceWindow
-    assert atomic_gui.RC_BROWSER_BACKEND_NAME == HARDENED_BROWSER_BACKEND_NAME
-    assert atomic_gui.RC_BROWSER_BACKEND_NAME == (
-        "ImmediateHideXfwm4FinalClientX11BraveBrowserBackend"
-    )
+def test_active_entry_uses_nested_xephyr_release_candidate_runtime() -> None:
+    assert active_gui.main is xephyr_gui.main
+    assert active_gui.WorkspaceWindow is xephyr_gui.WorkspaceWindow
+    assert xephyr_gui.RC_BROWSER_BACKEND_NAME == XEPHYR_BROWSER_BACKEND_NAME
+    assert xephyr_gui.RC_BROWSER_BACKEND_NAME == "XephyrEmbeddedBraveBrowserBackend"
 
 
 def test_workspace_switch_increments_generation_without_closing_runtimes() -> None:
@@ -38,16 +37,18 @@ def test_release_candidate_does_not_enable_focus_follows_mouse() -> None:
     assert "return" in source
 
 
-def test_every_new_browser_candidate_is_hidden_before_final_selection() -> None:
-    source = inspect.getsource(
-        ImmediateHideXfwm4FinalClientX11BraveBrowserBackend._wait_for_unique_window
-    )
+def test_browser_is_launched_inside_xephyr_parent_before_first_map() -> None:
+    launch_source = inspect.getsource(XephyrEmbeddedBraveBrowserBackend.launch)
 
-    assert source.index("_hide_and_stage_window") < source.index(
-        "is_final_browser_candidate"
+    assert '"-parent"' in launch_source
+    assert "parent_window_id" in launch_source
+    assert "self._wait_for_display" in launch_source
+    assert launch_source.index("self._wait_for_display") < launch_source.index(
+        "browser_process = subprocess.Popen"
     )
-    assert "browser_candidate_forced_hidden" in source
-    assert "visible_before_hide" in source
+    assert 'containment="nested_xephyr"' in launch_source
+    assert "external_root_mapping_possible=False" in launch_source
+    assert "browser_candidate_forced_hidden" not in launch_source
 
 
 def test_runtime_event_tailer_uses_binary_offsets_and_partial_line_buffer() -> None:

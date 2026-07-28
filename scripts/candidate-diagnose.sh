@@ -18,8 +18,13 @@ export TRIVIEW_APP_ROOT="$APP_ROOT"
 export TRIVIEW_RUNTIME_ROOT="$CURRENT_TARGET"
 export TRIVIEW_RUNTIME_MODULE="$MODULE"
 
-# The final Xephyr collector extends the verified/shareable/byte-safe chain,
-# refreshes provenance after auto-launch and resolves live X11 ancestry.
+# Collector inheritance chain retained for audit compatibility:
+# triview_workspace.diagnostic_blackbox_xephyr extends
+# triview_workspace.diagnostic_blackbox_verified, which extends
+# triview_workspace.diagnostic_blackbox_shareable and
+# triview_workspace.diagnostic_blackbox_final / the byte-safe event reader.
+# The final collector refreshes provenance after auto-launch and resolves live
+# X11 ancestry without exporting raw process arguments or private content.
 
 show_result() {
   local title="$1"

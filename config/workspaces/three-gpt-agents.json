@@ -1,7 +1,7 @@
 {
   "layout": {
-    "id": "three-mobile",
-    "name": "Três painéis móveis",
+    "id": "three-gpt-agents-mobile",
+    "name": "Três agentes GPT",
     "slots": [
       {
         "x": 0.02,
@@ -27,27 +27,27 @@
     ]
   },
   "workspace": {
-    "id": "development-demo",
-    "name": "Desenvolvimento",
-    "layout_id": "three-mobile",
+    "id": "three-gpt-agents",
+    "name": "Três Agentes GPT",
+    "layout_id": "three-gpt-agents-mobile",
     "panels": [
       {
-        "id": "chatgpt",
-        "title": "ChatGPT",
+        "id": "agent-gpt-1",
+        "title": "Agente GPT 1",
         "kind": "browser",
         "target": "https://chatgpt.com"
       },
       {
-        "id": "github",
-        "title": "GitHub",
+        "id": "agent-gpt-2",
+        "title": "Agente GPT 2",
         "kind": "browser",
-        "target": "https://github.com"
+        "target": "https://chatgpt.com"
       },
       {
-        "id": "terminal",
-        "title": "Terminal",
-        "kind": "terminal",
-        "target": "bash -l"
+        "id": "agent-gpt-3",
+        "title": "Agente GPT 3",
+        "kind": "browser",
+        "target": "https://chatgpt.com"
       }
     ]
   }

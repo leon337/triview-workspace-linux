@@ -6,7 +6,12 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
 
-from triview_workspace.engines import PdfEngine, PdfPanelAdapter, PdfRuntimeController, WorkspaceSessionEngine
+from triview_workspace.engines import (
+    PdfEngine,
+    PdfPanelAdapter,
+    PdfRuntimeController,
+    WorkspaceSessionEngine,
+)
 from triview_workspace.gui_shell import (
     APP_TITLE,
     DEFAULT_WORKSPACE,
@@ -30,17 +35,12 @@ class WorkspaceWindow(BaseWorkspaceWindow):
         super().__init__(root, repository, session_engine)
         self.registry.register(PdfPanelAdapter())
         self.runtime_registry.register(PdfRuntimeController(PdfEngine()))
-        self._replace_engine_badge(root)
+        self.set_product_stage("PDF")
         self._load_workspace_view("PDF Engine carregado")
 
     @staticmethod
-    def _replace_engine_badge(widget: tk.Misc) -> None:
-        for child in widget.winfo_children():
-            if isinstance(child, tk.Label) and str(child.cget("text")).startswith(
-                "TERMINAL ENGINE"
-            ):
-                child.configure(text="PDF ENGINE 0.6.0")
-            WorkspaceWindow._replace_engine_badge(child)
+    def _replace_engine_badge(_widget: tk.Misc) -> None:
+        """Deprecated: the product badge now has one explicit source."""
 
 
 def main(

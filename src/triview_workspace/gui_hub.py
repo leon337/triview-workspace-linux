@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, simpledialog
 
 from triview_workspace.engines.session import WorkspaceSessionEngine
 from triview_workspace.engines.workspace_hub import (
@@ -21,6 +21,35 @@ from triview_workspace.gui_sessions import (
     _configure_logging,
 )
 from triview_workspace.infrastructure import WorkspaceRepository, load_workspace_bundle
+from triview_workspace.ui_design import (
+    FONT_FAMILY,
+    MONO_FONT_FAMILY,
+    PALETTE,
+    button_colors,
+)
+
+
+def _dialog_button(
+    parent: tk.Misc,
+    text: str,
+    command,
+    *,
+    primary: bool = False,
+) -> tk.Button:
+    colors = button_colors("primary" if primary else "secondary")
+    return tk.Button(
+        parent,
+        text=text,
+        command=command,
+        relief="flat",
+        bd=0,
+        highlightthickness=0,
+        font=(FONT_FAMILY, 8, "bold"),
+        padx=10,
+        pady=6,
+        cursor="hand2",
+        **colors,
+    )
 
 
 class WorkspaceHubDialog:
@@ -37,54 +66,171 @@ class WorkspaceHubDialog:
         self.entries: tuple[HubEntry, ...] = ()
         self.top = tk.Toplevel(parent)
         self.top.title("Workspace Hub")
-        self.top.geometry("820x520")
-        self.top.minsize(700, 440)
+        self.top.geometry("940x600")
+        self.top.minsize(760, 500)
+        self.top.configure(background=PALETTE.app)
         self.top.transient(parent)
 
         self.query = tk.StringVar()
         self.favorites_only = tk.BooleanVar(value=False)
         self.status = tk.StringVar(value="Biblioteca local carregada")
 
-        toolbar = ttk.Frame(self.top, padding=10)
-        toolbar.pack(fill="x")
-        ttk.Label(toolbar, text="Buscar:").pack(side="left")
-        search = ttk.Entry(toolbar, textvariable=self.query, width=34)
-        search.pack(side="left", padx=(6, 12))
+        shell = tk.Frame(
+            self.top,
+            background=PALETTE.surface,
+            highlightbackground=PALETTE.border,
+            highlightthickness=1,
+        )
+        shell.pack(fill="both", expand=True, padx=16, pady=16)
+
+        heading = tk.Frame(shell, background=PALETTE.surface)
+        heading.pack(fill="x", padx=16, pady=(16, 10))
+        tk.Label(
+            heading,
+            text="Workspace Hub",
+            background=PALETTE.surface,
+            foreground=PALETTE.text,
+            font=(FONT_FAMILY, 16, "bold"),
+            anchor="w",
+        ).pack(fill="x")
+        tk.Label(
+            heading,
+            text="Organize, reutilize e compartilhe workspaces sem alterar o original.",
+            background=PALETTE.surface,
+            foreground=PALETTE.text_muted,
+            font=(FONT_FAMILY, 9),
+            anchor="w",
+        ).pack(fill="x", pady=(3, 0))
+
+        toolbar = tk.Frame(shell, background=PALETTE.surface)
+        toolbar.pack(fill="x", padx=16, pady=(0, 12))
+        tk.Label(
+            toolbar,
+            text="BUSCAR",
+            background=PALETTE.surface,
+            foreground=PALETTE.text_subtle,
+            font=(FONT_FAMILY, 7, "bold"),
+        ).pack(side="left", padx=(0, 8))
+        search = tk.Entry(
+            toolbar,
+            textvariable=self.query,
+            width=36,
+            background=PALETTE.surface_raised,
+            foreground=PALETTE.text,
+            insertbackground=PALETTE.text,
+            selectbackground=PALETTE.accent_dark,
+            highlightbackground=PALETTE.border,
+            highlightcolor=PALETTE.border_focus,
+            highlightthickness=1,
+            relief="flat",
+            bd=0,
+            font=(FONT_FAMILY, 9),
+        )
+        search.pack(side="left", fill="x", expand=True, ipady=7)
         search.bind("<KeyRelease>", lambda _event: self.refresh())
-        ttk.Checkbutton(
+        tk.Checkbutton(
             toolbar,
             text="Somente favoritos",
             variable=self.favorites_only,
             command=self.refresh,
-        ).pack(side="left")
+            background=PALETTE.surface,
+            foreground=PALETTE.text_muted,
+            activebackground=PALETTE.surface,
+            activeforeground=PALETTE.text,
+            selectcolor=PALETTE.surface_raised,
+            font=(FONT_FAMILY, 8),
+        ).pack(side="left", padx=(14, 0))
 
-        content = ttk.Panedwindow(self.top, orient="horizontal")
-        content.pack(fill="both", expand=True, padx=10)
+        content = tk.Frame(shell, background=PALETTE.surface)
+        content.pack(fill="both", expand=True, padx=16)
 
-        left = ttk.Frame(content)
-        right = ttk.Frame(content)
-        content.add(left, weight=2)
-        content.add(right, weight=3)
+        left = tk.Frame(
+            content,
+            background=PALETTE.surface_raised,
+            highlightbackground=PALETTE.border,
+            highlightthickness=1,
+        )
+        left.pack(side="left", fill="both", expand=True)
+        right = tk.Frame(
+            content,
+            background=PALETTE.surface_raised,
+            highlightbackground=PALETTE.border,
+            highlightthickness=1,
+        )
+        right.pack(side="left", fill="both", expand=True, padx=(12, 0))
 
-        self.listbox = tk.Listbox(left, exportselection=False)
-        self.listbox.pack(fill="both", expand=True)
+        tk.Label(
+            left,
+            text="BIBLIOTECA",
+            background=PALETTE.surface_raised,
+            foreground=PALETTE.text_subtle,
+            font=(FONT_FAMILY, 7, "bold"),
+            anchor="w",
+            padx=12,
+            pady=10,
+        ).pack(fill="x")
+        self.listbox = tk.Listbox(
+            left,
+            exportselection=False,
+            background=PALETTE.surface,
+            foreground=PALETTE.text,
+            selectbackground=PALETTE.accent_dark,
+            selectforeground=PALETTE.text,
+            highlightthickness=0,
+            borderwidth=0,
+            relief="flat",
+            font=(FONT_FAMILY, 9),
+            activestyle="none",
+        )
+        self.listbox.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         self.listbox.bind("<<ListboxSelect>>", lambda _event: self.show_preview())
 
-        self.preview = tk.Text(right, wrap="word", state="disabled", padx=10, pady=10)
-        self.preview.pack(fill="both", expand=True)
+        tk.Label(
+            right,
+            text="VISUALIZAÇÃO",
+            background=PALETTE.surface_raised,
+            foreground=PALETTE.text_subtle,
+            font=(FONT_FAMILY, 7, "bold"),
+            anchor="w",
+            padx=12,
+            pady=10,
+        ).pack(fill="x")
+        self.preview = tk.Text(
+            right,
+            wrap="word",
+            state="disabled",
+            padx=14,
+            pady=14,
+            background=PALETTE.surface,
+            foreground=PALETTE.text_muted,
+            insertbackground=PALETTE.text,
+            highlightthickness=0,
+            borderwidth=0,
+            relief="flat",
+            font=(MONO_FONT_FAMILY, 9),
+        )
+        self.preview.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
-        actions = ttk.Frame(self.top, padding=10)
-        actions.pack(fill="x")
-        for label, command in (
-            ("Salvar atual", lambda: self.save_current("workspace")),
-            ("Criar template", lambda: self.save_current("template")),
-            ("Importar", self.import_file),
-            ("Exportar", self.export_selected),
-            ("Favoritar", self.toggle_favorite),
-            ("Usar selecionado", self.use_selected),
+        actions = tk.Frame(shell, background=PALETTE.surface)
+        actions.pack(fill="x", padx=16, pady=16)
+        for label, command, primary in (
+            ("Salvar atual", lambda: self.save_current("workspace"), True),
+            ("Criar template", lambda: self.save_current("template"), False),
+            ("Importar", self.import_file, False),
+            ("Exportar", self.export_selected, False),
+            ("Favoritar", self.toggle_favorite, False),
+            ("Usar selecionado", self.use_selected, True),
         ):
-            ttk.Button(actions, text=label, command=command).pack(side="left", padx=(0, 6))
-        ttk.Label(actions, textvariable=self.status).pack(side="right")
+            _dialog_button(actions, label, command, primary=primary).pack(
+                side="left", padx=(0, 7)
+            )
+        tk.Label(
+            actions,
+            textvariable=self.status,
+            background=PALETTE.surface,
+            foreground=PALETTE.text_muted,
+            font=(FONT_FAMILY, 8),
+        ).pack(side="right")
 
         self.refresh()
         search.focus_set()
@@ -135,7 +281,11 @@ class WorkspaceHubDialog:
         ]
         lines.extend(
             f"- {title} ({kind})"
-            for title, kind in zip(preview.panel_titles, preview.panel_kinds, strict=True)
+            for title, kind in zip(
+                preview.panel_titles,
+                preview.panel_kinds,
+                strict=True,
+            )
         )
         self._set_preview("\n".join(lines))
 
@@ -264,39 +414,28 @@ class WorkspaceWindow(SessionWorkspaceWindow):
     ) -> None:
         self.hub_repository = hub_repository or WorkspaceHubRepository()
         super().__init__(root, repository, session_engine)
-        self._add_hub_button(root)
-        self._replace_hub_badge(root)
-        self.status_text.set("Workspace Hub 0.12.0 carregado")
+        self.register_header_action(
+            "workspace-hub",
+            "Workspace Hub",
+            lambda: WorkspaceHubDialog(root, self, self.hub_repository),
+            order=10,
+        )
+        self.set_product_stage("WORKSPACE HUB")
+        self.status_text.set("TriView 1.0 visual carregado")
 
     def _add_hub_button(self, root: tk.Tk) -> None:
-        header = next(
-            (child for child in root.winfo_children() if isinstance(child, tk.Frame)),
-            None,
+        """Compatibility wrapper for older callers."""
+
+        self.register_header_action(
+            "workspace-hub",
+            "Workspace Hub",
+            lambda: WorkspaceHubDialog(root, self, self.hub_repository),
+            order=10,
         )
-        if header is None:
-            return
-        tk.Button(
-            header,
-            text="Workspace Hub",
-            command=lambda: WorkspaceHubDialog(root, self, self.hub_repository),
-            background="#1e293b",
-            foreground="#e2e8f0",
-            activebackground="#334155",
-            activeforeground="#f8fafc",
-            relief="flat",
-            bd=0,
-            padx=10,
-            pady=5,
-        ).pack(side="right", padx=(0, 8), pady=32)
 
     @staticmethod
-    def _replace_hub_badge(widget: tk.Misc) -> None:
-        for child in widget.winfo_children():
-            if isinstance(child, tk.Label) and str(child.cget("text")).startswith(
-                "SESSION ENGINE"
-            ):
-                child.configure(text="WORKSPACE HUB 0.12.0")
-            WorkspaceWindow._replace_hub_badge(child)
+    def _replace_hub_badge(_widget: tk.Misc) -> None:
+        """Deprecated: the product badge now has one explicit source."""
 
 
 def main(

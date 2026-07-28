@@ -11,6 +11,48 @@ from triview_workspace.engines.layout_advanced import (
     create_layout,
     preset_slots,
 )
+from triview_workspace.ui_design import (
+    FONT_FAMILY,
+    MONO_FONT_FAMILY,
+    PALETTE,
+    button_colors,
+)
+
+
+def _button(parent: tk.Misc, text: str, command, *, primary: bool = False) -> tk.Button:
+    colors = button_colors("primary" if primary else "secondary")
+    return tk.Button(
+        parent,
+        text=text,
+        command=command,
+        relief="flat",
+        bd=0,
+        highlightthickness=0,
+        font=(FONT_FAMILY, 8, "bold"),
+        padx=11,
+        pady=6,
+        cursor="hand2",
+        **colors,
+    )
+
+
+def _entry(parent: tk.Misc, variable: tk.Variable, width: int) -> tk.Entry:
+    return tk.Entry(
+        parent,
+        textvariable=variable,
+        width=width,
+        background=PALETTE.surface_raised,
+        foreground=PALETTE.text,
+        insertbackground=PALETTE.text,
+        selectbackground=PALETTE.accent_dark,
+        selectforeground=PALETTE.text,
+        highlightbackground=PALETTE.border,
+        highlightcolor=PALETTE.border_focus,
+        highlightthickness=1,
+        relief="flat",
+        bd=0,
+        font=(MONO_FONT_FAMILY, 8),
+    )
 
 
 class LayoutEditorDialog:
@@ -27,7 +69,9 @@ class LayoutEditorDialog:
         self.existing_ids = existing_ids
         self.window = tk.Toplevel(parent)
         self.window.title("Novo layout personalizado")
-        self.window.configure(background="#0f172a")
+        self.window.configure(background=PALETTE.app)
+        self.window.geometry("900x680")
+        self.window.minsize(760, 560)
         self.window.transient(parent)
         self.window.grab_set()
         self.layout_id = tk.StringVar(value="custom-layout")
@@ -41,82 +85,161 @@ class LayoutEditorDialog:
         self.window.wait_window()
 
     def _build(self) -> None:
-        form = tk.Frame(self.window, background="#0f172a")
-        form.pack(fill="x", padx=14, pady=12)
-        tk.Label(form, text="ID", background="#0f172a", foreground="#cbd5e1").grid(
-            row=0, column=0, sticky="w", padx=4
+        shell = tk.Frame(
+            self.window,
+            background=PALETTE.surface,
+            highlightbackground=PALETTE.border,
+            highlightthickness=1,
         )
-        tk.Entry(form, textvariable=self.layout_id, width=24).grid(
-            row=0, column=1, sticky="ew", padx=4
-        )
-        tk.Label(form, text="Nome", background="#0f172a", foreground="#cbd5e1").grid(
-            row=0, column=2, sticky="w", padx=4
-        )
-        tk.Entry(form, textvariable=self.layout_name, width=30).grid(
-            row=0, column=3, sticky="ew", padx=4
-        )
+        shell.pack(fill="both", expand=True, padx=16, pady=16)
+
+        heading = tk.Frame(shell, background=PALETTE.surface)
+        heading.pack(fill="x", padx=16, pady=(16, 12))
         tk.Label(
-            form, text="Preset", background="#0f172a", foreground="#cbd5e1"
-        ).grid(row=1, column=0, sticky="w", padx=4, pady=(8, 0))
+            heading,
+            text="Editor de layout",
+            background=PALETTE.surface,
+            foreground=PALETTE.text,
+            font=(FONT_FAMILY, 16, "bold"),
+            anchor="w",
+        ).pack(fill="x")
+        tk.Label(
+            heading,
+            text="Defina posições normalizadas e valide a composição em tempo real.",
+            background=PALETTE.surface,
+            foreground=PALETTE.text_muted,
+            font=(FONT_FAMILY, 9),
+            anchor="w",
+        ).pack(fill="x", pady=(3, 0))
+
+        form = tk.Frame(shell, background=PALETTE.surface)
+        form.pack(fill="x", padx=16, pady=(0, 12))
+        for column, label in enumerate(("ID", "Nome", "Preset")):
+            tk.Label(
+                form,
+                text=label.upper(),
+                background=PALETTE.surface,
+                foreground=PALETTE.text_subtle,
+                font=(FONT_FAMILY, 7, "bold"),
+            ).grid(row=0, column=column, sticky="w", padx=(0, 10), pady=(0, 5))
+        _entry(form, self.layout_id, 24).grid(
+            row=1,
+            column=0,
+            sticky="ew",
+            padx=(0, 10),
+            ipady=6,
+        )
+        _entry(form, self.layout_name, 30).grid(
+            row=1,
+            column=1,
+            sticky="ew",
+            padx=(0, 10),
+            ipady=6,
+        )
         values = ["columns", "stack", "grid", "focus-left"]
         if self.panel_count == 3:
             values.append("two-plus-one")
-        ttk.Combobox(
+        preset = ttk.Combobox(
             form,
             textvariable=self.preset,
             values=values,
             state="readonly",
             width=22,
-        ).grid(row=1, column=1, sticky="ew", padx=4, pady=(8, 0))
-        tk.Button(form, text="Aplicar preset", command=self._apply_preset).grid(
-            row=1, column=2, sticky="w", padx=4, pady=(8, 0)
+            style="TriView.TCombobox",
         )
+        preset.grid(row=1, column=2, sticky="ew", padx=(0, 10), ipady=3)
+        _button(form, "Aplicar preset", self._apply_preset).grid(
+            row=1,
+            column=3,
+            sticky="ew",
+        )
+        form.columnconfigure(1, weight=1)
 
-        editor = tk.Frame(self.window, background="#0f172a")
-        editor.pack(fill="x", padx=14)
+        editor_shell = tk.Frame(
+            shell,
+            background=PALETTE.surface_raised,
+            highlightbackground=PALETTE.border,
+            highlightthickness=1,
+        )
+        editor_shell.pack(fill="x", padx=16, pady=(0, 12))
+        tk.Label(
+            editor_shell,
+            text="COORDENADAS DOS SLOTS",
+            background=PALETTE.surface_raised,
+            foreground=PALETTE.text_subtle,
+            font=(FONT_FAMILY, 7, "bold"),
+            anchor="w",
+            padx=12,
+            pady=10,
+        ).pack(fill="x")
+
+        editor = tk.Frame(editor_shell, background=PALETTE.surface)
+        editor.pack(fill="x", padx=8, pady=(0, 8))
         for column, label in enumerate(("Slot", "X", "Y", "Largura", "Altura")):
             tk.Label(
                 editor,
-                text=label,
-                background="#0f172a",
-                foreground="#94a3b8",
-                font=("Sans", 9, "bold"),
-            ).grid(row=0, column=column, padx=4, pady=4)
+                text=label.upper(),
+                background=PALETTE.surface,
+                foreground=PALETTE.text_subtle,
+                font=(FONT_FAMILY, 7, "bold"),
+            ).grid(row=0, column=column, padx=6, pady=6, sticky="w")
         for index in range(self.panel_count):
             variables = tuple(tk.DoubleVar(value=0.0) for _ in range(4))
             self.rows.append(variables)  # type: ignore[arg-type]
             tk.Label(
                 editor,
-                text=str(index + 1),
-                background="#0f172a",
-                foreground="#e2e8f0",
-            ).grid(row=index + 1, column=0, padx=4, pady=3)
+                text=f"{index + 1:02d}",
+                background=PALETTE.surface,
+                foreground=PALETTE.accent_hover,
+                font=(MONO_FONT_FAMILY, 8, "bold"),
+            ).grid(row=index + 1, column=0, padx=6, pady=5, sticky="w")
             for column, variable in enumerate(variables, start=1):
-                tk.Entry(editor, textvariable=variable, width=10).grid(
-                    row=index + 1, column=column, padx=4, pady=3
+                _entry(editor, variable, 12).grid(
+                    row=index + 1,
+                    column=column,
+                    padx=6,
+                    pady=5,
+                    sticky="ew",
+                    ipady=5,
                 )
+                editor.columnconfigure(column, weight=1)
 
-        self.canvas = tk.Canvas(
-            self.window,
-            width=640,
-            height=360,
-            background="#020617",
-            highlightbackground="#334155",
+        preview_shell = tk.Frame(
+            shell,
+            background=PALETTE.surface_raised,
+            highlightbackground=PALETTE.border,
             highlightthickness=1,
         )
-        self.canvas.pack(fill="both", expand=True, padx=14, pady=12)
+        preview_shell.pack(fill="both", expand=True, padx=16)
+        tk.Label(
+            preview_shell,
+            text="PRÉVIA RESPONSIVA",
+            background=PALETTE.surface_raised,
+            foreground=PALETTE.text_subtle,
+            font=(FONT_FAMILY, 7, "bold"),
+            anchor="w",
+            padx=12,
+            pady=10,
+        ).pack(fill="x")
+        self.canvas = tk.Canvas(
+            preview_shell,
+            width=640,
+            height=360,
+            background=PALETTE.app,
+            highlightthickness=0,
+            borderwidth=0,
+        )
+        self.canvas.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self.canvas.bind("<Configure>", lambda _event: self._preview())
 
-        actions = tk.Frame(self.window, background="#0f172a")
-        actions.pack(fill="x", padx=14, pady=(0, 14))
-        tk.Button(actions, text="Atualizar prévia", command=self._preview).pack(
-            side="left"
+        actions = tk.Frame(shell, background=PALETTE.surface)
+        actions.pack(fill="x", padx=16, pady=16)
+        _button(actions, "Atualizar prévia", self._preview).pack(side="left")
+        _button(actions, "Cancelar", self.window.destroy).pack(
+            side="right",
+            padx=(8, 0),
         )
-        tk.Button(actions, text="Cancelar", command=self.window.destroy).pack(
-            side="right", padx=4
-        )
-        tk.Button(actions, text="Salvar layout", command=self._save).pack(
-            side="right", padx=4
-        )
+        _button(actions, "Salvar layout", self._save, primary=True).pack(side="right")
 
     def _apply_preset(self) -> None:
         try:
@@ -153,27 +276,41 @@ class LayoutEditorDialog:
         try:
             layout = self._layout()
         except (ValueError, tk.TclError) as exc:
+            width = max(1, int(self.canvas.winfo_width() or 640))
+            height = max(1, int(self.canvas.winfo_height() or 360))
             self.canvas.create_text(
-                320,
-                180,
+                width / 2,
+                height / 2,
                 text=str(exc),
                 fill="#fca5a5",
-                width=560,
+                width=max(120, width - 80),
             )
             return
         width = max(1, int(self.canvas.winfo_width() or 640))
         height = max(1, int(self.canvas.winfo_height() or 360))
+        margin = 12
+        usable_width = max(1, width - margin * 2)
+        usable_height = max(1, height - margin * 2)
         for index, slot in enumerate(layout.slots, start=1):
-            x1 = slot.x * width
-            y1 = slot.y * height
-            x2 = (slot.x + slot.width) * width
-            y2 = (slot.y + slot.height) * height
-            self.canvas.create_rectangle(x1, y1, x2, y2, outline="#38bdf8", width=2)
+            x1 = margin + slot.x * usable_width
+            y1 = margin + slot.y * usable_height
+            x2 = margin + (slot.x + slot.width) * usable_width
+            y2 = margin + (slot.y + slot.height) * usable_height
+            self.canvas.create_rectangle(
+                x1,
+                y1,
+                x2,
+                y2,
+                outline=PALETTE.accent_hover,
+                fill=PALETTE.surface_soft,
+                width=2,
+            )
             self.canvas.create_text(
                 (x1 + x2) / 2,
                 (y1 + y2) / 2,
-                text=f"Painel {index}",
-                fill="#f8fafc",
+                text=f"PAINEL {index}",
+                fill=PALETTE.text,
+                font=(FONT_FAMILY, 9, "bold"),
             )
 
     def _save(self) -> None:

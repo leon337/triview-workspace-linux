@@ -67,7 +67,7 @@ PY
   cd "$CURRENT_TARGET"
 
   set +e
-  package="$(python3 -m triview_workspace.diagnostic_blackbox \
+  package="$(python3 -m triview_workspace.diagnostic_blackbox_rc \
     --output-dir "$REPORT_DIR" \
     --timeout-seconds "${TRIVIEW_DIAGNOSTIC_TIMEOUT_SECONDS:-900}" \
     --auto-launch \

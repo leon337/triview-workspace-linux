@@ -10,8 +10,10 @@ from triview_workspace.catalog_migrations import (
     ensure_three_gpt_workspace,
     migrate_persisted_terminal_panel,
 )
-from triview_workspace.engines.browser import BrowserEngine
-from triview_workspace.engines.browser_live import LiveBrowserEngine
+from triview_workspace.engines.browser_live import (
+    LiveBrowserEngine,
+    NO_FLASH_BROWSER_BACKEND_NAME,
+)
 from triview_workspace.engines.browser_live_rc import (
     HARDENED_BROWSER_BACKEND_NAME,
     ImmediateHideXfwm4FinalClientX11BraveBrowserBackend,
@@ -48,7 +50,10 @@ from triview_workspace.runtime_observability import (
     write_runtime_snapshot,
 )
 
-LIVE_BROWSER_BACKEND_NAME = HARDENED_BROWSER_BACKEND_NAME
+# Preserve the first LEA-247 public constant for compatibility with the initial
+# tests and diagnostics. The actual RC backend is explicitly named separately.
+LIVE_BROWSER_BACKEND_NAME = NO_FLASH_BROWSER_BACKEND_NAME
+RC_BROWSER_BACKEND_NAME = HARDENED_BROWSER_BACKEND_NAME
 
 
 class WorkspaceWindow(LiveWorkspaceWindow):
@@ -73,7 +78,7 @@ class WorkspaceWindow(LiveWorkspaceWindow):
         self._sync_cards_from_runtime()
         record_runtime_event(
             "browser_backend_hardened",
-            backend=HARDENED_BROWSER_BACKEND_NAME,
+            backend=RC_BROWSER_BACKEND_NAME,
             compatibility_name=BROWSER_BACKEND_NAME,
             backend_module=type(backend).__module__,
         )
@@ -106,13 +111,13 @@ def main(
     log_path = _configure_logging()
     provenance_path = write_runtime_snapshot(
         module_name="triview_workspace.gui",
-        backend_name=HARDENED_BROWSER_BACKEND_NAME,
+        backend_name=RC_BROWSER_BACKEND_NAME,
     )
     record_runtime_event(
         "application_starting",
         log_path=str(log_path),
         provenance_path=str(provenance_path),
-        backend=HARDENED_BROWSER_BACKEND_NAME,
+        backend=RC_BROWSER_BACKEND_NAME,
     )
     try:
         seed_workspace, seed_layout = load_workspace_bundle(DEFAULT_WORKSPACE)
@@ -152,7 +157,7 @@ def main(
         WorkspaceWindow(root, repository, session_engine)
         record_runtime_event(
             "application_ready",
-            backend=HARDENED_BROWSER_BACKEND_NAME,
+            backend=RC_BROWSER_BACKEND_NAME,
             active_workspace_id=catalog.active_workspace_id,
         )
         root.mainloop()
@@ -179,6 +184,7 @@ __all__ = [
     "POPUP_WATCH_INTERVAL_MS",
     "PanelCard",
     "PanelEditorDialog",
+    "RC_BROWSER_BACKEND_NAME",
     "THREE_GPT_WORKSPACE",
     "WorkspaceViewState",
     "WorkspaceWindow",

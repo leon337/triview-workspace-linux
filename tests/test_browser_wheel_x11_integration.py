@@ -150,7 +150,7 @@ def test_physical_wheel_route_reaches_only_the_target_x11_child() -> None:
         [
             sys.executable,
             "-m",
-            "triview_workspace.engines.browser_wheel_worker_rc",
+            "triview_workspace.engines.browser_wheel_worker_final",
         ],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -198,6 +198,10 @@ def test_physical_wheel_route_reaches_only_the_target_x11_child() -> None:
         assert forwarded["runtime_id"] == "workspace::one"
         assert forwarded["browser_window_id"] == str(int(child_one))
         assert forwarded["button"] == 5
+        assert forwarded["x11_time"] > 0
+        assert forwarded["input_correlation_id"] == (
+            f"wheel:{forwarded['x11_time']}:5"
+        )
         assert forwarded["delivered"] is True
         assert releases.count(int(child_one)) == 1
         assert int(child_two) not in releases

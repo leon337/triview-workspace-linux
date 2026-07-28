@@ -1,0 +1,54 @@
+{
+  "layout": {
+    "id": "three-gpt-agents-mobile",
+    "name": "Três agentes GPT",
+    "slots": [
+      {
+        "x": 0.02,
+        "y": 0.04,
+        "width": 0.3,
+        "height": 0.92,
+        "aspect_ratio": 0.461538
+      },
+      {
+        "x": 0.35,
+        "y": 0.04,
+        "width": 0.3,
+        "height": 0.92,
+        "aspect_ratio": 0.461538
+      },
+      {
+        "x": 0.68,
+        "y": 0.04,
+        "width": 0.3,
+        "height": 0.92,
+        "aspect_ratio": 0.461538
+      }
+    ]
+  },
+  "workspace": {
+    "id": "three-gpt-agents",
+    "name": "Três Agentes GPT",
+    "layout_id": "three-gpt-agents-mobile",
+    "panels": [
+      {
+        "id": "agent-gpt-1",
+        "title": "Agente GPT 1",
+        "kind": "browser",
+        "target": "https://chatgpt.com"
+      },
+      {
+        "id": "agent-gpt-2",
+        "title": "Agente GPT 2",
+        "kind": "browser",
+        "target": "https://chatgpt.com"
+      },
+      {
+        "id": "agent-gpt-3",
+        "title": "Agente GPT 3",
+        "kind": "browser",
+        "target": "https://chatgpt.com"
+      }
+    ]
+  }
+}

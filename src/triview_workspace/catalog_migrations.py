@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from triview_workspace.domain import PanelKind, PanelSpec, WorkspaceSpec
+from triview_workspace.domain import LayoutSpec, PanelKind, PanelSpec, WorkspaceSpec
 from triview_workspace.infrastructure import WorkspaceCatalog, WorkspaceRepository
 
 DEVELOPMENT_WORKSPACE_ID = "development-demo"
+THREE_GPT_WORKSPACE_ID = "three-gpt-agents"
 TERMINAL_PANEL_ID = "terminal"
 TERMINAL_TITLE = "Terminal"
 TERMINAL_TARGET = "bash -l"
@@ -46,9 +47,9 @@ def migrate_persisted_terminal_panel(
     The stable contract is workspace ``development-demo`` plus panel ``terminal``.
     Earlier acceptance tests changed that slot to an application or a third ChatGPT
     browser. This migration restores only that stable slot to ``Terminal`` / terminal
-    / ``bash -l``. The separate ``three-gpt-chats`` workspace and every unrelated
-    workspace remain byte-for-byte equivalent at the domain level. Re-running the
-    migration is a no-op.
+    / ``bash -l``. The separate three-agent workspace and every unrelated workspace
+    remain byte-for-byte equivalent at the domain level. Re-running the migration is
+    a no-op.
     """
 
     updated_catalog = catalog
@@ -96,11 +97,51 @@ def migrate_persisted_terminal_panel(
     return updated_catalog, migrated_panels
 
 
+def ensure_three_gpt_workspace(
+    repository: WorkspaceRepository,
+    catalog: WorkspaceCatalog,
+    workspace: WorkspaceSpec,
+    layout: LayoutSpec,
+) -> tuple[WorkspaceCatalog, bool, bool]:
+    """Install the canonical three-agent workspace once without erasing user edits.
+
+    Existing copies are preserved exactly so panel titles can be customized as agent
+    functions. On a catalog that still contains only the technical Development
+    workspace, the new operational workspace becomes active. Catalogs with custom
+    workspaces keep their current selection.
+    """
+
+    if workspace.id != THREE_GPT_WORKSPACE_ID:
+        raise ValueError(
+            f"Workspace canônico inválido: esperado {THREE_GPT_WORKSPACE_ID!r}, "
+            f"recebido {workspace.id!r}."
+        )
+    if workspace.layout_id != layout.id:
+        raise ValueError("Workspace canônico e layout de três agentes são incompatíveis.")
+    if any(item.id == THREE_GPT_WORKSPACE_ID for item in catalog.workspaces):
+        return catalog, False, False
+
+    activate = (
+        len(catalog.workspaces) == 1
+        and catalog.active_workspace_id == DEVELOPMENT_WORKSPACE_ID
+        and catalog.workspaces[0].id == DEVELOPMENT_WORKSPACE_ID
+    )
+    updated = repository.save_workspace(
+        catalog,
+        workspace,
+        layout,
+        make_active=activate,
+    )
+    return updated, True, activate
+
+
 __all__ = [
     "DEVELOPMENT_WORKSPACE_ID",
     "LEGACY_TERMINAL_TARGETS",
     "TERMINAL_PANEL_ID",
     "TERMINAL_TARGET",
     "TERMINAL_TITLE",
+    "THREE_GPT_WORKSPACE_ID",
+    "ensure_three_gpt_workspace",
     "migrate_persisted_terminal_panel",
 ]

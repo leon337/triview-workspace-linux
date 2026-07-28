@@ -22,7 +22,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_nested_client_is_authenticated_contained_and_receives_host_wheel(
+def test_nested_client_is_authenticated_contained_and_receives_host_input(
     tmp_path: Path,
 ) -> None:
     xephyr = shutil.which("Xephyr")
@@ -63,7 +63,8 @@ def test_nested_client_is_authenticated_contained_and_receives_host_wheel(
         start_new_session=True,
     )
     nested_client: subprocess.Popen[bytes] | None = None
-    marker = tmp_path / "nested-wheel.txt"
+    wheel_marker = tmp_path / "nested-wheel.txt"
+    key_marker = tmp_path / "nested-key.txt"
     try:
         backend._wait_for_display(display_name, process, auth_path=auth_path)
         xephyr_window_id = backend._wait_for_host_window(
@@ -78,14 +79,17 @@ def test_nested_client_is_authenticated_contained_and_receives_host_wheel(
                 "-c",
                 (
                     "import pathlib,sys,tkinter as tk; "
-                    "marker=pathlib.Path(sys.argv[1]); "
+                    "wheel=pathlib.Path(sys.argv[1]); key=pathlib.Path(sys.argv[2]); "
                     "root=tk.Tk(); root.title('TRIVIEW_NESTED_TEST_CLIENT'); "
                     "root.geometry('320x220+0+0'); "
                     "root.bind('<ButtonRelease-5>', lambda event: "
-                    "marker.write_text(str(event.num), encoding='utf-8')); "
+                    "wheel.write_text(str(event.num), encoding='utf-8')); "
+                    "root.bind('<KeyRelease-a>', lambda event: "
+                    "key.write_text(event.keysym, encoding='utf-8')); "
                     "root.after(10000, root.destroy); root.mainloop()"
                 ),
-                str(marker),
+                str(wheel_marker),
+                str(key_marker),
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -150,9 +154,24 @@ def test_nested_client_is_authenticated_contained_and_receives_host_wheel(
             timeout=3,
         )
         deadline = time.monotonic() + 4.0
-        while time.monotonic() < deadline and not marker.exists():
+        while time.monotonic() < deadline and not wheel_marker.exists():
             time.sleep(0.05)
-        assert marker.read_text(encoding="utf-8") == "5"
+        assert wheel_marker.read_text(encoding="utf-8") == "5"
+
+        subprocess.run(
+            [xdotool, "windowfocus", xephyr_window_id],
+            check=True,
+            timeout=3,
+        )
+        subprocess.run(
+            [xdotool, "key", "--window", xephyr_window_id, "a"],
+            check=True,
+            timeout=3,
+        )
+        deadline = time.monotonic() + 4.0
+        while time.monotonic() < deadline and not key_marker.exists():
+            time.sleep(0.05)
+        assert key_marker.read_text(encoding="utf-8") == "a"
     finally:
         if nested_client is not None:
             terminate_process_group(nested_client)

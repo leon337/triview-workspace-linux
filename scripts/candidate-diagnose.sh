@@ -20,7 +20,8 @@ export TRIVIEW_RUNTIME_MODULE="$MODULE"
 
 # runtime_observability supplies the source events. Every shareable artifact,
 # including the contingency package, is sanitized before leaving the machine.
-# The shareable collector extends triview_workspace.diagnostic_blackbox_final.
+# diagnostic_blackbox_verified extends diagnostic_blackbox_shareable, which
+# extends diagnostic_blackbox_final and the byte-safe event reader.
 # The package still contains the conceptual section ÚLTIMOS EVENTOS DO RUNTIME,
 # but never appends raw runtime-events.jsonl, process arguments or local paths.
 
@@ -66,7 +67,7 @@ PY
   cd "$CURRENT_TARGET"
 
   set +e
-  package="$(python3 -m triview_workspace.diagnostic_blackbox_shareable \
+  package="$(python3 -m triview_workspace.diagnostic_blackbox_verified \
     --output-dir "$REPORT_DIR" \
     --timeout-seconds "${TRIVIEW_DIAGNOSTIC_TIMEOUT_SECONDS:-900}" \
     --auto-launch \

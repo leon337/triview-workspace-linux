@@ -9,29 +9,30 @@ MODULE="${5:?MODULE ausente}"
 UPDATE_REF="${6:?UPDATE_REF ausente}"
 REPO="${7:?REPO ausente}"
 CURRENT="$APP_ROOT/current"
-CURRENT_TARGET="$(readlink -f "$CURRENT" 2>/dev/null || true)"
 APP_STATE="$STATE_ROOT/triview-workspace"
 
 mkdir -p "$APP_STATE/updates"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 LOG="$APP_STATE/updates/update-$STAMP.log"
-UPDATE_LOCK="$APP_STATE/update.lock"
-
-if [[ -z "$CURRENT_TARGET" || ! -d "$CURRENT_TARGET" ]]; then
-  printf 'ERRO: candidato ativo ausente ou inválido: %s\n' "$CURRENT" | tee "$LOG" >&2
-  exit 1
-fi
+LIFECYCLE_LOCK="$APP_STATE/lifecycle.lock"
 
 if ! command -v flock >/dev/null 2>&1; then
-  printf 'ERRO: flock não está disponível para serializar a atualização.\n' \
+  printf 'ERRO: flock não está disponível para serializar o ciclo de vida.\n' \
     | tee "$LOG" >&2
   exit 1
 fi
 
-exec 8>"$UPDATE_LOCK"
+exec 8>"$LIFECYCLE_LOCK"
 if ! flock -n 8; then
-  printf 'ERRO: outra atualização do TriView já está em execução.\n' | tee "$LOG" >&2
+  printf 'ERRO: outra operação de instalação, atualização ou rollback já está em execução.\n' \
+    | tee "$LOG" >&2
   exit 2
+fi
+
+CURRENT_TARGET="$(readlink -f "$CURRENT" 2>/dev/null || true)"
+if [[ -z "$CURRENT_TARGET" || ! -d "$CURRENT_TARGET" ]]; then
+  printf 'ERRO: candidato ativo ausente ou inválido: %s\n' "$CURRENT" | tee "$LOG" >&2
+  exit 1
 fi
 
 RUNNING_PIDS="$(python3 - "$APP_ROOT" "$MODULE" <<'PY'
@@ -43,7 +44,6 @@ import sys
 app_root = pathlib.Path(sys.argv[1]).expanduser().resolve()
 expected_module = sys.argv[2]
 releases = app_root / "releases"
-
 for environ_path in pathlib.Path("/proc").glob("[0-9]*/environ"):
     try:
         raw = environ_path.read_bytes()
@@ -61,8 +61,7 @@ for environ_path in pathlib.Path("/proc").glob("[0-9]*/environ"):
     if not runtime_root:
         continue
     try:
-        runtime_path = pathlib.Path(runtime_root).expanduser().resolve()
-        runtime_path.relative_to(releases)
+        pathlib.Path(runtime_root).expanduser().resolve().relative_to(releases)
     except (OSError, ValueError):
         continue
     print(environ_path.parent.name)
@@ -92,15 +91,15 @@ fi
   printf 'Repositório: %s\n' "$REPO"
   printf 'Referência de atualização: %s\n' "$UPDATE_REF"
   printf 'Runtime atual: %s\n' "$CURRENT_TARGET"
+  printf 'Bloqueio de ciclo de vida: %s\n' "$LIFECYCLE_LOCK"
   printf 'Início: %s\n\n' "$(date --iso-8601=seconds)"
 } | tee "$LOG"
 
 set +e
-TRIVIEW_REPO="$REPO" bash "$INSTALLER" \
-  "$CANDIDATE_ID" \
-  "$UPDATE_REF" \
-  "$MODULE" \
-  "$UPDATE_REF" 2>&1 | tee -a "$LOG"
+TRIVIEW_REPO="$REPO" \
+TRIVIEW_LIFECYCLE_LOCK_HELD=1 \
+bash "$INSTALLER" \
+  "$CANDIDATE_ID" "$UPDATE_REF" "$MODULE" "$UPDATE_REF" 2>&1 | tee -a "$LOG"
 status="${PIPESTATUS[0]}"
 set -e
 

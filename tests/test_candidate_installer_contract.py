@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_INSTALLER = ROOT / "scripts" / "install-module-candidate.sh"
 RC4_INSTALLER = ROOT / "scripts" / "install-train-candidate.sh"
+
+
+@pytest.mark.parametrize("script", [MODULE_INSTALLER, RC4_INSTALLER])
+def test_candidate_installer_has_valid_bash_syntax(script: Path) -> None:
+    subprocess.run(["bash", "-n", str(script)], check=True)
 
 
 def test_module_installer_resolves_mutable_ref_to_immutable_sha() -> None:

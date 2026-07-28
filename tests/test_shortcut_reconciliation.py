@@ -181,4 +181,4 @@ def test_installer_runs_reconciliation_after_generating_current_shortcuts() -> N
     database_position = source.index('update-desktop-database "$APPLICATIONS_DIR"')
 
     assert chmod_position < reconciliation_position < database_position
-    assert source.count("--current-launcher") == 3
+    assert source.count("--current-launcher") == 4

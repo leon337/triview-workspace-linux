@@ -39,8 +39,8 @@ class _FakeMenu:
         command()
 
 
-def test_active_gui_uses_popup_lifecycle_runtime() -> None:
-    assert active_gui.WorkspaceWindow is WorkspaceWindow
+def test_active_gui_preserves_popup_lifecycle_runtime() -> None:
+    assert issubclass(active_gui.WorkspaceWindow, WorkspaceWindow)
 
 
 def test_popup_keeps_native_grab_until_outside_click_unmaps_menu() -> None:

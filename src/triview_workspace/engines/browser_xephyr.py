@@ -1,14 +1,15 @@
 """Nested X11 browser backend that prevents host-desktop exposure.
 
-Each Browser Panel receives a dedicated Xephyr server embedded directly in the
-Tk host window. Chromium is launched inside that nested display, so its first
-map can never become a top-level window on the user's desktop.
+Each Browser Panel receives a dedicated, authenticated Xephyr server embedded
+inside its Tk host window. Chromium is launched in that nested display, so its
+first map cannot become a top-level window on the user's desktop.
 """
 
 from __future__ import annotations
 
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import tempfile
@@ -40,6 +41,7 @@ class NestedX11Runtime:
     display_number: int
     display_name: str
     lock_path: Path
+    auth_path: Path
     xephyr_process: subprocess.Popen[bytes]
     xephyr_window_id: str
     browser_process: subprocess.Popen[bytes]
@@ -51,7 +53,7 @@ def _safe_exact_pattern(value: str) -> str:
 
 
 class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
-    """Launch Chromium in a nested X server already embedded in the panel."""
+    """Launch Chromium in an authenticated X server embedded in the panel."""
 
     def __init__(self, launch_timeout: float = 20.0) -> None:
         super().__init__(launch_timeout=launch_timeout)
@@ -61,12 +63,15 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
     def _xephyr_command() -> str | None:
         return shutil.which("Xephyr")
 
+    @staticmethod
+    def _xauth_command() -> str | None:
+        return shutil.which("xauth")
+
     def availability(self) -> BrowserBackendAvailability:
         report = super().availability()
         if not report.available:
             return report
-        xephyr = self._xephyr_command()
-        if xephyr is None:
+        if self._xephyr_command() is None:
             return BrowserBackendAvailability(
                 False,
                 "O pacote xserver-xephyr é necessário para criar navegadores "
@@ -74,10 +79,18 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
                 browser_command=report.browser_command,
                 xdotool_command=report.xdotool_command,
             )
+        if self._xauth_command() is None:
+            return BrowserBackendAvailability(
+                False,
+                "O pacote xauth é necessário para proteger os displays Xephyr "
+                "usados pelos Browser Panels.",
+                browser_command=report.browser_command,
+                xdotool_command=report.xdotool_command,
+            )
         return BrowserBackendAvailability(
             True,
-            "Backend Xephyr pronto: o navegador nasce dentro do painel sem "
-            "mapear uma janela no desktop principal.",
+            "Backend Xephyr autenticado pronto: o navegador nasce dentro do "
+            "painel sem mapear uma janela no desktop principal.",
             browser_command=report.browser_command,
             xdotool_command=report.xdotool_command,
         )
@@ -93,10 +106,18 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
         assert availability.browser_command is not None
         assert availability.xdotool_command is not None
         xephyr = self._xephyr_command()
+        xauth = self._xauth_command()
         assert xephyr is not None
+        assert xauth is not None
 
         request.profile_dir.mkdir(parents=True, exist_ok=True)
         display_number, display_name, lock_path = self._allocate_display()
+        try:
+            auth_path = self._create_xauthority(xauth, display_name, lock_path)
+        except Exception:
+            self._release_display(lock_path)
+            raise
+
         width, height = _DEFAULT_SIZE
         xephyr_command = [
             xephyr,
@@ -109,7 +130,8 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
             "-noreset",
             "-nolisten",
             "tcp",
-            "-ac",
+            "-auth",
+            str(auth_path),
             "-br",
         ]
         record_runtime_event(
@@ -121,6 +143,7 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
             window_class=request.window_class,
             host_window_id=int(parent_window_id),
             containment="nested_xephyr",
+            nested_display_authenticated=True,
             external_root_mapping_possible=False,
         )
         xephyr_process = subprocess.Popen(  # noqa: S603
@@ -130,16 +153,14 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
             start_new_session=True,
         )
         browser_process: subprocess.Popen[bytes] | None = None
+        nested_env = self._nested_environment(display_name, auth_path)
         try:
-            self._wait_for_display(display_name, xephyr_process)
+            self._wait_for_display(display_name, xephyr_process, auth_path=auth_path)
             xephyr_window_id = self._wait_for_host_window(
                 availability.xdotool_command,
                 xephyr_process,
                 int(parent_window_id),
             )
-            nested_env = os.environ.copy()
-            nested_env["DISPLAY"] = display_name
-            nested_env.pop("WAYLAND_DISPLAY", None)
             browser_command = [
                 availability.browser_command,
                 f"--app={request.url}",
@@ -165,12 +186,14 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
                 display_name,
                 request.window_class,
                 browser_process,
+                auth_path=auth_path,
             )
             runtime = NestedX11Runtime(
                 panel_id=request.panel_id,
                 display_number=display_number,
                 display_name=display_name,
                 lock_path=lock_path,
+                auth_path=auth_path,
                 xephyr_process=xephyr_process,
                 xephyr_window_id=xephyr_window_id,
                 browser_process=browser_process,
@@ -181,7 +204,7 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
             if browser_process is not None:
                 terminate_process_group(browser_process)
             terminate_process_group(xephyr_process)
-            self._release_display(lock_path)
+            self._release_display(lock_path, auth_path)
             raise
 
         record_runtime_event(
@@ -195,6 +218,7 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
             nested_browser_window_id=nested_browser_window_id,
             nested_display=display_name,
             containment="nested_xephyr",
+            nested_display_authenticated=True,
             external_root_mapping_possible=False,
         )
         record_runtime_event(
@@ -207,6 +231,7 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
             host_window_id=int(parent_window_id),
             embedded=True,
             containment="nested_xephyr",
+            nested_display_authenticated=True,
             external_root_mapping_possible=False,
         )
         return BrowserSession(
@@ -233,8 +258,7 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
             str(safe_width),
             str(safe_height),
         )
-        nested_env = os.environ.copy()
-        nested_env["DISPLAY"] = runtime.display_name
+        nested_env = self._nested_environment(runtime.display_name, runtime.auth_path)
         self._run_nested(
             [xdotool, "windowmove", runtime.nested_browser_window_id, "0", "0"],
             nested_env,
@@ -274,7 +298,7 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
         )
         terminate_process_group(runtime.browser_process)
         terminate_process_group(runtime.xephyr_process)
-        self._release_display(runtime.lock_path)
+        self._release_display(runtime.lock_path, runtime.auth_path)
 
     def focus(self, session: BrowserSession) -> bool:
         runtime = self._runtimes.get(session.panel_id)
@@ -312,6 +336,10 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
     def _allocate_display() -> tuple[int, str, Path]:
         lock_root = Path(tempfile.gettempdir()) / "triview-xephyr-locks"
         lock_root.mkdir(parents=True, exist_ok=True)
+        try:
+            lock_root.chmod(0o700)
+        except OSError:
+            pass
         for display_number in range(_DISPLAY_MIN, _DISPLAY_MAX + 1):
             socket_path = Path("/tmp/.X11-unix") / f"X{display_number}"
             lock_path = lock_root / f"display-{display_number}.lock"
@@ -341,21 +369,72 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
         raise BrowserLaunchError("Não há número de display Xephyr livre para o painel.")
 
     @staticmethod
-    def _release_display(lock_path: Path) -> None:
+    def _create_xauthority(xauth: str, display_name: str, lock_path: Path) -> Path:
+        auth_path = lock_path.with_suffix(".Xauthority")
         try:
-            lock_path.unlink()
-        except OSError:
+            auth_path.unlink()
+        except FileNotFoundError:
             pass
+        cookie = secrets.token_hex(16)
+        result = subprocess.run(
+            [
+                xauth,
+                "-q",
+                "-f",
+                str(auth_path),
+                "add",
+                display_name,
+                "MIT-MAGIC-COOKIE-1",
+                cookie,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=4,
+        )
+        if result.returncode != 0 or not auth_path.is_file():
+            try:
+                auth_path.unlink()
+            except OSError:
+                pass
+            raise BrowserLaunchError(
+                result.stderr.strip()
+                or "Não foi possível criar a autorização do display Xephyr."
+            )
+        auth_path.chmod(0o600)
+        return auth_path
+
+    @staticmethod
+    def _release_display(lock_path: Path, auth_path: Path | None = None) -> None:
+        for path in (auth_path, lock_path):
+            if path is None:
+                continue
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+    @staticmethod
+    def _nested_environment(display_name: str, auth_path: Path) -> dict[str, str]:
+        env = os.environ.copy()
+        env["DISPLAY"] = display_name
+        env["XAUTHORITY"] = str(auth_path)
+        env.pop("WAYLAND_DISPLAY", None)
+        return env
 
     def _wait_for_display(
         self,
         display_name: str,
         process: subprocess.Popen[bytes],
+        *,
+        auth_path: Path | None = None,
     ) -> None:
         xdotool = self._xdotool_command()
         assert xdotool is not None
         env = os.environ.copy()
         env["DISPLAY"] = display_name
+        if auth_path is not None:
+            env["XAUTHORITY"] = str(auth_path)
         deadline = time.monotonic() + self._launch_timeout
         while time.monotonic() < deadline:
             if process.poll() is not None:
@@ -408,9 +487,13 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
         display_name: str,
         window_class: str,
         process: subprocess.Popen[bytes],
+        *,
+        auth_path: Path | None = None,
     ) -> str:
         env = os.environ.copy()
         env["DISPLAY"] = display_name
+        if auth_path is not None:
+            env["XAUTHORITY"] = str(auth_path)
         pattern = _safe_exact_pattern(window_class)
         deadline = time.monotonic() + self._launch_timeout
         while time.monotonic() < deadline:

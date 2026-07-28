@@ -78,7 +78,9 @@ def test_browser_discovers_unmapped_new_window_and_excludes_old_one(
     assert calls == [("TriView-chatgpt", False)]
 
 
-def test_browser_stage_unmaps_before_moving_offscreen(monkeypatch: Any) -> None:
+def test_browser_stage_moves_window_without_unmapping_first_map(
+    monkeypatch: Any,
+) -> None:
     backend = AtomicX11BraveBrowserBackend()
     calls: list[tuple[str, ...]] = []
     monkeypatch.setattr(
@@ -89,7 +91,95 @@ def test_browser_stage_unmaps_before_moving_offscreen(monkeypatch: Any) -> None:
 
     backend._stage_window("xdotool", "77")
 
-    assert calls == [
-        ("windowunmap", "77"),
+    assert calls == [("windowmove", "77", "-32000", "-32000")]
+
+
+def test_browser_waits_for_first_managed_map_before_reparenting(
+    monkeypatch: Any,
+) -> None:
+    backend = AtomicX11BraveBrowserBackend(launch_timeout=1.0, poll_interval=0.01)
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        backend,
+        "_run_xdotool",
+        lambda _xdotool, *arguments: calls.append(tuple(arguments)),
+    )
+    monkeypatch.setattr(backend, "_window_is_viewable", lambda *_args: True)
+
+    backend._wait_for_first_managed_map(
+        "xdotool",
+        "xwininfo",
+        "77",
+        _FakeProcess(),  # type: ignore[arg-type]
+    )
+
+    assert calls == [("windowmap", "77")]
+
+
+def test_browser_reparents_only_after_first_map_and_confirms_after_final_map(
+    monkeypatch: Any,
+) -> None:
+    backend = AtomicX11BraveBrowserBackend(reparent_attempts=2)
+    events: list[object] = []
+    monkeypatch.setattr(
+        backend,
+        "_run_xdotool",
+        lambda _xdotool, *arguments: events.append(tuple(arguments)),
+    )
+
+    def confirm(*_args: object) -> bool:
+        events.append("confirm")
+        return True
+
+    monkeypatch.setattr(backend, "_confirm_mapped_parent", confirm)
+
+    result = backend._reparent_after_first_map(
+        "xdotool",
+        "xwininfo",
+        "77",
+        900,
+        "chatgpt",
+    )
+
+    assert result is True
+    assert events == [
         ("windowmove", "77", "-32000", "-32000"),
+        ("windowunmap", "77"),
+        ("windowreparent", "77", "900"),
+        ("windowmove", "77", "0", "0"),
+        ("windowmap", "77"),
+        "confirm",
     ]
+
+
+def test_browser_retries_when_window_manager_reclaims_mapped_window(
+    monkeypatch: Any,
+) -> None:
+    backend = AtomicX11BraveBrowserBackend(
+        poll_interval=0.01,
+        reparent_attempts=3,
+    )
+    calls: list[tuple[str, ...]] = []
+    confirmations = iter((False, True))
+    monkeypatch.setattr(
+        backend,
+        "_run_xdotool",
+        lambda _xdotool, *arguments: calls.append(tuple(arguments)),
+    )
+    monkeypatch.setattr(
+        backend,
+        "_confirm_mapped_parent",
+        lambda *_args: next(confirmations),
+    )
+
+    result = backend._reparent_after_first_map(
+        "xdotool",
+        "xwininfo",
+        "77",
+        900,
+        "chatgpt",
+    )
+
+    assert result is True
+    assert calls.count(("windowreparent", "77", "900")) == 2
+    assert calls.count(("windowmap", "77")) == 2

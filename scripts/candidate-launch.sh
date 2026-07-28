@@ -24,6 +24,7 @@ fi
 install_x11_dependencies() {
   local missing=()
   command -v Xephyr >/dev/null 2>&1 || missing+=(xserver-xephyr)
+  command -v xauth >/dev/null 2>&1 || missing+=(xauth)
   command -v xdotool >/dev/null 2>&1 || missing+=(xdotool)
   command -v xwininfo >/dev/null 2>&1 || missing+=(x11-utils)
   command -v xrandr >/dev/null 2>&1 || missing+=(x11-xserver-utils)
@@ -56,10 +57,13 @@ install_x11_dependencies() {
       "${missing[*]}" | tee -a "$LAUNCH_LOG" >&2
     return 1
   fi
-  command -v Xephyr >/dev/null 2>&1 || {
-    printf 'ERRO: Xephyr continuou ausente após a instalação.\n' | tee -a "$LAUNCH_LOG" >&2
-    return 1
-  }
+  for required in Xephyr xauth xdotool xwininfo xrandr; do
+    command -v "$required" >/dev/null 2>&1 || {
+      printf 'ERRO: dependência continuou ausente após a instalação: %s\n' \
+        "$required" | tee -a "$LAUNCH_LOG" >&2
+      return 1
+    }
+  done
 }
 
 install_x11_dependencies
@@ -120,6 +124,7 @@ PY
   printf 'session_type=%s\n' "${XDG_SESSION_TYPE:-}"
   printf 'lock_file=%s\n' "$LOCK_FILE"
   printf 'xephyr=%s\n' "$(command -v Xephyr)"
+  printf 'xauth=%s\n' "$(command -v xauth)"
 } >>"$LAUNCH_LOG"
 
 export XDG_DATA_HOME="$DATA_ROOT"

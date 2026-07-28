@@ -6,6 +6,7 @@ from pathlib import Path
 import triview_workspace.gui as active_gui
 import triview_workspace.gui_rc4_atomic as atomic_gui
 from triview_workspace.diagnostic_blackbox_rc import ByteSafeBlackboxCollector
+from triview_workspace.diagnostic_blackbox_verified import VerifiedBlackboxCollector
 from triview_workspace.engines.browser_live_rc import (
     HARDENED_BROWSER_BACKEND_NAME,
     ImmediateHideXfwm4FinalClientX11BraveBrowserBackend,
@@ -58,9 +59,10 @@ def test_runtime_event_tailer_uses_binary_offsets_and_partial_line_buffer() -> N
     assert "handle.seek(offset)" in source
 
 
-def test_candidate_diagnostic_uses_final_byte_safe_collector() -> None:
+def test_candidate_diagnostic_uses_verified_byte_safe_collector() -> None:
     script = Path("scripts/candidate-diagnose.sh").read_text(encoding="utf-8")
 
-    assert "triview_workspace.diagnostic_blackbox_final" in script
+    assert issubclass(VerifiedBlackboxCollector, ByteSafeBlackboxCollector)
+    assert "triview_workspace.diagnostic_blackbox_verified" in script
     assert "--auto-launch" in script
     assert "--auto-stop-on-application-exit" in script

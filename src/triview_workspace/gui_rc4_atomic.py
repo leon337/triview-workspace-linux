@@ -1,4 +1,4 @@
-"""RC4 entry point with atomic browser and terminal X11 embedding."""
+"""RC4 entry point with hardened browser and terminal X11 embedding."""
 
 from __future__ import annotations
 
@@ -8,7 +8,9 @@ from pathlib import Path
 
 from triview_workspace.catalog_migrations import migrate_persisted_terminal_panel
 from triview_workspace.engines.browser import BrowserEngine
-from triview_workspace.engines.browser_embedded import AtomicX11BraveBrowserBackend
+from triview_workspace.engines.browser_final_client import (
+    FinalClientX11BraveBrowserBackend,
+)
 from triview_workspace.engines.runtime_controllers import BrowserRuntimeController
 from triview_workspace.engines.session import WorkspaceSessionEngine
 from triview_workspace.gui_rc4_terminal_migration import (
@@ -36,11 +38,11 @@ from triview_workspace.runtime_observability import (
     write_runtime_snapshot,
 )
 
-BROWSER_BACKEND_NAME = "AtomicX11BraveBrowserBackend"
+BROWSER_BACKEND_NAME = "FinalClientX11BraveBrowserBackend"
 
 
 class WorkspaceWindow(MigratedWorkspaceWindow):
-    """Replace the legacy visible-first browser backend in the active RC4 shell."""
+    """Use the final managed Brave client in the active RC4 shell."""
 
     def __init__(
         self,
@@ -49,7 +51,7 @@ class WorkspaceWindow(MigratedWorkspaceWindow):
         session_engine: WorkspaceSessionEngine,
     ) -> None:
         super().__init__(root, repository, session_engine)
-        backend = AtomicX11BraveBrowserBackend()
+        backend = FinalClientX11BraveBrowserBackend()
         self.runtime_registry.register(BrowserRuntimeController(BrowserEngine(backend)))
         record_runtime_event(
             "browser_backend_registered",
@@ -63,7 +65,7 @@ def main(
     workspace_path: Path | None = None,
     data_file: Path | None = None,
 ) -> int:
-    """Start RC4 with canonical migration, provenance and atomic X11 backends."""
+    """Start RC4 with canonical migration, provenance and hardened X11 backends."""
 
     log_path = _configure_logging()
     provenance_path = write_runtime_snapshot(
@@ -101,7 +103,7 @@ def main(
         record_runtime_event("application_stopped", reason="mainloop_returned")
         return 0
     except Exception as exc:  # noqa: BLE001
-        logging.exception("Unable to start atomic TriView Workspace RC4")
+        logging.exception("Unable to start hardened TriView Workspace RC4")
         record_runtime_event(
             "application_start_failed",
             error_type=type(exc).__name__,

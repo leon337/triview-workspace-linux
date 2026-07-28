@@ -7,9 +7,12 @@ STATE_ROOT="${3:?STATE_ROOT ausente}"
 MODULE="${4:?MODULE ausente}"
 CURRENT="$APP_ROOT/current"
 CURRENT_TARGET="$(readlink -f "$CURRENT" 2>/dev/null || true)"
-REPORT_DIR="$STATE_ROOT/triview-workspace/diagnostics"
+APP_STATE="$STATE_ROOT/triview-workspace"
+REPORT_DIR="$APP_STATE/diagnostics"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 FALLBACK_REPORT="$REPORT_DIR/triview-diagnostic-$STAMP-fallback.txt"
+PROVENANCE="$APP_STATE/runtime-provenance.json"
+RUNTIME_EVENTS="$APP_STATE/runtime-events.jsonl"
 
 mkdir -p "$REPORT_DIR"
 
@@ -45,6 +48,21 @@ PY
   if [[ "$status" -eq 0 ]]; then
     TEXT_REPORT="$(printf '%s\n' "$output" | sed -n '1p')"
     JSON_REPORT="$(printf '%s\n' "$output" | sed -n '2p')"
+
+    {
+      printf '\n\nPROVENIÊNCIA BRUTA\n'
+      printf '%s\n' '--------------------------------------------------------'
+      cat "$PROVENANCE" 2>&1 || true
+      printf '\n\nÚLTIMOS EVENTOS DO RUNTIME\n'
+      printf '%s\n' '--------------------------------------------------------'
+      tail -n 500 "$RUNTIME_EVENTS" 2>&1 || true
+      printf '\n\nPROCESSOS DO CANDIDATO\n'
+      printf '%s\n' '--------------------------------------------------------'
+      ps -eo pid,ppid,pgid,lstart,args \
+        | grep -E 'triview_workspace|browser-profiles|TriView-|brave|chromium' \
+        | grep -v grep || true
+    } >>"$TEXT_REPORT"
+
     printf 'Relatório TXT: %s\nRelatório JSON: %s\n' "$TEXT_REPORT" "$JSON_REPORT"
     if command -v xed >/dev/null 2>&1; then
       nohup xed "$TEXT_REPORT" >/dev/null 2>&1 &
@@ -87,11 +105,13 @@ fi
   printf '\n[xwininfo root tree]\n'
   xwininfo -root -tree 2>&1 || true
   printf '\n[launcher log]\n'
-  tail -n 300 "$STATE_ROOT/triview-workspace/launcher.log" 2>&1 || true
+  tail -n 300 "$APP_STATE/launcher.log" 2>&1 || true
+  printf '\n[runtime provenance]\n'
+  cat "$PROVENANCE" 2>&1 || true
   printf '\n[runtime events]\n'
-  tail -n 500 "$STATE_ROOT/triview-workspace/runtime-events.jsonl" 2>&1 || true
+  tail -n 500 "$RUNTIME_EVENTS" 2>&1 || true
   printf '\n[stderr]\n'
-  tail -n 300 "$STATE_ROOT/triview-workspace/app.stderr.log" 2>&1 || true
+  tail -n 300 "$APP_STATE/app.stderr.log" 2>&1 || true
 } >"$FALLBACK_REPORT"
 
 printf 'Relatório de contingência: %s\n' "$FALLBACK_REPORT"

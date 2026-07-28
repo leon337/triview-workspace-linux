@@ -14,7 +14,9 @@ CHECKPOINT=docs/handoffs/TRIVIEW_CHECKPOINT_2026-07-28.md
 PROMPT_ORIGEM=docs/handoffs/TRIVIEW_CONTINUATION_PROMPT_2026-07-28.md
 PR_CANDIDATO=35
 BRANCH_CANDIDATA=feat/triview-rc4-approved-ui
-HEAD_CONHECIDO=1a0c71abd3e46f834fd7aec78d27f2daf171397b
+HEAD_FUNCIONAL_ANTES_DO_HANDOFF=1a0c71abd3e46f834fd7aec78d27f2daf171397b
+HEAD_DOCUMENTAL_PR38=926e72e7e90a1eab1485cbc9556ee7909d1ce4cf
+HEAD_ATUAL=CONSULTAR_PR_35_ANTES_DE_CRIAR_BRANCH
 OBJETIVO_LINEAR=LEA-226
 ACEITE_LINEAR=LEA-229
 REMEDIACAO_PAI=LEA-230
@@ -33,9 +35,10 @@ ANTES DE QUALQUER ALTERAÇÃO
 1. Leia integralmente o checkpoint no GitHub.
 2. Consulte no Linear as LEAs 226, 229, 230 e 241, incluindo relações e comentários.
 3. Consulte o estado atual do PR #35 e confirme branch, HEAD, Draft, CI e ausência de promoção.
-4. Compare o estado atual com o checkpoint.
-5. Caso exista divergência, registre-a antes de executar mudanças.
-6. Não peça ao usuário para repetir o histórico.
+4. Trate o HEAD indicado no checkpoint como referência histórica; use como base somente o HEAD atual confirmado no PR #35.
+5. Compare o estado atual com o checkpoint.
+6. Caso exista divergência, registre-a antes de executar mudanças.
+7. Não peça ao usuário para repetir o histórico.
 
 CONTEXTO CRÍTICO
 

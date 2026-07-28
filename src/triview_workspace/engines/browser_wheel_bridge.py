@@ -46,7 +46,7 @@ class BrowserWheelBridge:
                 [
                     sys.executable,
                     "-m",
-                    "triview_workspace.engines.browser_wheel_worker_rc",
+                    "triview_workspace.engines.browser_wheel_worker_final",
                 ],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -80,7 +80,7 @@ class BrowserWheelBridge:
             pid=process.pid,
             captures_keyboard=False,
             captures_only_buttons=[4, 5],
-            worker_module="triview_workspace.engines.browser_wheel_worker_rc",
+            worker_module="triview_workspace.engines.browser_wheel_worker_final",
         )
 
     def sync(self, routes: Iterable[BrowserWheelRoute]) -> None:

@@ -18,12 +18,8 @@ export TRIVIEW_APP_ROOT="$APP_ROOT"
 export TRIVIEW_RUNTIME_ROOT="$CURRENT_TARGET"
 export TRIVIEW_RUNTIME_MODULE="$MODULE"
 
-# runtime_observability supplies the source events. Every shareable artifact,
-# including the contingency package, is sanitized before leaving the machine.
-# diagnostic_blackbox_verified extends diagnostic_blackbox_shareable, which
-# extends diagnostic_blackbox_final and the byte-safe event reader.
-# The package still contains the conceptual section ÚLTIMOS EVENTOS DO RUNTIME,
-# but never appends raw runtime-events.jsonl, process arguments or local paths.
+# The final Xephyr collector extends the verified/shareable/byte-safe chain,
+# refreshes provenance after auto-launch and resolves live X11 ancestry.
 
 show_result() {
   local title="$1"
@@ -67,7 +63,7 @@ PY
   cd "$CURRENT_TARGET"
 
   set +e
-  package="$(python3 -m triview_workspace.diagnostic_blackbox_verified \
+  package="$(python3 -m triview_workspace.diagnostic_blackbox_xephyr \
     --output-dir "$REPORT_DIR" \
     --timeout-seconds "${TRIVIEW_DIAGNOSTIC_TIMEOUT_SECONDS:-900}" \
     --auto-launch \
@@ -89,8 +85,6 @@ else
   reason="Runtime ativo ausente"
 fi
 
-# No raw fallback is produced. The contingency generator applies the same URL,
-# path, process-argument, event and error sanitization as the main ZIP.
 set +e
 fallback_package="$(python3 -m triview_workspace.diagnostic_fallback_shareable \
   --output-dir "$REPORT_DIR" \

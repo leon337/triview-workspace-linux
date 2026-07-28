@@ -74,6 +74,7 @@ def _read_json_event(
 ) -> dict[str, Any]:
     assert process.stdout is not None
     deadline = time.monotonic() + timeout
+    seen: list[dict[str, Any]] = []
     while time.monotonic() < deadline:
         readable, _writable, _errors = select.select(
             [process.stdout], [], [], min(0.25, deadline - time.monotonic())
@@ -84,12 +85,16 @@ def _read_json_event(
         if not line:
             break
         payload = json.loads(line)
+        seen.append(payload)
         if payload.get("event_type") == event_type:
             return payload
     stderr = ""
     if process.poll() is not None and process.stderr is not None:
         stderr = process.stderr.read()
-    raise AssertionError(f"evento {event_type!r} não recebido; stderr={stderr!r}")
+    raise AssertionError(
+        f"evento {event_type!r} não recebido; seen={seen!r}; "
+        f"returncode={process.poll()!r}; stderr={stderr!r}"
+    )
 
 
 def _drain_button_releases(

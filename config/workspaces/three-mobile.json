@@ -46,8 +46,8 @@
       {
         "id": "terminal",
         "title": "Terminal",
-        "kind": "application",
-        "target": "x-terminal-emulator"
+        "kind": "terminal",
+        "target": "bash -l"
       }
     ]
   }

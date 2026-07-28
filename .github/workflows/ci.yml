@@ -20,7 +20,8 @@ jobs:
       - name: Install X11 integration dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb xauth xdotool
+          sudo apt-get install -y --no-install-recommends \
+            xvfb xauth xdotool xserver-xephyr x11-utils
       - name: Compile
         run: python -m compileall -q src tests
       - name: Tests
@@ -29,6 +30,10 @@ jobs:
         run: |
           xvfb-run -a env TRIVIEW_RUN_X11_INTEGRATION=1 \
             pytest -q tests/test_browser_wheel_x11_integration.py
+      - name: Xephyr containment integration
+        run: |
+          xvfb-run -a env TRIVIEW_RUN_XEPHYR_INTEGRATION=1 \
+            pytest -q tests/test_browser_xephyr_x11_integration.py
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4

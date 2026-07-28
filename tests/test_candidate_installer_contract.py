@@ -12,6 +12,7 @@ RC4_INSTALLER = ROOT / "scripts" / "install-train-candidate.sh"
 CANDIDATE_LAUNCHER = ROOT / "scripts" / "candidate-launch.sh"
 CANDIDATE_UPDATER = ROOT / "scripts" / "candidate-update.sh"
 CANDIDATE_DIAGNOSTIC = ROOT / "scripts" / "candidate-diagnose.sh"
+CANDIDATE_ROLLBACK = ROOT / "scripts" / "candidate-rollback.sh"
 
 
 @pytest.mark.parametrize(
@@ -22,6 +23,7 @@ CANDIDATE_DIAGNOSTIC = ROOT / "scripts" / "candidate-diagnose.sh"
         CANDIDATE_LAUNCHER,
         CANDIDATE_UPDATER,
         CANDIDATE_DIAGNOSTIC,
+        CANDIDATE_ROLLBACK,
     ],
 )
 def test_candidate_installer_has_valid_bash_syntax(script: Path) -> None:
@@ -54,15 +56,39 @@ def test_module_installer_rejects_unsafe_archive_entries() -> None:
     assert '".." in path.parts' in script
 
 
-def test_module_installer_creates_open_update_and_diagnostic_launchers() -> None:
+def test_module_installer_creates_open_update_diagnostic_and_rollback_launchers() -> None:
     script = MODULE_INSTALLER.read_text(encoding="utf-8")
 
     assert "candidate-launch.sh" in script
     assert "candidate-update.sh" in script
     assert "candidate-diagnose.sh" in script
+    assert "candidate-rollback.sh" in script
     assert "Atualizar TriView Workspace" in script
     assert "Diagnosticar TriView Workspace" in script
+    assert "Reverter TriView Workspace" in script
     assert "runtime_observability" in script
+
+
+def test_module_installer_has_idempotent_noop_and_verified_backup() -> None:
+    script = MODULE_INSTALLER.read_text(encoding="utf-8")
+
+    assert "idempotent_update_noop" in script
+    assert 'if [[ "$current_sha" == "$RESOLVED_SHA" ]]' in script
+    assert "SHA256SUMS" in script
+    assert "sha256sum -c SHA256SUMS" in script
+    assert '"verified": True' in script
+    assert '"restore_policy": "manual-explicit-only"' in script
+
+
+def test_module_installer_has_pre_switch_failpoint_without_current_mutation() -> None:
+    script = MODULE_INSTALLER.read_text(encoding="utf-8")
+
+    failpoint_index = script.index("TRIVIEW_TEST_FAIL_BEFORE_SWITCH")
+    current_switch_index = script.index('mv -Tf "$current_temp" "$current_link"')
+
+    assert failpoint_index < current_switch_index
+    assert "Interrupção controlada antes da troca atômica" in script
+    assert 'rm -f "$transaction_file"' in script
 
 
 def test_candidate_launcher_records_exact_runtime_before_exec() -> None:
@@ -85,6 +111,17 @@ def test_candidate_diagnostic_collects_x11_processes_and_runtime_events() -> Non
     assert "runtime-events.jsonl" in script
     assert "candidate-release.json" in script
     assert "ps -eo pid,ppid,pgid,lstart,args" in script
+
+
+def test_candidate_rollback_requires_atomic_exchange_and_preserves_data() -> None:
+    script = CANDIDATE_ROLLBACK.read_text(encoding="utf-8")
+
+    assert "RENAME_EXCHANGE = 2" in script
+    assert "renameat2" in script
+    assert '"data_restored": False' in script
+    assert '"data_policy": "preserve-later-data"' in script
+    assert '"atomic_exchange": True' in script
+    assert "sha256sum -c SHA256SUMS" in script
 
 
 def test_rc4_installer_requires_full_sha_and_opens_approved_gui() -> None:

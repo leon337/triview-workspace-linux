@@ -22,6 +22,9 @@ export TRIVIEW_APP_ROOT="$APP_ROOT"
 export TRIVIEW_RUNTIME_ROOT="$CURRENT_TARGET"
 export TRIVIEW_RUNTIME_MODULE="$MODULE"
 
+# Compatibility contract: runtime_observability remains the provenance/event
+# source used by the interactive black-box collector and the snapshot fallback.
+
 show_result() {
   local title="$1"
   local message="$2"
@@ -125,7 +128,8 @@ fi
   tail -n 300 "$APP_STATE/launcher.log" 2>&1 || true
   printf '\n[runtime provenance]\n'
   cat "$PROVENANCE" 2>&1 || true
-  printf '\n[runtime events]\n'
+  printf '\nÚLTIMOS EVENTOS DO RUNTIME\n'
+  printf '%s\n' '--------------------------------------------------------'
   tail -n 500 "$RUNTIME_EVENTS" 2>&1 || true
   printf '\n[diagnostic blackbox stderr]\n'
   tail -n 300 "$APP_STATE/diagnostic-blackbox.stderr.log" 2>&1 || true

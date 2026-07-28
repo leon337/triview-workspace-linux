@@ -27,15 +27,67 @@ LOGGER = logging.getLogger(__name__)
 
 
 class EmbeddedFirstX11PanelRuntimeBackend(X11PanelRuntimeBackend):
-    """Hide a new X11 window before reparenting it into the panel host."""
+    """Discover and hide a terminal window before its first external map."""
 
     def __init__(self) -> None:
         super().__init__(
             launch_timeout=14.0,
-            poll_interval=0.08,
-            reparent_attempts=10,
+            poll_interval=0.01,
+            reparent_attempts=12,
             stable_parent_checks=2,
         )
+
+    def _candidate_window_ids(
+        self,
+        xdotool: str,
+        family_pids: set[int],
+        hints: Sequence[str],
+        known_window_ids: set[str],
+    ) -> list[str]:
+        """Search hidden and visible windows so reparenting can beat first exposure."""
+
+        ordered: list[str] = []
+        seen: set[str] = set()
+
+        def add(window_ids: Sequence[str]) -> None:
+            for window_id in window_ids:
+                if window_id in known_window_ids or window_id in seen:
+                    continue
+                seen.add(window_id)
+                ordered.append(window_id)
+
+        for pid in sorted(family_pids):
+            add(self._search_windows(xdotool, "--pid", str(pid), only_visible=False))
+
+        hinted: list[str] = []
+        for hint in hints:
+            for selector in ("--class", "--classname", "--name"):
+                hinted.extend(
+                    self._search_windows(xdotool, selector, hint, only_visible=False)
+                )
+
+        family_hinted: list[str] = []
+        unowned_hinted: list[str] = []
+        for window_id in hinted:
+            window_pid = self._window_pid(xdotool, window_id)
+            if window_pid in family_pids:
+                family_hinted.append(window_id)
+            elif window_pid is None:
+                unowned_hinted.append(window_id)
+
+        add(family_hinted)
+        if ordered:
+            return ordered
+
+        unique_unowned = list(dict.fromkeys(unowned_hinted))
+        if len(unique_unowned) == 1:
+            add(unique_unowned)
+        elif len(unique_unowned) > 1:
+            LOGGER.warning(
+                "Ignoring %s ambiguous terminal windows without PID metadata.",
+                len(unique_unowned),
+            )
+        return ordered
 
     def _wait_for_window(
         self,
@@ -57,24 +109,18 @@ class EmbeddedFirstX11PanelRuntimeBackend(X11PanelRuntimeBackend):
                 normalized_hints,
                 known_window_ids,
             )
-            candidate = next(
-                (
-                    window_id
-                    for window_id in candidates
-                    if self._window_is_viewable(xwininfo, window_id)
-                ),
-                None,
-            )
+            candidate = next(iter(candidates), None)
             if candidate is not None:
-                # Remove the external flash before the reparent transaction starts.
+                # Stage the still-hidden window off-screen, then ensure it remains
+                # unmapped until the reparent transaction maps it inside the panel.
                 try:
                     self._run_xdotool(xdotool, "windowmove", candidate, "-32000", "-32000")
                 except PanelLaunchError:
-                    LOGGER.debug("Could not move terminal window off-screen before embedding.")
+                    LOGGER.debug("Could not stage terminal window off-screen.")
                 try:
                     self._run_xdotool(xdotool, "windowunmap", candidate)
                 except PanelLaunchError:
-                    LOGGER.debug("Terminal window was already unmapped before embedding.")
+                    LOGGER.debug("Terminal window was not mapped when first discovered.")
                 return candidate
             time.sleep(self._poll_interval)
 
@@ -117,7 +163,7 @@ class EmbeddedFirstX11PanelRuntimeBackend(X11PanelRuntimeBackend):
             else:
                 if self._confirm_window_parent(xwininfo, window_id, parent_window_id):
                     return True
-            time.sleep(max(0.08, self._poll_interval))
+            time.sleep(max(0.02, self._poll_interval))
         return False
 
 

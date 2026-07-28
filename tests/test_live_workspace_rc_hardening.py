@@ -39,11 +39,15 @@ def test_release_candidate_does_not_enable_focus_follows_mouse() -> None:
     assert "return" in source
 
 
-def test_browser_is_launched_inside_xephyr_parent_before_first_map() -> None:
+def test_browser_is_launched_inside_authenticated_xephyr_before_first_map() -> None:
     launch_source = inspect.getsource(ManagedXephyrEmbeddedBraveBrowserBackend.launch)
 
     assert '"-parent"' in launch_source
     assert "parent_window_id" in launch_source
+    assert '"-auth"' in launch_source
+    assert "_create_xauthority" in launch_source
+    assert "nested_display_authenticated=True" in launch_source
+    assert '"-ac"' not in launch_source
     assert "self._wait_for_display" in launch_source
     assert launch_source.index("self._wait_for_display") < launch_source.index(
         "browser_process = subprocess.Popen"
@@ -51,6 +55,14 @@ def test_browser_is_launched_inside_xephyr_parent_before_first_map() -> None:
     assert 'containment="nested_xephyr"' in launch_source
     assert "external_root_mapping_possible=False" in launch_source
     assert "browser_candidate_forced_hidden" not in launch_source
+
+
+def test_candidate_launcher_installs_xauth_with_xephyr() -> None:
+    script = Path("scripts/candidate-launch.sh").read_text(encoding="utf-8")
+
+    assert "missing+=(xserver-xephyr)" in script
+    assert "missing+=(xauth)" in script
+    assert "command -v xauth" in script
 
 
 def test_runtime_event_tailer_uses_binary_offsets_and_partial_line_buffer() -> None:

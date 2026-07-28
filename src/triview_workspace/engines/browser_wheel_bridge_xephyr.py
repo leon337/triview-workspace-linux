@@ -8,11 +8,18 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any
 
 from triview_workspace.engines.browser_wheel_bridge import BrowserWheelBridge
 from triview_workspace.runtime_observability import record_runtime_event
+
+
+_ANCESTRY_CACHE_TTL_SECONDS = 5.0
+_ANCESTRY_CACHE_MAX_ENTRIES = 512
+_ANCESTRY_CACHE: dict[tuple[int, int], tuple[float, tuple[int, ...]]] = {}
+_ANCESTRY_CACHE_LOCK = threading.RLock()
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,18 +40,72 @@ class XephyrBrowserWheelRoute:
         }
 
 
+def clear_x11_ancestry_cache() -> None:
+    """Discard cached X11 ancestry after topology-changing operations or tests."""
+
+    with _ANCESTRY_CACHE_LOCK:
+        _ANCESTRY_CACHE.clear()
+
+
+def _cached_ancestry(
+    key: tuple[int, int],
+    now: float,
+) -> tuple[int, ...] | None:
+    with _ANCESTRY_CACHE_LOCK:
+        cached = _ANCESTRY_CACHE.get(key)
+        if cached is None:
+            return None
+        observed_at, ancestry = cached
+        if now - observed_at <= _ANCESTRY_CACHE_TTL_SECONDS:
+            return ancestry
+        _ANCESTRY_CACHE.pop(key, None)
+    return None
+
+
+def _store_ancestry(
+    key: tuple[int, int],
+    now: float,
+    ancestry: tuple[int, ...],
+) -> None:
+    with _ANCESTRY_CACHE_LOCK:
+        _ANCESTRY_CACHE[key] = (now, ancestry)
+        if len(_ANCESTRY_CACHE) <= _ANCESTRY_CACHE_MAX_ENTRIES:
+            return
+        ordered = sorted(
+            _ANCESTRY_CACHE.items(),
+            key=lambda item: item[1][0],
+        )
+        overflow = len(_ANCESTRY_CACHE) - _ANCESTRY_CACHE_MAX_ENTRIES
+        for stale_key, _value in ordered[:overflow]:
+            _ANCESTRY_CACHE.pop(stale_key, None)
+
+
 def x11_window_ancestry(window_id: int | str, *, max_depth: int = 24) -> tuple[int, ...]:
-    """Return the window and its live host-display ancestors."""
+    """Return the window and its host-display ancestors with a short TTL cache.
+
+    Route publication runs several times per second. Without caching, every
+    publication spawned one ``xwininfo`` process per ancestor and per panel,
+    which could itself become a measurable CPU/process source with six live
+    Browser Panels. The cache preserves current topology while bounding probes.
+    """
 
     xwininfo = shutil.which("xwininfo")
     if xwininfo is None:
         return ()
     try:
-        current = int(str(window_id), 0)
+        normalized_window_id = int(str(window_id), 0)
     except ValueError:
         return ()
+    safe_depth = max(1, int(max_depth))
+    key = (normalized_window_id, safe_depth)
+    now = time.monotonic()
+    cached = _cached_ancestry(key, now)
+    if cached is not None:
+        return cached
+
+    current = normalized_window_id
     ancestry: list[int] = []
-    for _depth in range(max_depth):
+    for _depth in range(safe_depth):
         if current in ancestry or current <= 0:
             break
         ancestry.append(current)
@@ -70,7 +131,9 @@ def x11_window_ancestry(window_id: int | str, *, max_depth: int = 24) -> tuple[i
         if parent == current:
             break
         current = parent
-    return tuple(ancestry)
+    resolved = tuple(ancestry)
+    _store_ancestry(key, now, resolved)
+    return resolved
 
 
 class XephyrBrowserWheelBridge(BrowserWheelBridge):
@@ -120,11 +183,13 @@ class XephyrBrowserWheelBridge(BrowserWheelBridge):
             captures_only_buttons=[4, 5],
             worker_module="triview_workspace.engines.browser_wheel_worker_xephyr",
             route_ancestry=True,
+            ancestry_cache_ttl_seconds=_ANCESTRY_CACHE_TTL_SECONDS,
         )
 
 
 __all__ = [
     "XephyrBrowserWheelBridge",
     "XephyrBrowserWheelRoute",
+    "clear_x11_ancestry_cache",
     "x11_window_ancestry",
 ]

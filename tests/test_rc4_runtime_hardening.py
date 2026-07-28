@@ -234,10 +234,10 @@ def test_terminal_window_is_hidden_as_soon_as_it_is_discovered(monkeypatch: Any)
     monkeypatch.setattr(runtime, "_process_family", lambda _pid: {1234})
     monkeypatch.setattr(
         runtime,
-        "_candidate_window_ids",
+        "_search_windows",
         lambda *_args, **_kwargs: ["55"],
     )
-    monkeypatch.setattr(runtime, "_window_is_viewable", lambda *_args: True)
+    monkeypatch.setattr(runtime, "_window_pid", lambda *_args: 1234)
     monkeypatch.setattr(
         runtime,
         "_run_xdotool",
@@ -248,14 +248,14 @@ def test_terminal_window_is_hidden_as_soon_as_it_is_discovered(monkeypatch: Any)
         "xdotool",
         "xwininfo",
         _FakeProcess(),  # type: ignore[arg-type]
-        ("TriView Terminal",),
+        ("TriView-Terminal-terminal",),
         set(),
     )
 
     assert window_id == "55"
     assert calls == [
-        ("windowmove", "55", "-32000", "-32000"),
         ("windowunmap", "55"),
+        ("windowmove", "55", "-32000", "-32000"),
     ]
 
 
@@ -271,4 +271,4 @@ def test_terminal_backend_disables_external_fallback(monkeypatch: Any) -> None:
     assert runtime.parent_window_id == 777
     assert runtime.request is not None
     assert runtime.request.allow_external_fallback is False
-    assert "TriView Terminal [terminal]" in runtime.request.window_hints
+    assert runtime.request.window_hints == ("TriView-Terminal-terminal",)

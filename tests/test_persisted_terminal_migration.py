@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 import triview_workspace.gui as active_gui
+import triview_workspace.gui_rc4_atomic as atomic_gui
 import triview_workspace.gui_rc4_terminal_migration as migrated_gui
 from triview_workspace.catalog_migrations import (
     LEGACY_TERMINAL_TARGETS,
@@ -166,6 +167,7 @@ def test_same_panel_id_outside_development_workspace_is_preserved(tmp_path: Path
     assert result.workspace_by_id("custom-tools").panels[0].target == "code"
 
 
-def test_active_gui_runs_the_terminal_migration_entry_point() -> None:
-    assert active_gui.main is migrated_gui.main
-    assert active_gui.WorkspaceWindow is migrated_gui.WorkspaceWindow
+def test_active_gui_keeps_terminal_migration_under_atomic_entry_point() -> None:
+    assert active_gui.main is atomic_gui.main
+    assert active_gui.WorkspaceWindow is atomic_gui.WorkspaceWindow
+    assert issubclass(active_gui.WorkspaceWindow, migrated_gui.WorkspaceWindow)

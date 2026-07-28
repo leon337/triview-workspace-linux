@@ -10,14 +10,74 @@ UPDATE_REF="${6:?UPDATE_REF ausente}"
 REPO="${7:?REPO ausente}"
 CURRENT="$APP_ROOT/current"
 CURRENT_TARGET="$(readlink -f "$CURRENT" 2>/dev/null || true)"
+APP_STATE="$STATE_ROOT/triview-workspace"
 
-mkdir -p "$STATE_ROOT/triview-workspace/updates"
+mkdir -p "$APP_STATE/updates"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-LOG="$STATE_ROOT/triview-workspace/updates/update-$STAMP.log"
+LOG="$APP_STATE/updates/update-$STAMP.log"
+UPDATE_LOCK="$APP_STATE/update.lock"
 
 if [[ -z "$CURRENT_TARGET" || ! -d "$CURRENT_TARGET" ]]; then
   printf 'ERRO: candidato ativo ausente ou inválido: %s\n' "$CURRENT" | tee "$LOG" >&2
   exit 1
+fi
+
+if ! command -v flock >/dev/null 2>&1; then
+  printf 'ERRO: flock não está disponível para serializar a atualização.\n' \
+    | tee "$LOG" >&2
+  exit 1
+fi
+
+exec 8>"$UPDATE_LOCK"
+if ! flock -n 8; then
+  printf 'ERRO: outra atualização do TriView já está em execução.\n' | tee "$LOG" >&2
+  exit 2
+fi
+
+RUNNING_PIDS="$(python3 - "$APP_ROOT" "$MODULE" <<'PY'
+from __future__ import annotations
+
+import pathlib
+import sys
+
+app_root = pathlib.Path(sys.argv[1]).expanduser().resolve()
+expected_module = sys.argv[2]
+releases = app_root / "releases"
+
+for environ_path in pathlib.Path("/proc").glob("[0-9]*/environ"):
+    try:
+        raw = environ_path.read_bytes()
+    except (OSError, PermissionError):
+        continue
+    entries = {}
+    for item in raw.split(b"\0"):
+        if b"=" not in item:
+            continue
+        key, value = item.split(b"=", 1)
+        entries[key.decode(errors="replace")] = value.decode(errors="replace")
+    if entries.get("TRIVIEW_RUNTIME_MODULE") != expected_module:
+        continue
+    runtime_root = entries.get("TRIVIEW_RUNTIME_ROOT")
+    if not runtime_root:
+        continue
+    try:
+        runtime_path = pathlib.Path(runtime_root).expanduser().resolve()
+        runtime_path.relative_to(releases)
+    except (OSError, ValueError):
+        continue
+    print(environ_path.parent.name)
+PY
+)"
+
+if [[ -n "$RUNNING_PIDS" ]]; then
+  message="Feche o TriView Workspace antes de atualizar. Instância ativa: $RUNNING_PIDS"
+  printf 'ERRO: %s\n' "$message" | tee "$LOG" >&2
+  if command -v zenity >/dev/null 2>&1; then
+    zenity --error --title='TriView ainda está aberto' --text="$message" || true
+  fi
+  printf '\nPressione ENTER para fechar.\n'
+  read -r _ || true
+  exit 2
 fi
 
 INSTALLER="$CURRENT_TARGET/scripts/install-module-candidate.sh"

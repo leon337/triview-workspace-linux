@@ -18,6 +18,7 @@ export TRIVIEW_APP_ROOT="$APP_ROOT"
 export TRIVIEW_RUNTIME_ROOT="$CURRENT_TARGET"
 export TRIVIEW_RUNTIME_MODULE="$MODULE"
 
+# runtime_observability remains the authoritative runtime event source.
 # Collector inheritance chain retained for audit compatibility:
 # triview_workspace.diagnostic_blackbox_xephyr extends
 # triview_workspace.diagnostic_blackbox_verified, which extends

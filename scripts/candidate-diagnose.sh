@@ -20,6 +20,7 @@ export TRIVIEW_RUNTIME_MODULE="$MODULE"
 
 # runtime_observability and runtime-events.jsonl remain the authoritative
 # runtime evidence source; raw lines are never copied directly to the ZIP.
+# The package preserves the conceptual section ÚLTIMOS EVENTOS DO RUNTIME.
 # Collector inheritance chain retained for audit compatibility:
 # triview_workspace.diagnostic_blackbox_xephyr extends
 # triview_workspace.diagnostic_blackbox_verified, which extends

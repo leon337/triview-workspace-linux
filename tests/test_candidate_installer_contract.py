@@ -69,26 +69,33 @@ def test_module_installer_creates_open_update_diagnostic_and_rollback_launchers(
     assert "runtime_observability" in script
 
 
-def test_module_installer_has_idempotent_noop_and_verified_backup() -> None:
+def test_module_installer_reconciles_idempotent_runs_and_verified_backup() -> None:
     script = MODULE_INSTALLER.read_text(encoding="utf-8")
 
-    assert "idempotent_update_noop" in script
+    assert "idempotent_update_reconciled" in script
     assert 'if [[ "$current_sha" == "$RESOLVED_SHA" ]]' in script
+    assert "Reconciliando a instalação existente" in script
+    assert "archive_pending_transactions" in script
+    assert "reconciled_transactions" in script
     assert "SHA256SUMS" in script
     assert "sha256sum -c SHA256SUMS" in script
     assert '"verified": True' in script
     assert '"restore_policy": "manual-explicit-only"' in script
 
 
-def test_module_installer_has_pre_switch_failpoint_without_current_mutation() -> None:
+def test_module_installer_has_pre_and_post_switch_failpoints() -> None:
     script = MODULE_INSTALLER.read_text(encoding="utf-8")
 
-    failpoint_index = script.index("TRIVIEW_TEST_FAIL_BEFORE_SWITCH")
+    before_index = script.index("TRIVIEW_TEST_FAIL_BEFORE_SWITCH")
     current_switch_index = script.index('mv -Tf "$current_temp" "$current_link"')
+    after_index = script.index("TRIVIEW_TEST_FAIL_AFTER_SWITCH")
+    reconciliation_index = script.index(
+        "# Reconciliation is intentionally common to new installs and idempotent reruns."
+    )
 
-    assert failpoint_index < current_switch_index
+    assert before_index < current_switch_index < after_index < reconciliation_index
     assert "Interrupção controlada antes da troca atômica" in script
-    assert 'rm -f "$transaction_file"' in script
+    assert "Interrupção controlada depois da troca atômica" in script
 
 
 def test_candidate_launcher_records_exact_runtime_before_exec() -> None:

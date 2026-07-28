@@ -24,7 +24,7 @@ from triview_workspace.diagnostic_blackbox_verified import (
 
 
 def delivery_route_windows_with_ancestry(event: dict[str, Any]) -> set[int]:
-    """Return host/browser windows and every ancestry item captured live."""
+    """Return host/browser endpoints and every ancestry item captured live."""
 
     windows: set[int] = set()
     for key in ("host_window_id", "browser_window_id"):
@@ -42,8 +42,59 @@ def delivery_route_windows_with_ancestry(event: dict[str, Any]) -> set[int]:
     return windows
 
 
+def delivery_route_endpoints(event: dict[str, Any]) -> set[int]:
+    """Return only the panel-specific host and contained Xephyr window IDs."""
+
+    endpoints: set[int] = set()
+    for key in ("host_window_id", "browser_window_id"):
+        window_id = normalize_window_id(event.get(key))
+        if window_id is not None:
+            endpoints.add(window_id)
+    return endpoints
+
+
+def route_geometry(event: dict[str, Any]) -> tuple[int, int, int, int] | None:
+    """Return validated root-relative host bounds from one delivery event."""
+
+    values: list[int] = []
+    for key in ("host_x", "host_y", "host_width", "host_height"):
+        value = event.get(key)
+        if value is None:
+            return None
+        try:
+            values.append(int(value))
+        except (TypeError, ValueError):
+            return None
+    x, y, width, height = values
+    if width <= 0 or height <= 0:
+        return None
+    return x, y, width, height
+
+
+def pointer_coordinates(event: dict[str, Any]) -> tuple[int, int] | None:
+    """Return one physical root-coordinate pair when both axes are present."""
+
+    try:
+        x = int(event["pointer_x"])
+        y = int(event["pointer_y"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return x, y
+
+
+def point_inside_geometry(
+    point: tuple[int, int] | None,
+    geometry: tuple[int, int, int, int] | None,
+) -> bool:
+    if point is None or geometry is None:
+        return False
+    pointer_x, pointer_y = point
+    x, y, width, height = geometry
+    return bool(x <= pointer_x < x + width and y <= pointer_y < y + height)
+
+
 class XephyrVerifiedBlackboxCollector(VerifiedBlackboxCollector):
-    """Verify nested containment, live ancestry and final runtime provenance."""
+    """Verify nested containment, panel geometry and final runtime provenance."""
 
     def _refresh_runtime_provenance(self) -> None:
         source = state_root() / "runtime-provenance.json"
@@ -101,29 +152,49 @@ class XephyrVerifiedBlackboxCollector(VerifiedBlackboxCollector):
             inputs = input_by_id.get(correlation_id, [])
             outputs = delivery_by_id.get(correlation_id, [])
             one_to_one = len(inputs) == 1 and len(outputs) == 1
-            delivered = bool(one_to_one and outputs[0].get("delivered"))
-            input_windows = input_route_windows(inputs[0]) if len(inputs) == 1 else set()
+            input_event = inputs[0] if len(inputs) == 1 else {}
+            output_event = outputs[0] if len(outputs) == 1 else {}
+            delivered = bool(one_to_one and output_event.get("delivered"))
+
+            input_windows = input_route_windows(input_event) if input_event else set()
             output_windows = (
-                delivery_route_windows_with_ancestry(outputs[0])
-                if len(outputs) == 1
+                delivery_route_windows_with_ancestry(output_event)
+                if output_event
                 else set()
             )
-            route_complete = bool(
-                outputs
-                and outputs[0].get("runtime_id")
-                and outputs[0].get("host_window_id") is not None
-                and outputs[0].get("browser_window_id") is not None
-                and outputs[0].get("host_ancestry")
-                and outputs[0].get("browser_ancestry")
+            endpoints = delivery_route_endpoints(output_event) if output_event else set()
+            shared_ancestors = output_windows - endpoints
+            direct_endpoint_match = bool(input_windows & endpoints)
+            shared_ancestor_observed = bool(input_windows & shared_ancestors)
+
+            geometry = route_geometry(output_event) if output_event else None
+            input_pointer = pointer_coordinates(input_event) if input_event else None
+            delivery_pointer = (
+                pointer_coordinates(output_event) if output_event else None
             )
-            window_evidence_available = bool(input_windows and output_windows)
-            route_matches = bool(input_windows & output_windows)
+            input_pointer_inside = point_inside_geometry(input_pointer, geometry)
+            delivery_pointer_inside = point_inside_geometry(delivery_pointer, geometry)
+            pointer_evidence_available = bool(
+                input_pointer is not None and delivery_pointer is not None
+            )
+            pointer_matches_host = bool(
+                delivery_pointer_inside
+                and (input_pointer_inside or direct_endpoint_match)
+            )
+
+            route_complete = bool(
+                output_event.get("runtime_id")
+                and len(endpoints) == 2
+                and output_event.get("host_ancestry")
+                and output_event.get("browser_ancestry")
+                and geometry is not None
+            )
             exact = bool(
                 one_to_one
                 and delivered
                 and route_complete
-                and window_evidence_available
-                and route_matches
+                and pointer_evidence_available
+                and pointer_matches_host
             )
             record = {
                 "input_correlation_id": correlation_id,
@@ -131,18 +202,35 @@ class XephyrVerifiedBlackboxCollector(VerifiedBlackboxCollector):
                 "delivery_count": len(outputs),
                 "delivered": delivered,
                 "route_complete": route_complete,
-                "window_evidence_available": window_evidence_available,
                 "input_window_ids": sorted(input_windows),
                 "delivery_window_ids": sorted(output_windows),
-                "route_matches_physical_window": route_matches,
-                "runtime_id": outputs[0].get("runtime_id") if outputs else None,
-                "host_window_id": outputs[0].get("host_window_id") if outputs else None,
-                "browser_window_id": outputs[0].get("browser_window_id") if outputs else None,
+                "delivery_endpoint_ids": sorted(endpoints),
+                "direct_endpoint_match": direct_endpoint_match,
+                "shared_ancestor_observed": shared_ancestor_observed,
+                "host_geometry": list(geometry) if geometry is not None else None,
+                "input_pointer": list(input_pointer) if input_pointer is not None else None,
+                "delivery_pointer": (
+                    list(delivery_pointer) if delivery_pointer is not None else None
+                ),
+                "pointer_evidence_available": pointer_evidence_available,
+                "input_pointer_inside_host": input_pointer_inside,
+                "delivery_pointer_inside_host": delivery_pointer_inside,
+                "route_matches_physical_panel": pointer_matches_host,
+                "runtime_id": output_event.get("runtime_id"),
+                "host_window_id": output_event.get("host_window_id"),
+                "browser_window_id": output_event.get("browser_window_id"),
             }
             matches.append(record)
             if exact:
                 continue
-            if one_to_one and delivered and route_complete and not window_evidence_available:
+            if (
+                one_to_one
+                and delivered
+                and (
+                    not route_complete
+                    or not pointer_evidence_available
+                )
+            ):
                 indeterminate.append(record)
             else:
                 failures.append(record)
@@ -152,9 +240,9 @@ class XephyrVerifiedBlackboxCollector(VerifiedBlackboxCollector):
         elif indeterminate or missing_input_ids or missing_delivery_ids:
             status = "INDETERMINATE_MISSING_X11_ROUTE_EVIDENCE"
         elif wheel_inputs and len(matches) == len(wheel_inputs) and all(
-            record["route_matches_physical_window"] for record in matches
+            record["route_matches_physical_panel"] for record in matches
         ):
-            status = "PASS_ONE_TO_ONE_MATCHED_X11_ANCESTRY"
+            status = "PASS_ONE_TO_ONE_MATCHED_X11_PANEL_GEOMETRY"
         elif wheel_inputs:
             status = "FAIL_SCROLL_UNMATCHED"
         else:
@@ -191,6 +279,7 @@ class XephyrVerifiedBlackboxCollector(VerifiedBlackboxCollector):
             event
             for event in [*nested_ready, *nested_embedded]
             if event.get("external_root_mapping_possible") is not False
+            or event.get("nested_display_authenticated") is not True
         ]
         host_visible_brave = [
             event
@@ -202,7 +291,7 @@ class XephyrVerifiedBlackboxCollector(VerifiedBlackboxCollector):
         if unsafe_runtime_events or host_visible_brave:
             status = "FAIL_EXTERNAL_VISIBILITY_BEFORE_EMBED"
         elif nested_ready and len(nested_ready) == len(nested_embedded):
-            status = "PASS_NESTED_X11_CONTAINMENT"
+            status = "PASS_AUTHENTICATED_NESTED_X11_CONTAINMENT"
         else:
             status = "INDETERMINATE_INSUFFICIENT_NESTED_EVENTS"
         return {
@@ -218,6 +307,7 @@ class XephyrVerifiedBlackboxCollector(VerifiedBlackboxCollector):
                 }
             ),
             "containment": "nested_xephyr",
+            "authentication_required": True,
         }
 
 
@@ -261,8 +351,12 @@ def main(argv: list[str] | None = None) -> int:
 
 __all__ = [
     "XephyrVerifiedBlackboxCollector",
+    "delivery_route_endpoints",
     "delivery_route_windows_with_ancestry",
     "main",
+    "point_inside_geometry",
+    "pointer_coordinates",
+    "route_geometry",
     "run_blackbox",
 ]
 

@@ -105,12 +105,18 @@ def test_browser_waits_for_first_managed_map_before_reparenting(
         lambda _xdotool, *arguments: calls.append(tuple(arguments)),
     )
     monkeypatch.setattr(backend, "_window_is_viewable", lambda *_args: True)
+    monkeypatch.setattr(backend, "_window_parent", lambda *_args: 100)
+    monkeypatch.setattr(
+        "triview_workspace.engines.browser_embedded.record_runtime_event",
+        lambda *_args, **_kwargs: None,
+    )
 
     backend._wait_for_first_managed_map(
         "xdotool",
         "xwininfo",
         "77",
         _FakeProcess(),  # type: ignore[arg-type]
+        "chatgpt",
     )
 
     assert calls == [("windowmap", "77")]
@@ -125,6 +131,12 @@ def test_browser_reparents_only_after_first_map_and_confirms_after_final_map(
         backend,
         "_run_xdotool",
         lambda _xdotool, *arguments: events.append(tuple(arguments)),
+    )
+    monkeypatch.setattr(backend, "_window_parent", lambda *_args: 100)
+    monkeypatch.setattr(backend, "_window_is_viewable", lambda *_args: True)
+    monkeypatch.setattr(
+        "triview_workspace.engines.browser_embedded.record_runtime_event",
+        lambda *_args, **_kwargs: None,
     )
 
     def confirm(*_args: object) -> bool:
@@ -166,6 +178,12 @@ def test_browser_retries_when_window_manager_reclaims_mapped_window(
         "_run_xdotool",
         lambda _xdotool, *arguments: calls.append(tuple(arguments)),
     )
+    monkeypatch.setattr(backend, "_window_parent", lambda *_args: 100)
+    monkeypatch.setattr(backend, "_window_is_viewable", lambda *_args: True)
+    monkeypatch.setattr(
+        "triview_workspace.engines.browser_embedded.record_runtime_event",
+        lambda *_args, **_kwargs: None,
+    )
     monkeypatch.setattr(
         backend,
         "_confirm_mapped_parent",
@@ -183,3 +201,40 @@ def test_browser_retries_when_window_manager_reclaims_mapped_window(
     assert result is True
     assert calls.count(("windowreparent", "77", "900")) == 2
     assert calls.count(("windowmap", "77")) == 2
+
+
+def test_browser_reparent_observability_records_host_and_parent(
+    monkeypatch: Any,
+) -> None:
+    backend = AtomicX11BraveBrowserBackend(reparent_attempts=1)
+    recorded: list[tuple[str, dict[str, object]]] = []
+    parents = iter((111, 900))
+    monkeypatch.setattr(backend, "_run_xdotool", lambda *_args: None)
+    monkeypatch.setattr(backend, "_window_parent", lambda *_args: next(parents))
+    monkeypatch.setattr(backend, "_window_is_viewable", lambda *_args: True)
+    monkeypatch.setattr(backend, "_confirm_mapped_parent", lambda *_args: True)
+    monkeypatch.setattr(
+        "triview_workspace.engines.browser_embedded.record_runtime_event",
+        lambda event, **fields: recorded.append((event, fields)),
+    )
+
+    assert backend._reparent_after_first_map(
+        "xdotool", "xwininfo", "77", 900, "chatgpt"
+    )
+
+    assert recorded == [
+        (
+            "browser_reparent_attempt",
+            {
+                "panel_id": "chatgpt",
+                "attempt": 1,
+                "max_attempts": 1,
+                "browser_window_id": "77",
+                "host_window_id": 900,
+                "parent_before": 111,
+                "parent_after": 900,
+                "visible_after": True,
+                "confirmed": True,
+            },
+        )
+    ]

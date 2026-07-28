@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import os
 from pathlib import Path
 
 from triview_workspace.shortcut_reconciliation import (
@@ -93,7 +92,7 @@ def test_reconcile_quarantines_only_proven_triview_orphans(tmp_path: Path) -> No
     assert report["actions"][0]["source"] == str(orphan)
 
     quarantine = state_root / "triview-workspace" / "shortcut-quarantine"
-    quarantined = list(quarantine.rglob("triview-workspace-dev.desktop"))
+    quarantined = list(quarantine.rglob("*triview-workspace-dev.desktop"))
     assert len(quarantined) == 1
     assert quarantined[0].read_text(encoding="utf-8").startswith("[Desktop Entry]")
 

@@ -7,9 +7,9 @@ import triview_workspace.gui as active_gui
 import triview_workspace.gui_rc4_atomic as atomic_gui
 from triview_workspace.diagnostic_blackbox_rc import ByteSafeBlackboxCollector
 from triview_workspace.diagnostic_blackbox_xephyr import XephyrVerifiedBlackboxCollector
-from triview_workspace.engines.browser_xephyr import (
-    XEPHYR_BROWSER_BACKEND_NAME,
-    XephyrEmbeddedBraveBrowserBackend,
+from triview_workspace.engines.browser_xephyr import XEPHYR_BROWSER_BACKEND_NAME
+from triview_workspace.engines.browser_xephyr_managed import (
+    ManagedXephyrEmbeddedBraveBrowserBackend,
 )
 
 
@@ -18,6 +18,9 @@ def test_active_entry_keeps_atomic_contract_with_nested_xephyr_runtime() -> None
     assert active_gui.WorkspaceWindow is atomic_gui.WorkspaceWindow
     assert atomic_gui.RC_BROWSER_BACKEND_NAME == XEPHYR_BROWSER_BACKEND_NAME
     assert atomic_gui.RC_BROWSER_BACKEND_NAME == "XephyrEmbeddedBraveBrowserBackend"
+    assert atomic_gui.XephyrEmbeddedBraveBrowserBackend is (
+        ManagedXephyrEmbeddedBraveBrowserBackend
+    )
 
 
 def test_workspace_switch_increments_generation_without_closing_runtimes() -> None:
@@ -37,7 +40,7 @@ def test_release_candidate_does_not_enable_focus_follows_mouse() -> None:
 
 
 def test_browser_is_launched_inside_xephyr_parent_before_first_map() -> None:
-    launch_source = inspect.getsource(XephyrEmbeddedBraveBrowserBackend.launch)
+    launch_source = inspect.getsource(ManagedXephyrEmbeddedBraveBrowserBackend.launch)
 
     assert '"-parent"' in launch_source
     assert "parent_window_id" in launch_source

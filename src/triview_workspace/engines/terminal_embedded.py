@@ -111,16 +111,16 @@ class EmbeddedFirstX11PanelRuntimeBackend(X11PanelRuntimeBackend):
             )
             candidate = next(iter(candidates), None)
             if candidate is not None:
-                # An unmap request is safe even before the first map and closes the
-                # race in which Muffin briefly exposes the terminal externally.
-                try:
-                    self._run_xdotool(xdotool, "windowunmap", candidate)
-                except PanelLaunchError:
-                    LOGGER.debug("Terminal window was not mapped when first discovered.")
+                # Stage the still-hidden window off-screen, then ensure it remains
+                # unmapped until the reparent transaction maps it inside the panel.
                 try:
                     self._run_xdotool(xdotool, "windowmove", candidate, "-32000", "-32000")
                 except PanelLaunchError:
                     LOGGER.debug("Could not stage terminal window off-screen.")
+                try:
+                    self._run_xdotool(xdotool, "windowunmap", candidate)
+                except PanelLaunchError:
+                    LOGGER.debug("Terminal window was not mapped when first discovered.")
                 return candidate
             time.sleep(self._poll_interval)
 

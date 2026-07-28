@@ -21,6 +21,49 @@ if [[ -z "$CURRENT_TARGET" || ! -d "$CURRENT_TARGET" ]]; then
   exit 1
 fi
 
+install_x11_dependencies() {
+  local missing=()
+  command -v Xephyr >/dev/null 2>&1 || missing+=(xserver-xephyr)
+  command -v xdotool >/dev/null 2>&1 || missing+=(xdotool)
+  command -v xwininfo >/dev/null 2>&1 || missing+=(x11-utils)
+  command -v xrandr >/dev/null 2>&1 || missing+=(x11-xserver-utils)
+  if [[ "${#missing[@]}" -eq 0 ]]; then
+    return 0
+  fi
+  if [[ "${TRIVIEW_DISABLE_SYSTEM_PACKAGE_INSTALL:-0}" == "1" ]]; then
+    printf 'ERRO: dependências X11 ausentes: %s\n' "${missing[*]}" | tee -a "$LAUNCH_LOG" >&2
+    return 1
+  fi
+  command -v apt-get >/dev/null 2>&1 || {
+    printf 'ERRO: dependências X11 ausentes e apt-get indisponível: %s\n' \
+      "${missing[*]}" | tee -a "$LAUNCH_LOG" >&2
+    return 1
+  }
+  {
+    printf 'installing_x11_dependencies=%s\n' "${missing[*]}"
+  } >>"$LAUNCH_LOG"
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    apt-get update
+    apt-get install -y --no-install-recommends "${missing[@]}"
+  elif command -v pkexec >/dev/null 2>&1; then
+    pkexec apt-get update
+    pkexec apt-get install -y --no-install-recommends "${missing[@]}"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo apt-get update
+    sudo apt-get install -y --no-install-recommends "${missing[@]}"
+  else
+    printf 'ERRO: não há pkexec ou sudo para instalar: %s\n' \
+      "${missing[*]}" | tee -a "$LAUNCH_LOG" >&2
+    return 1
+  fi
+  command -v Xephyr >/dev/null 2>&1 || {
+    printf 'ERRO: Xephyr continuou ausente após a instalação.\n' | tee -a "$LAUNCH_LOG" >&2
+    return 1
+  }
+}
+
+install_x11_dependencies
+
 if ! command -v flock >/dev/null 2>&1; then
   printf 'ERRO: flock não está disponível para garantir instância única.\n' \
     | tee -a "$LAUNCH_LOG" >&2
@@ -76,6 +119,7 @@ PY
   printf 'display=%s\n' "${DISPLAY:-}"
   printf 'session_type=%s\n' "${XDG_SESSION_TYPE:-}"
   printf 'lock_file=%s\n' "$LOCK_FILE"
+  printf 'xephyr=%s\n' "$(command -v Xephyr)"
 } >>"$LAUNCH_LOG"
 
 export XDG_DATA_HOME="$DATA_ROOT"

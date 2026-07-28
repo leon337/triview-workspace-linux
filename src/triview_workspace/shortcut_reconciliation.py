@@ -1,8 +1,9 @@
-"""Inventory and quarantine orphaned TriView desktop shortcuts.
+"""Inventory, repair and quarantine TriView desktop shortcuts.
 
 The reconciler is intentionally conservative: it only touches ``.desktop`` files
-that clearly belong to TriView and only quarantines entries whose ``Exec`` command
-cannot be resolved. Valid stable, legacy and candidate shortcuts are preserved.
+that clearly belong to TriView. Proven orphans are quarantined, while active
+candidate entries from the applications menu are mirrored to the user's primary
+XDG Desktop directory.
 """
 
 from __future__ import annotations
@@ -14,11 +15,12 @@ import json
 import os
 import shlex
 import shutil
+import subprocess
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _FIELD_CODES = {
     "%f",
     "%F",
@@ -41,7 +43,7 @@ def _normalized_path(path: Path) -> Path:
 
 
 def _desktop_dirs_from_user_config(home: Path) -> tuple[Path, ...]:
-    candidates: list[Path] = [home / "Desktop", home / "Área de Trabalho"]
+    candidates: list[Path] = []
     config = home / ".config" / "user-dirs.dirs"
     if config.is_file():
         for line in config.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -49,16 +51,23 @@ def _desktop_dirs_from_user_config(home: Path) -> tuple[Path, ...]:
                 continue
             value = line.split("=", 1)[1].strip().strip('"')
             value = value.replace("$HOME", str(home))
-            candidates.append(Path(os.path.expandvars(value)).expanduser())
+            configured = Path(os.path.expandvars(value)).expanduser()
+            if _normalized_path(configured) != _normalized_path(home):
+                candidates.append(configured)
             break
+
+    # Linux Mint in pt-BR generally uses "Área de Trabalho". Keep the standard
+    # English path as a portable fallback without creating duplicate desktops.
+    candidates.extend((home / "Área de Trabalho", home / "Desktop"))
 
     unique: list[Path] = []
     seen: set[Path] = set()
     for candidate in candidates:
         normalized = _normalized_path(candidate)
-        if normalized not in seen:
-            seen.add(normalized)
-            unique.append(normalized)
+        if normalized == _normalized_path(home) or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(normalized)
     return tuple(unique)
 
 
@@ -226,6 +235,97 @@ def _atomic_json_write(path: Path, payload: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+def _atomic_copy_executable(source: Path, destination: Path) -> str:
+    source_bytes = source.read_bytes()
+    if destination.is_file() and destination.read_bytes() == source_bytes:
+        destination.chmod(0o755)
+        return "unchanged"
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    existed = destination.exists() or destination.is_symlink()
+    temporary = destination.with_name(f".{destination.name}.tmp-{os.getpid()}")
+    temporary.write_bytes(source_bytes)
+    temporary.chmod(0o755)
+    temporary.replace(destination)
+    return "updated" if existed else "created"
+
+
+def _mark_desktop_entry_trusted(path: Path) -> bool:
+    gio = shutil.which("gio")
+    if gio is None:
+        return False
+    result = subprocess.run(
+        [gio, "set", str(path), "metadata::trusted", "true"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
+def _sync_active_shortcuts_to_desktop(
+    *,
+    home: Path,
+    applications_dir: Path,
+    desktop_dirs: Sequence[Path],
+    current_launchers: Sequence[Path],
+) -> dict[str, Any]:
+    """Mirror active candidate shortcuts to one canonical user Desktop."""
+
+    if not desktop_dirs:
+        return {
+            "primary_desktop_dir": None,
+            "entries": [],
+            "summary": {"created": 0, "updated": 0, "unchanged": 0},
+            "status": "skipped_no_desktop_directory",
+        }
+
+    primary = _normalized_path(desktop_dirs[0])
+    if primary == _normalized_path(home):
+        return {
+            "primary_desktop_dir": str(primary),
+            "entries": [],
+            "summary": {"created": 0, "updated": 0, "unchanged": 0},
+            "status": "skipped_unsafe_home_directory",
+        }
+
+    primary.mkdir(parents=True, exist_ok=True)
+    entries: list[dict[str, Any]] = []
+    counts = {"created": 0, "updated": 0, "unchanged": 0}
+
+    for source in sorted(_normalized_path(applications_dir).glob("*.desktop")):
+        inspection = inspect_shortcut(
+            source,
+            scope="applications",
+            home=home,
+            current_launchers=current_launchers,
+        )
+        if inspection is None or inspection["status"] != "candidate_active":
+            continue
+
+        destination = primary / source.name
+        action = _atomic_copy_executable(source, destination)
+        trusted = _mark_desktop_entry_trusted(destination)
+        counts[action] += 1
+        entries.append(
+            {
+                "source": str(source),
+                "destination": str(destination),
+                "action": action,
+                "executable": os.access(destination, os.X_OK),
+                "trusted_metadata_applied": trusted,
+                "resolved_command": inspection["resolved_command"],
+            }
+        )
+
+    return {
+        "primary_desktop_dir": str(primary),
+        "entries": entries,
+        "summary": counts,
+        "status": "completed",
+    }
+
+
 def reconcile_shortcuts(
     *,
     home: Path,
@@ -235,17 +335,18 @@ def reconcile_shortcuts(
     desktop_dirs: Sequence[Path] | None = None,
     now: dt.datetime | None = None,
 ) -> tuple[Path, dict[str, Any]]:
-    """Quarantine proven orphan TriView shortcuts and write before/after evidence."""
+    """Quarantine proven orphans, mirror active entries and write evidence."""
 
     timestamp = (now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc)
     stamp = timestamp.strftime("%Y%m%dT%H%M%S.%fZ")
     report_root = state_root / "triview-workspace" / "shortcut-reports"
     quarantine_dir = state_root / "triview-workspace" / "shortcut-quarantine" / stamp
+    resolved_desktop_dirs = tuple(desktop_dirs or _desktop_dirs_from_user_config(home))
 
     before = inventory_shortcuts(
         home=home,
         applications_dir=applications_dir,
-        desktop_dirs=desktop_dirs,
+        desktop_dirs=resolved_desktop_dirs,
         current_launchers=current_launchers,
     )
     actions: list[dict[str, Any]] = []
@@ -268,10 +369,17 @@ def reconcile_shortcuts(
             }
         )
 
+    desktop_sync = _sync_active_shortcuts_to_desktop(
+        home=home,
+        applications_dir=applications_dir,
+        desktop_dirs=resolved_desktop_dirs,
+        current_launchers=current_launchers,
+    )
+
     after = inventory_shortcuts(
         home=home,
         applications_dir=applications_dir,
-        desktop_dirs=desktop_dirs,
+        desktop_dirs=resolved_desktop_dirs,
         current_launchers=current_launchers,
     )
     payload: dict[str, Any] = {
@@ -279,12 +387,11 @@ def reconcile_shortcuts(
         "generated_at": timestamp.isoformat(),
         "home": str(home),
         "applications_dir": str(applications_dir),
-        "desktop_dirs": [
-            str(item) for item in (desktop_dirs or _desktop_dirs_from_user_config(home))
-        ],
+        "desktop_dirs": [str(item) for item in resolved_desktop_dirs],
         "current_launchers": [str(_normalized_path(item)) for item in current_launchers],
         "before": before,
         "actions": actions,
+        "desktop_sync": desktop_sync,
         "after": after,
         "summary": {
             "inspected_before": len(before),

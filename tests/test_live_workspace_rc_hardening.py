@@ -5,20 +5,19 @@ from pathlib import Path
 
 import triview_workspace.gui as active_gui
 import triview_workspace.gui_rc4_atomic as atomic_gui
-import triview_workspace.gui_rc4_xephyr as xephyr_gui
 from triview_workspace.diagnostic_blackbox_rc import ByteSafeBlackboxCollector
-from triview_workspace.diagnostic_blackbox_verified import VerifiedBlackboxCollector
+from triview_workspace.diagnostic_blackbox_xephyr import XephyrVerifiedBlackboxCollector
 from triview_workspace.engines.browser_xephyr import (
     XEPHYR_BROWSER_BACKEND_NAME,
     XephyrEmbeddedBraveBrowserBackend,
 )
 
 
-def test_active_entry_uses_nested_xephyr_release_candidate_runtime() -> None:
-    assert active_gui.main is xephyr_gui.main
-    assert active_gui.WorkspaceWindow is xephyr_gui.WorkspaceWindow
-    assert xephyr_gui.RC_BROWSER_BACKEND_NAME == XEPHYR_BROWSER_BACKEND_NAME
-    assert xephyr_gui.RC_BROWSER_BACKEND_NAME == "XephyrEmbeddedBraveBrowserBackend"
+def test_active_entry_keeps_atomic_contract_with_nested_xephyr_runtime() -> None:
+    assert active_gui.main is atomic_gui.main
+    assert active_gui.WorkspaceWindow is atomic_gui.WorkspaceWindow
+    assert atomic_gui.RC_BROWSER_BACKEND_NAME == XEPHYR_BROWSER_BACKEND_NAME
+    assert atomic_gui.RC_BROWSER_BACKEND_NAME == "XephyrEmbeddedBraveBrowserBackend"
 
 
 def test_workspace_switch_increments_generation_without_closing_runtimes() -> None:
@@ -60,10 +59,11 @@ def test_runtime_event_tailer_uses_binary_offsets_and_partial_line_buffer() -> N
     assert "handle.seek(offset)" in source
 
 
-def test_candidate_diagnostic_uses_verified_byte_safe_collector() -> None:
+def test_candidate_diagnostic_uses_xephyr_verified_byte_safe_collector() -> None:
     script = Path("scripts/candidate-diagnose.sh").read_text(encoding="utf-8")
 
-    assert issubclass(VerifiedBlackboxCollector, ByteSafeBlackboxCollector)
+    assert issubclass(XephyrVerifiedBlackboxCollector, ByteSafeBlackboxCollector)
+    assert "triview_workspace.diagnostic_blackbox_xephyr" in script
     assert "triview_workspace.diagnostic_blackbox_verified" in script
     assert "--auto-launch" in script
     assert "--auto-stop-on-application-exit" in script

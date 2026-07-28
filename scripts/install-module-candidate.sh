@@ -238,11 +238,18 @@ StartupNotify=true
 EOF
 
 chmod +x "$main_desktop" "$update_desktop" "$diagnostic_desktop"
+shortcut_report="$(python3 -m triview_workspace.shortcut_reconciliation \
+  --state-root "$STATE_ROOT" \
+  --applications-dir "$APPLICATIONS_DIR" \
+  --current-launcher "$launcher" \
+  --current-launcher "$updater" \
+  --current-launcher "$diagnostic")"
 update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
 log "Candidato instalado no commit $RESOLVED_SHA."
 log "Atalho: TriView Workspace — $CANDIDATE_ID"
 log "Atalho: Atualizar TriView Workspace — $CANDIDATE_ID"
 log "Atalho: Diagnosticar TriView Workspace — $CANDIDATE_ID"
+log "Relatório de atalhos: $shortcut_report"
 log "Dados: $DATA_ROOT"
 log "Estado: $STATE_ROOT"
 log "Metadados: $release_dir/candidate-release.json"

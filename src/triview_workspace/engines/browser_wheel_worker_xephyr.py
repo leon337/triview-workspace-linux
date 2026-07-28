@@ -1,4 +1,4 @@
-"""Correlated wheel worker that preserves live X11 route ancestry."""
+"""Correlated wheel worker that preserves live route ancestry and geometry."""
 
 from __future__ import annotations
 
@@ -16,12 +16,20 @@ class XephyrWheelRoute:
         browser_window_id: str,
         host_ancestry: tuple[int, ...] = (),
         browser_ancestry: tuple[int, ...] = (),
+        host_x: int | None = None,
+        host_y: int | None = None,
+        host_width: int | None = None,
+        host_height: int | None = None,
     ) -> None:
         self.runtime_id = runtime_id
         self.host_window_id = int(host_window_id)
         self.browser_window_id = str(browser_window_id)
         self.host_ancestry = tuple(int(item) for item in host_ancestry)
         self.browser_ancestry = tuple(int(item) for item in browser_ancestry)
+        self.host_x = int(host_x) if host_x is not None else None
+        self.host_y = int(host_y) if host_y is not None else None
+        self.host_width = int(host_width) if host_width is not None else None
+        self.host_height = int(host_height) if host_height is not None else None
 
     @classmethod
     def from_payload(cls, payload: dict[str, object]) -> "XephyrWheelRoute":
@@ -33,6 +41,10 @@ class XephyrWheelRoute:
             browser_ancestry=tuple(
                 int(item) for item in payload.get("browser_ancestry", [])
             ),
+            host_x=payload.get("host_x"),
+            host_y=payload.get("host_y"),
+            host_width=payload.get("host_width"),
+            host_height=payload.get("host_height"),
         )
 
     def as_payload(self) -> dict[str, object]:
@@ -42,6 +54,10 @@ class XephyrWheelRoute:
             "browser_window_id": self.browser_window_id,
             "host_ancestry": list(self.host_ancestry),
             "browser_ancestry": list(self.browser_ancestry),
+            "host_x": self.host_x,
+            "host_y": self.host_y,
+            "host_width": self.host_width,
+            "host_height": self.host_height,
         }
 
     def __eq__(self, other: object) -> bool:
@@ -51,7 +67,7 @@ class XephyrWheelRoute:
 
 
 class XephyrCorrelatedWheelWorker(CorrelatedWheelWorker):
-    """Parse ancestry-aware routes while retaining the final correlation logic."""
+    """Parse geometry-aware routes while retaining exact X11 correlation."""
 
     def _handle_command(self, line: str) -> None:
         try:

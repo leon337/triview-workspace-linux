@@ -18,6 +18,7 @@ from triview_workspace.engines.browser import (
     X11BraveBrowserBackend,
 )
 from triview_workspace.engines.panel_runtime import parse_parent_window_id
+from triview_workspace.runtime_observability import record_runtime_event
 
 LOGGER = logging.getLogger(__name__)
 
@@ -96,20 +97,43 @@ class AtomicX11BraveBrowserBackend(X11BraveBrowserBackend):
     def availability(self) -> BrowserBackendAvailability:
         report = super().availability()
         if not report.available:
+            record_runtime_event(
+                "browser_backend_unavailable",
+                backend=type(self).__name__,
+                reason=report.reason,
+                browser_command=report.browser_command,
+                xdotool_command=report.xdotool_command,
+            )
             return report
         if shutil.which("xwininfo") is None:
-            return BrowserBackendAvailability(
+            result = BrowserBackendAvailability(
                 False,
                 "O utilitário xwininfo é necessário para confirmar a incorporação X11.",
                 browser_command=report.browser_command,
                 xdotool_command=report.xdotool_command,
             )
-        return BrowserBackendAvailability(
+            record_runtime_event(
+                "browser_backend_unavailable",
+                backend=type(self).__name__,
+                reason=result.reason,
+                browser_command=result.browser_command,
+                xdotool_command=result.xdotool_command,
+            )
+            return result
+        result = BrowserBackendAvailability(
             True,
             "Backend X11 pronto para incorporar o navegador após o primeiro map gerenciado.",
             browser_command=report.browser_command,
             xdotool_command=report.xdotool_command,
         )
+        record_runtime_event(
+            "browser_backend_available",
+            backend=type(self).__name__,
+            browser_command=result.browser_command,
+            xdotool_command=result.xdotool_command,
+            xwininfo_command=shutil.which("xwininfo"),
+        )
+        return result
 
     def launch(
         self,
@@ -117,6 +141,15 @@ class AtomicX11BraveBrowserBackend(X11BraveBrowserBackend):
         parent_window_id: int,
     ) -> BrowserSession:
         report = self.availability()
+        record_runtime_event(
+            "browser_launch_requested",
+            backend=type(self).__name__,
+            panel_id=request.panel_id,
+            url=request.url,
+            profile_dir=str(request.profile_dir),
+            window_class=request.window_class,
+            host_window_id=int(parent_window_id),
+        )
         if not report.available:
             raise BrowserLaunchError(report.reason)
         assert report.browser_command is not None
@@ -132,12 +165,24 @@ class AtomicX11BraveBrowserBackend(X11BraveBrowserBackend):
                 only_visible=False,
             )
         )
+        record_runtime_event(
+            "browser_known_windows_snapshot",
+            panel_id=request.panel_id,
+            window_class=request.window_class,
+            known_window_ids=sorted(known_window_ids),
+        )
         command = build_staged_browser_command(report.browser_command, request)
         process = subprocess.Popen(  # noqa: S603
             list(command),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
+        )
+        record_runtime_event(
+            "browser_process_started",
+            panel_id=request.panel_id,
+            browser_pid=process.pid,
+            command=list(command),
         )
         window_id: str | None = None
 
@@ -148,12 +193,27 @@ class AtomicX11BraveBrowserBackend(X11BraveBrowserBackend):
                 process,
                 known_window_ids,
             )
+            record_runtime_event(
+                "browser_window_selected",
+                panel_id=request.panel_id,
+                browser_pid=process.pid,
+                browser_window_id=window_id,
+                parent_before=self._window_parent(xwininfo, window_id),
+                visible_before=self._window_is_viewable(xwininfo, window_id),
+            )
             self._stage_window(report.xdotool_command, window_id)
+            record_runtime_event(
+                "browser_window_staged",
+                panel_id=request.panel_id,
+                browser_window_id=window_id,
+                staging_coordinate=STAGING_COORDINATE,
+            )
             self._wait_for_first_managed_map(
                 report.xdotool_command,
                 xwininfo,
                 window_id,
                 process,
+                request.panel_id,
             )
             if not self._reparent_after_first_map(
                 report.xdotool_command,
@@ -166,7 +226,24 @@ class AtomicX11BraveBrowserBackend(X11BraveBrowserBackend):
                     "O navegador foi mapeado, mas o window manager não manteve "
                     "a janela dentro do host X11 do painel."
                 )
-        except Exception:
+        except Exception as exc:
+            record_runtime_event(
+                "browser_launch_failed",
+                panel_id=request.panel_id,
+                browser_pid=process.pid,
+                browser_window_id=window_id,
+                host_window_id=int(parent_window_id),
+                parent_after=(
+                    self._window_parent(xwininfo, window_id) if window_id is not None else None
+                ),
+                visible_after=(
+                    self._window_is_viewable(xwininfo, window_id)
+                    if window_id is not None
+                    else None
+                ),
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
             if window_id is not None:
                 try:
                     self._run_xdotool(report.xdotool_command, "windowclose", window_id)
@@ -175,6 +252,16 @@ class AtomicX11BraveBrowserBackend(X11BraveBrowserBackend):
             terminate_process_group(process)
             raise
 
+        record_runtime_event(
+            "browser_launch_embedded",
+            panel_id=request.panel_id,
+            browser_pid=process.pid,
+            browser_window_id=window_id,
+            host_window_id=int(parent_window_id),
+            parent_after=self._window_parent(xwininfo, window_id),
+            visible_after=self._window_is_viewable(xwininfo, window_id),
+            embedded=True,
+        )
         return BrowserSession(
             panel_id=request.panel_id,
             url=request.url,
@@ -184,6 +271,12 @@ class AtomicX11BraveBrowserBackend(X11BraveBrowserBackend):
         )
 
     def close(self, session: BrowserSession) -> None:
+        record_runtime_event(
+            "browser_session_closing",
+            panel_id=session.panel_id,
+            browser_window_id=session.window_id,
+            browser_pid=session.process.pid if session.process is not None else None,
+        )
         xdotool = self._xdotool_command()
         if session.window_id and xdotool:
             try:
@@ -274,6 +367,7 @@ class AtomicX11BraveBrowserBackend(X11BraveBrowserBackend):
         xwininfo: str,
         window_id: str,
         process: subprocess.Popen[bytes],
+        panel_id: str,
     ) -> None:
         """Allow Muffin to complete its initial management before reparenting."""
 
@@ -281,10 +375,16 @@ class AtomicX11BraveBrowserBackend(X11BraveBrowserBackend):
             self._run_xdotool(xdotool, "windowmap", window_id)
         except BrowserLaunchError:
             LOGGER.debug("Chromium window was already mapped before staging.")
-
         deadline = time.monotonic() + min(4.0, self._launch_timeout)
         while time.monotonic() < deadline:
             if self._window_is_viewable(xwininfo, window_id):
+                record_runtime_event(
+                    "browser_first_managed_map",
+                    panel_id=panel_id,
+                    browser_window_id=window_id,
+                    parent=self._window_parent(xwininfo, window_id),
+                    visible=True,
+                )
                 return
             if process.poll() is not None:
                 break
@@ -304,6 +404,7 @@ class AtomicX11BraveBrowserBackend(X11BraveBrowserBackend):
         """Reparent after mapping and retry if the window manager reclaims Chromium."""
 
         for attempt in range(1, self._reparent_attempts + 1):
+            parent_before = self._window_parent(xwininfo, window_id)
             try:
                 self._run_xdotool(
                     xdotool,
@@ -324,7 +425,19 @@ class AtomicX11BraveBrowserBackend(X11BraveBrowserBackend):
                 )
                 self._run_xdotool(xdotool, "windowmove", window_id, "0", "0")
                 self._run_xdotool(xdotool, "windowmap", window_id)
-            except BrowserLaunchError:
+            except BrowserLaunchError as exc:
+                record_runtime_event(
+                    "browser_reparent_attempt_failed",
+                    panel_id=panel_id,
+                    attempt=attempt,
+                    max_attempts=self._reparent_attempts,
+                    browser_window_id=window_id,
+                    host_window_id=int(parent_window_id),
+                    parent_before=parent_before,
+                    parent_after=self._window_parent(xwininfo, window_id),
+                    visible_after=self._window_is_viewable(xwininfo, window_id),
+                    error=str(exc),
+                )
                 LOGGER.warning(
                     "Browser reparent transaction %s/%s failed for panel %s.",
                     attempt,
@@ -333,11 +446,26 @@ class AtomicX11BraveBrowserBackend(X11BraveBrowserBackend):
                     exc_info=True,
                 )
             else:
-                if self._confirm_mapped_parent(
+                confirmed = self._confirm_mapped_parent(
                     xwininfo,
                     window_id,
                     parent_window_id,
-                ):
+                )
+                parent_after = self._window_parent(xwininfo, window_id)
+                visible_after = self._window_is_viewable(xwininfo, window_id)
+                record_runtime_event(
+                    "browser_reparent_attempt",
+                    panel_id=panel_id,
+                    attempt=attempt,
+                    max_attempts=self._reparent_attempts,
+                    browser_window_id=window_id,
+                    host_window_id=int(parent_window_id),
+                    parent_before=parent_before,
+                    parent_after=parent_after,
+                    visible_after=visible_after,
+                    confirmed=confirmed,
+                )
+                if confirmed:
                     return True
                 LOGGER.warning(
                     "Muffin reclaimed browser window %s after attempt %s/%s for panel %s.",
@@ -362,6 +490,19 @@ class AtomicX11BraveBrowserBackend(X11BraveBrowserBackend):
             return False
         return "map state: isviewable" in result.stdout.casefold()
 
+    @staticmethod
+    def _window_parent(xwininfo: str, window_id: str) -> int | None:
+        result = subprocess.run(  # noqa: S603
+            [xwininfo, "-id", window_id, "-tree"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=3,
+        )
+        if result.returncode != 0:
+            return None
+        return parse_parent_window_id(result.stdout)
+
     def _confirm_mapped_parent(
         self,
         xwininfo: str,
@@ -371,14 +512,7 @@ class AtomicX11BraveBrowserBackend(X11BraveBrowserBackend):
         matches = 0
         max_checks = self._stable_parent_checks * 4 + 8
         for _attempt in range(max_checks):
-            result = subprocess.run(  # noqa: S603
-                [xwininfo, "-id", window_id, "-tree"],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=3,
-            )
-            parent = parse_parent_window_id(result.stdout) if result.returncode == 0 else None
+            parent = self._window_parent(xwininfo, window_id)
             if parent == int(expected_parent) and self._window_is_viewable(
                 xwininfo,
                 window_id,

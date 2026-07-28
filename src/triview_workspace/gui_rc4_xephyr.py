@@ -11,6 +11,11 @@ from triview_workspace.catalog_migrations import (
     migrate_persisted_terminal_panel,
 )
 from triview_workspace.engines.browser_live import LiveBrowserEngine
+from triview_workspace.engines.browser_wheel_bridge_xephyr import (
+    XephyrBrowserWheelBridge,
+    XephyrBrowserWheelRoute,
+    x11_window_ancestry,
+)
 from triview_workspace.engines.browser_xephyr import (
     XEPHYR_BROWSER_BACKEND_NAME,
     XephyrEmbeddedBraveBrowserBackend,
@@ -63,6 +68,13 @@ class WorkspaceWindow(AtomicWorkspaceWindow):
         session_engine: WorkspaceSessionEngine,
     ) -> None:
         super().__init__(root, repository, session_engine)
+
+        previous_bridge = self._wheel_bridge
+        if previous_bridge is not None:
+            previous_bridge.close()
+        self._wheel_bridge = XephyrBrowserWheelBridge()
+        self._wheel_bridge.start()
+
         backend = XephyrEmbeddedBraveBrowserBackend()
         self.runtime_registry.register(
             BrowserRuntimeController(LiveBrowserEngine(backend))
@@ -77,6 +89,41 @@ class WorkspaceWindow(AtomicWorkspaceWindow):
             containment="nested_xephyr",
             external_root_mapping_possible=False,
         )
+
+    def _sync_wheel_bridge_routes(self) -> None:
+        """Publish host/browser ancestry while the X11 hierarchy is live."""
+
+        if self._closed:
+            return
+        bridge = self._wheel_bridge
+        controller = self.runtime_registry.get("browser")
+        engine = getattr(controller, "engine", None)
+        routes: list[XephyrBrowserWheelRoute] = []
+        if bridge is not None and engine is not None and hasattr(engine, "session"):
+            for state in self._workspace_views.values():
+                for panel_id, runtime_id in state.runtime_ids.items():
+                    card = state.cards_by_id.get(panel_id)
+                    if card is None or card.panel.adapter_name != "browser":
+                        continue
+                    session = engine.session(runtime_id)
+                    if session is None or not session.window_id:
+                        continue
+                    try:
+                        host_window_id = int(card.native_host_id())
+                    except (AttributeError, tk.TclError, ValueError):
+                        continue
+                    browser_window_id = str(session.window_id)
+                    routes.append(
+                        XephyrBrowserWheelRoute(
+                            runtime_id=runtime_id,
+                            host_window_id=host_window_id,
+                            browser_window_id=browser_window_id,
+                            host_ancestry=x11_window_ancestry(host_window_id),
+                            browser_ancestry=x11_window_ancestry(browser_window_id),
+                        )
+                    )
+            bridge.sync(routes)
+        self.root.after(WHEEL_ROUTE_SYNC_MS, self._sync_wheel_bridge_routes)
 
 
 def main(

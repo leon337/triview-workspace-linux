@@ -6,13 +6,12 @@ import subprocess
 import sys
 import time
 import tkinter as tk
-from pathlib import Path
 
 import pytest
 
 from triview_workspace.engines.browser_embedded import terminate_process_group
-from triview_workspace.engines.browser_xephyr import (
-    XephyrEmbeddedBraveBrowserBackend,
+from triview_workspace.engines.browser_xephyr_managed import (
+    ManagedXephyrEmbeddedBraveBrowserBackend,
 )
 
 
@@ -36,8 +35,8 @@ def test_nested_client_is_contained_before_its_first_map() -> None:
     root.update_idletasks()
     root.update()
 
-    backend = XephyrEmbeddedBraveBrowserBackend(launch_timeout=12.0)
-    display_number, display_name, lock_path = backend._allocate_display()
+    backend = ManagedXephyrEmbeddedBraveBrowserBackend(launch_timeout=12.0)
+    _display_number, display_name, lock_path = backend._allocate_display()
     process = subprocess.Popen(
         [
             xephyr,

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import tkinter as tk
 from pathlib import Path
+from typing import Any
 
 from triview_workspace.catalog_migrations import (
     ensure_three_gpt_workspace,
@@ -17,6 +19,10 @@ from triview_workspace.engines.browser_live import (
 from triview_workspace.engines.browser_live_rc import (
     HARDENED_BROWSER_BACKEND_NAME,
     ImmediateHideXfwm4FinalClientX11BraveBrowserBackend,
+)
+from triview_workspace.engines.browser_wheel_bridge import (
+    BrowserWheelBridge,
+    BrowserWheelRoute,
 )
 from triview_workspace.engines.runtime_controllers import BrowserRuntimeController
 from triview_workspace.engines.session import WorkspaceSessionEngine
@@ -54,10 +60,11 @@ from triview_workspace.runtime_observability import (
 # tests and diagnostics. The actual RC backend is explicitly named separately.
 LIVE_BROWSER_BACKEND_NAME = NO_FLASH_BROWSER_BACKEND_NAME
 RC_BROWSER_BACKEND_NAME = HARDENED_BROWSER_BACKEND_NAME
+WHEEL_ROUTE_SYNC_MS = 250
 
 
 class WorkspaceWindow(LiveWorkspaceWindow):
-    """Final RC runtime with bounded focus behavior and generation isolation."""
+    """Final RC runtime with live sessions, exact wheel routing and audit snapshots."""
 
     def __init__(
         self,
@@ -65,6 +72,7 @@ class WorkspaceWindow(LiveWorkspaceWindow):
         repository: WorkspaceRepository,
         session_engine: WorkspaceSessionEngine,
     ) -> None:
+        self._wheel_bridge: BrowserWheelBridge | None = None
         super().__init__(root, repository, session_engine)
 
         # Replace the initial no-flash backend before any user-triggered panel
@@ -83,23 +91,134 @@ class WorkspaceWindow(LiveWorkspaceWindow):
             backend_module=type(backend).__module__,
         )
 
+        self._wheel_bridge = BrowserWheelBridge()
+        self._wheel_bridge.start()
+        root.after(WHEEL_ROUTE_SYNC_MS, self._sync_wheel_bridge_routes)
+
     def _load_workspace_view(self, message: str) -> None:
-        """Invalidate stale capture/recording results without closing runtimes."""
+        """Invalidate stale UI jobs, preserve runtimes and snapshot the restored state."""
 
         if hasattr(self, "_generation"):
             self._generation += 1
         super()._load_workspace_view(message)
+        workspace_id = getattr(self, "_displayed_workspace_id", None)
+        if workspace_id:
+            self._record_workspace_runtime_snapshot("restored", workspace_id)
+
+    def _park_workspace(self, workspace_id: str) -> None:
+        self._record_workspace_runtime_snapshot("before_park", workspace_id)
+        super()._park_workspace(workspace_id)
+        self._record_workspace_runtime_snapshot("parked", workspace_id)
 
     def _poll_browser_pointer_focus(self) -> None:
         """Do not implement focus-follows-mouse.
 
         Continuous pointer polling can steal keyboard focus from a conversation
-        while the user is typing in another Browser Panel. Scroll routing and
-        explicit clicks remain available, but the RC never changes keyboard
-        focus merely because the pointer moved.
+        while the user is typing in another Browser Panel. The wheel bridge
+        captures only buttons 4 and 5 on the Browser host and never observes or
+        changes keyboard focus.
         """
 
         return
+
+    def _sync_wheel_bridge_routes(self) -> None:
+        if self._closed:
+            return
+        bridge = self._wheel_bridge
+        controller = self.runtime_registry.get("browser")
+        engine = getattr(controller, "engine", None)
+        routes: list[BrowserWheelRoute] = []
+        if bridge is not None and engine is not None and hasattr(engine, "session"):
+            for state in self._workspace_views.values():
+                for panel_id, runtime_id in state.runtime_ids.items():
+                    card = state.cards_by_id.get(panel_id)
+                    if card is None or card.panel.adapter_name != "browser":
+                        continue
+                    session = engine.session(runtime_id)
+                    if session is None or not session.window_id:
+                        continue
+                    try:
+                        host_window_id = int(card.native_host_id())
+                    except (AttributeError, tk.TclError, ValueError):
+                        continue
+                    routes.append(
+                        BrowserWheelRoute(
+                            runtime_id=runtime_id,
+                            host_window_id=host_window_id,
+                            browser_window_id=str(session.window_id),
+                        )
+                    )
+            bridge.sync(routes)
+        self.root.after(WHEEL_ROUTE_SYNC_MS, self._sync_wheel_bridge_routes)
+
+    def _runtime_session(self, controller: Any, runtime_id: str) -> Any | None:
+        engine = getattr(controller, "engine", None)
+        if engine is None:
+            return None
+        getter = getattr(engine, "session", None)
+        if callable(getter):
+            try:
+                return getter(runtime_id)
+            except Exception:  # noqa: BLE001
+                return None
+        sessions = getattr(engine, "_sessions", None)
+        if isinstance(sessions, dict):
+            return sessions.get(runtime_id)
+        return None
+
+    def _workspace_runtime_inventory(self, workspace_id: str) -> list[dict[str, Any]]:
+        state = self._workspace_views.get(workspace_id)
+        if state is None:
+            return []
+        inventory: list[dict[str, Any]] = []
+        for panel_id, runtime_id in sorted(state.runtime_ids.items()):
+            card = state.cards_by_id.get(panel_id)
+            adapter = card.panel.adapter_name if card is not None else "unknown"
+            controller = self.runtime_registry.get(adapter)
+            active = bool(controller is not None and controller.has_session(runtime_id))
+            session = self._runtime_session(controller, runtime_id) if controller else None
+            process = getattr(session, "process", None)
+            pid = getattr(process, "pid", None)
+            try:
+                pgid = os.getpgid(int(pid)) if pid is not None else None
+            except (OSError, TypeError, ValueError):
+                pgid = None
+            window_id = getattr(session, "window_id", None)
+            try:
+                host_window_id = int(card.native_host_id()) if card is not None else None
+            except (AttributeError, tk.TclError, ValueError):
+                host_window_id = None
+            inventory.append(
+                {
+                    "workspace_id": workspace_id,
+                    "panel_id": panel_id,
+                    "runtime_id": runtime_id,
+                    "adapter": adapter,
+                    "active": active,
+                    "pid": pid,
+                    "pgid": pgid,
+                    "window_id": str(window_id) if window_id is not None else None,
+                    "host_window_id": host_window_id,
+                }
+            )
+        return inventory
+
+    def _record_workspace_runtime_snapshot(self, phase: str, workspace_id: str) -> None:
+        inventory = self._workspace_runtime_inventory(workspace_id)
+        record_runtime_event(
+            "workspace_runtime_snapshot",
+            phase=phase,
+            workspace_id=workspace_id,
+            runtimes=inventory,
+            active_count=sum(bool(item["active"]) for item in inventory),
+        )
+
+    def _close(self) -> None:
+        bridge = self._wheel_bridge
+        if bridge is not None:
+            bridge.close()
+            self._wheel_bridge = None
+        super()._close()
 
 
 def main(
@@ -186,6 +305,7 @@ __all__ = [
     "PanelEditorDialog",
     "RC_BROWSER_BACKEND_NAME",
     "THREE_GPT_WORKSPACE",
+    "WHEEL_ROUTE_SYNC_MS",
     "WorkspaceViewState",
     "WorkspaceWindow",
     "deferred_menu_action",

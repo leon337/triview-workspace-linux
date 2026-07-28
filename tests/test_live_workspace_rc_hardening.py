@@ -58,9 +58,9 @@ def test_runtime_event_tailer_uses_binary_offsets_and_partial_line_buffer() -> N
     assert "handle.seek(offset)" in source
 
 
-def test_candidate_diagnostic_uses_byte_safe_collector() -> None:
+def test_candidate_diagnostic_uses_final_byte_safe_collector() -> None:
     script = Path("scripts/candidate-diagnose.sh").read_text(encoding="utf-8")
 
-    assert "triview_workspace.diagnostic_blackbox_rc" in script
+    assert "triview_workspace.diagnostic_blackbox_final" in script
     assert "--auto-launch" in script
     assert "--auto-stop-on-application-exit" in script

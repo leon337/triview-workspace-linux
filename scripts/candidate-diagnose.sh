@@ -20,6 +20,7 @@ export TRIVIEW_RUNTIME_MODULE="$MODULE"
 
 # runtime_observability supplies the source events. Every shareable artifact,
 # including the contingency package, is sanitized before leaving the machine.
+# The shareable collector extends triview_workspace.diagnostic_blackbox_final.
 # The package still contains the conceptual section ÚLTIMOS EVENTOS DO RUNTIME,
 # but never appends raw runtime-events.jsonl, process arguments or local paths.
 

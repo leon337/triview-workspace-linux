@@ -10,9 +10,9 @@ APP_STATE="$STATE_ROOT/triview-workspace"
 BACKUPS_DIR="$APP_STATE/backups"
 ROLLBACK_REPORTS_DIR="$APP_STATE/rollback-reports"
 LOGS_DIR="$APP_STATE/rollbacks"
-LOCK="$APP_STATE/rollback.lock"
+LIFECYCLE_LOCK="$APP_STATE/lifecycle.lock"
 
-mkdir -p "$BACKUPS_DIR" "$ROLLBACK_REPORTS_DIR" "$LOGS_DIR"
+mkdir -p "$APP_STATE" "$BACKUPS_DIR" "$ROLLBACK_REPORTS_DIR" "$LOGS_DIR"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG="$LOGS_DIR/rollback-$STAMP.log"
 
@@ -23,9 +23,10 @@ for command in python3 tar sha256sum flock; do
   command -v "$command" >/dev/null 2>&1 || fail "$command não encontrado."
 done
 
-exec 8>"$LOCK"
+exec 8>"$LIFECYCLE_LOCK"
 if ! flock -n 8; then
-  fail "outro rollback do TriView já está em execução."
+  log "ERRO: outra operação de instalação, atualização ou rollback já está em execução."
+  exit 2
 fi
 
 RUNNING_PIDS="$(python3 - "$APP_ROOT" "$MODULE" <<'PY'
@@ -37,7 +38,6 @@ import sys
 app_root = pathlib.Path(sys.argv[1]).expanduser().resolve()
 expected_module = sys.argv[2]
 releases = app_root / "releases"
-
 for environ_path in pathlib.Path("/proc").glob("[0-9]*/environ"):
     try:
         raw = environ_path.read_bytes()
@@ -55,8 +55,7 @@ for environ_path in pathlib.Path("/proc").glob("[0-9]*/environ"):
     if not runtime_root:
         continue
     try:
-        runtime_path = pathlib.Path(runtime_root).expanduser().resolve()
-        runtime_path.relative_to(releases)
+        pathlib.Path(runtime_root).expanduser().resolve().relative_to(releases)
     except (OSError, ValueError):
         continue
     print(environ_path.parent.name)
@@ -86,7 +85,6 @@ import json
 import pathlib
 import re
 import sys
-
 path = pathlib.Path(sys.argv[1])
 payload = json.loads(path.read_text(encoding="utf-8"))
 sha = str(payload.get("resolved_sha", "")).lower()
@@ -112,18 +110,12 @@ tar \
   sha256sum -c SHA256SUMS >/dev/null
 )
 
-python3 - \
-  "$backup_dir/backup.json" \
-  "$current_target" \
-  "$previous_target" \
-  "$current_sha" \
-  "$previous_sha" \
-  "$backup_dir" <<'PY'
+python3 - "$backup_dir/backup.json" "$current_target" "$previous_target" \
+  "$current_sha" "$previous_sha" "$backup_dir" <<'PY'
 import datetime as dt
 import json
 import pathlib
 import sys
-
 path, current_target, previous_target, current_sha, previous_sha, backup_dir = sys.argv[1:]
 root = pathlib.Path(backup_dir)
 checksums = {}
@@ -142,10 +134,7 @@ payload = {
     "verified": True,
     "restore_policy": "manual-explicit-only",
 }
-pathlib.Path(path).write_text(
-    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-    encoding="utf-8",
-)
+pathlib.Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 PY
 
 log "Backup verificável criado: $backup_dir"
@@ -166,21 +155,9 @@ libc = ctypes.CDLL(None, use_errno=True)
 renameat2 = getattr(libc, "renameat2", None)
 if renameat2 is None:
     raise SystemExit("renameat2 indisponível; rollback atômico recusado.")
-renameat2.argtypes = [
-    ctypes.c_int,
-    ctypes.c_char_p,
-    ctypes.c_int,
-    ctypes.c_char_p,
-    ctypes.c_uint,
-]
+renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
 renameat2.restype = ctypes.c_int
-result = renameat2(
-    AT_FDCWD,
-    current,
-    AT_FDCWD,
-    previous,
-    RENAME_EXCHANGE,
-)
+result = renameat2(AT_FDCWD, current, AT_FDCWD, previous, RENAME_EXCHANGE)
 if result != 0:
     error = ctypes.get_errno()
     raise OSError(error, os.strerror(error))
@@ -193,34 +170,18 @@ new_previous="$(readlink -f "$previous_link" 2>/dev/null || true)"
 [[ -f "$new_current/.installed" ]] || fail "release restaurado não está marcado como instalado."
 
 report="$ROLLBACK_REPORTS_DIR/$STAMP-rollback.json"
-python3 - \
-  "$report" \
-  "$current_target" \
-  "$previous_target" \
-  "$new_current" \
-  "$new_previous" \
-  "$current_sha" \
-  "$previous_sha" \
-  "$backup_dir" \
-  "$LOG" <<'PY'
+python3 - "$report" "$current_target" "$previous_target" "$new_current" "$new_previous" \
+  "$current_sha" "$previous_sha" "$backup_dir" "$LOG" "$LIFECYCLE_LOCK" <<'PY'
 import datetime as dt
 import json
 import pathlib
 import sys
-
 (
-    path,
-    old_current,
-    old_previous,
-    new_current,
-    new_previous,
-    old_sha,
-    restored_sha,
-    backup_dir,
-    log_path,
+    path, old_current, old_previous, new_current, new_previous, old_sha,
+    restored_sha, backup_dir, log_path, lifecycle_lock,
 ) = sys.argv[1:]
 payload = {
-    "schema_version": 1,
+    "schema_version": 2,
     "event": "rollback_committed",
     "recorded_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     "old_current": old_current,
@@ -231,14 +192,12 @@ payload = {
     "restored_sha": restored_sha,
     "backup_dir": backup_dir,
     "log": log_path,
+    "lifecycle_lock": lifecycle_lock,
     "data_restored": False,
     "data_policy": "preserve-later-data",
     "atomic_exchange": True,
 }
-pathlib.Path(path).write_text(
-    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-    encoding="utf-8",
-)
+pathlib.Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 PY
 
 log "Rollback concluído."

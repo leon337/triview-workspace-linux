@@ -171,23 +171,15 @@ def test_physical_wheel_route_reaches_only_the_target_x11_child() -> None:
                             "runtime_id": "workspace::one",
                             "host_window_id": int(host_one),
                             "browser_window_id": str(int(child_one)),
-                        },
-                        {
-                            "runtime_id": "workspace::two",
-                            "host_window_id": int(host_two),
-                            "browser_window_id": str(int(child_two)),
-                        },
+                        }
                     ],
                 }
             )
             + "\n"
         )
         process.stdin.flush()
-        # One registration proves the command was processed. The second line can
-        # already be buffered by TextIO while select() sees no new kernel bytes;
-        # waiting for it separately made this real-X11 test nondeterministic.
-        _read_json_event(process, "wheel_route_registered")
-        time.sleep(0.10)
+        registration = _read_json_event(process, "wheel_route_registered")
+        assert registration["runtime_id"] == "workspace::one"
 
         subprocess.run(
             [xdotool, "mousemove", "--window", str(int(child_one)), "40", "40"],

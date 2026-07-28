@@ -22,13 +22,14 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_nested_client_is_contained_and_receives_host_wheel(
+def test_nested_client_is_authenticated_contained_and_receives_host_wheel(
     tmp_path: Path,
 ) -> None:
     xephyr = shutil.which("Xephyr")
+    xauth = shutil.which("xauth")
     xdotool = shutil.which("xdotool")
     xwininfo = shutil.which("xwininfo")
-    if not xephyr or not xdotool or not xwininfo or not os.environ.get("DISPLAY"):
+    if not all((xephyr, xauth, xdotool, xwininfo, os.environ.get("DISPLAY"))):
         pytest.skip("Xephyr/X11 dependencies unavailable")
 
     root = tk.Tk()
@@ -40,6 +41,7 @@ def test_nested_client_is_contained_and_receives_host_wheel(
 
     backend = ManagedXephyrEmbeddedBraveBrowserBackend(launch_timeout=12.0)
     _display_number, display_name, lock_path = backend._allocate_display()
+    auth_path = backend._create_xauthority(xauth, display_name, lock_path)
     process = subprocess.Popen(
         [
             xephyr,
@@ -52,7 +54,8 @@ def test_nested_client_is_contained_and_receives_host_wheel(
             "-noreset",
             "-nolisten",
             "tcp",
-            "-ac",
+            "-auth",
+            str(auth_path),
             "-br",
         ],
         stdout=subprocess.DEVNULL,
@@ -62,15 +65,13 @@ def test_nested_client_is_contained_and_receives_host_wheel(
     nested_client: subprocess.Popen[bytes] | None = None
     marker = tmp_path / "nested-wheel.txt"
     try:
-        backend._wait_for_display(display_name, process)
+        backend._wait_for_display(display_name, process, auth_path=auth_path)
         xephyr_window_id = backend._wait_for_host_window(
             xdotool,
             process,
             host.winfo_id(),
         )
-        nested_env = os.environ.copy()
-        nested_env["DISPLAY"] = display_name
-        nested_env.pop("WAYLAND_DISPLAY", None)
+        nested_env = backend._nested_environment(display_name, auth_path)
         nested_client = subprocess.Popen(
             [
                 sys.executable,
@@ -110,6 +111,7 @@ def test_nested_client_is_contained_and_receives_host_wheel(
             time.sleep(0.05)
 
         assert nested_window_id
+        assert auth_path.stat().st_mode & 0o777 == 0o600
         host_tree = subprocess.run(
             [xwininfo, "-root", "-tree"],
             capture_output=True,
@@ -123,6 +125,19 @@ def test_nested_client_is_contained_and_receives_host_wheel(
             xephyr_window_id,
             host.winfo_id(),
         )
+
+        unauthenticated_env = os.environ.copy()
+        unauthenticated_env["DISPLAY"] = display_name
+        unauthenticated_env["XAUTHORITY"] = str(tmp_path / "missing-authority")
+        denied = subprocess.run(
+            [xdotool, "getdisplaygeometry"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            env=unauthenticated_env,
+            timeout=3,
+        )
+        assert denied.returncode != 0
 
         subprocess.run(
             [xdotool, "mousemove", "--window", xephyr_window_id, "120", "120"],
@@ -142,5 +157,5 @@ def test_nested_client_is_contained_and_receives_host_wheel(
         if nested_client is not None:
             terminate_process_group(nested_client)
         terminate_process_group(process)
-        backend._release_display(lock_path)
+        backend._release_display(lock_path, auth_path)
         root.destroy()

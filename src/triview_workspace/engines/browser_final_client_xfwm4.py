@@ -27,8 +27,21 @@ from triview_workspace.runtime_observability import record_runtime_event
 class Xfwm4FinalClientX11BraveBrowserBackend(FinalClientX11BraveBrowserBackend):
     """Recover WM_CLASS from the exact search that produced each candidate."""
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        launch_timeout: float = 15.0,
+        poll_interval: float = 0.02,
+        reparent_attempts: int = 8,
+        stable_parent_checks: int = 5,
+        final_window_checks: int = 3,
+    ) -> None:
+        super().__init__(
+            launch_timeout=launch_timeout,
+            poll_interval=poll_interval,
+            reparent_attempts=reparent_attempts,
+            stable_parent_checks=stable_parent_checks,
+            final_window_checks=final_window_checks,
+        )
         self._confirmed_class_by_window: dict[str, str] = {}
         self._confirmed_class_lock = RLock()
 

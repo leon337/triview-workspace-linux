@@ -19,7 +19,9 @@ from triview_workspace.engines.browser_live import (
 from triview_workspace.engines.browser_wheel_bridge_xephyr import (
     XephyrBrowserWheelBridge,
     XephyrBrowserWheelRoute,
+    clear_x11_route_cache,
     x11_window_ancestry,
+    x11_window_geometry,
 )
 from triview_workspace.engines.browser_xephyr import (
     XEPHYR_BROWSER_BACKEND_NAME,
@@ -73,6 +75,7 @@ class WorkspaceWindow(LiveWorkspaceWindow):
         session_engine: WorkspaceSessionEngine,
     ) -> None:
         self._wheel_bridge: XephyrBrowserWheelBridge | None = None
+        self._wheel_route_identity: tuple[tuple[str, int, str], ...] = ()
         super().__init__(root, repository, session_engine)
 
         backend = XephyrEmbeddedBraveBrowserBackend()
@@ -100,6 +103,7 @@ class WorkspaceWindow(LiveWorkspaceWindow):
         if hasattr(self, "_generation"):
             self._generation += 1
         super()._load_workspace_view(message)
+        clear_x11_route_cache()
         workspace_id = getattr(self, "_displayed_workspace_id", None)
         if workspace_id:
             self._record_workspace_runtime_snapshot("restored", workspace_id)
@@ -107,6 +111,7 @@ class WorkspaceWindow(LiveWorkspaceWindow):
     def _park_workspace(self, workspace_id: str) -> None:
         self._record_workspace_runtime_snapshot("before_park", workspace_id)
         super()._park_workspace(workspace_id)
+        clear_x11_route_cache()
         self._record_workspace_runtime_snapshot("parked", workspace_id)
 
     def _poll_browser_pointer_focus(self) -> None:
@@ -119,14 +124,14 @@ class WorkspaceWindow(LiveWorkspaceWindow):
         return
 
     def _sync_wheel_bridge_routes(self) -> None:
-        """Publish live host/browser ancestry for exact physical correlation."""
+        """Publish live route endpoints, ancestry and root-relative host bounds."""
 
         if self._closed:
             return
         bridge = self._wheel_bridge
         controller = self.runtime_registry.get("browser")
         engine = getattr(controller, "engine", None)
-        routes: list[XephyrBrowserWheelRoute] = []
+        discovered: list[tuple[str, int, str]] = []
         if bridge is not None and engine is not None and hasattr(engine, "session"):
             for state in self._workspace_views.values():
                 for panel_id, runtime_id in state.runtime_ids.items():
@@ -140,16 +145,31 @@ class WorkspaceWindow(LiveWorkspaceWindow):
                         host_window_id = int(card.native_host_id())
                     except (AttributeError, tk.TclError, ValueError):
                         continue
-                    browser_window_id = str(session.window_id)
-                    routes.append(
-                        XephyrBrowserWheelRoute(
-                            runtime_id=runtime_id,
-                            host_window_id=host_window_id,
-                            browser_window_id=browser_window_id,
-                            host_ancestry=x11_window_ancestry(host_window_id),
-                            browser_ancestry=x11_window_ancestry(browser_window_id),
-                        )
+                    discovered.append(
+                        (runtime_id, host_window_id, str(session.window_id))
                     )
+
+            route_identity = tuple(sorted(discovered))
+            if route_identity != self._wheel_route_identity:
+                clear_x11_route_cache()
+                self._wheel_route_identity = route_identity
+
+            routes: list[XephyrBrowserWheelRoute] = []
+            for runtime_id, host_window_id, browser_window_id in discovered:
+                geometry = x11_window_geometry(host_window_id)
+                routes.append(
+                    XephyrBrowserWheelRoute(
+                        runtime_id=runtime_id,
+                        host_window_id=host_window_id,
+                        browser_window_id=browser_window_id,
+                        host_ancestry=x11_window_ancestry(host_window_id),
+                        browser_ancestry=x11_window_ancestry(browser_window_id),
+                        host_x=geometry.x if geometry is not None else None,
+                        host_y=geometry.y if geometry is not None else None,
+                        host_width=geometry.width if geometry is not None else None,
+                        host_height=geometry.height if geometry is not None else None,
+                    )
+                )
             bridge.sync(routes)
         self.root.after(WHEEL_ROUTE_SYNC_MS, self._sync_wheel_bridge_routes)
 
@@ -220,6 +240,8 @@ class WorkspaceWindow(LiveWorkspaceWindow):
         if bridge is not None:
             bridge.close()
             self._wheel_bridge = None
+        clear_x11_route_cache()
+        self._wheel_route_identity = ()
         super()._close()
 
 

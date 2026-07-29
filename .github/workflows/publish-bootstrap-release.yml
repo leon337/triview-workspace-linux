@@ -7,6 +7,7 @@ on:
       - "pyproject.toml"
       - "scripts/update.sh"
       - "scripts/update-core.sh"
+      - "scripts/stable-adopt.sh"
       - "scripts/stable-launch.sh"
       - "scripts/stable-diagnose.sh"
       - "scripts/stable-rollback.sh"

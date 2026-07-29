@@ -1,138 +1,132 @@
 # Histórico de versões
 
-Este documento explica a evolução do produto em linguagem de produto. O `CHANGELOG.md` permanece como registro técnico das alterações por versão.
+Este documento explica a evolução do produto em linguagem de produto. O `CHANGELOG.md` permanece como registro técnico.
 
 ## Linha do tempo
 
 ```text
 Ideia inicial: organizar três janelas do Brave
         ↓
-0.1.0: fundação modular de workspaces
+0.1.0: fundação modular
         ↓
 0.1.1: migração e atualização segura
         ↓
-0.1.2: primeira interface gráfica real
+0.1.2: primeira interface gráfica
         ↓
-LEA-194: consolidação estratégica e documental
+LEA-194: consolidação documental
         ↓
-0.2.0: primeiro Browser Engine funcional e validado em X11
+0.2.0: Browser Engine validado em X11
         ↓
-0.3.0: workspaces persistentes e restauração automática
+0.3.0: workspaces persistentes validados
         ↓
-Próximo marco: captura individual por painel
+0.4.0: Application Engine em candidato isolado
+        ↓
+Trem LEA-198–205
 ```
 
 ## `0.1.0` — Fundação modular
 
-A ideia inicial de abrir três navegadores evoluiu para uma plataforma de workspaces. Foram criados os contratos centrais de domínio e os primeiros Engines.
-
-Entregas principais:
-
-- `WorkspaceSpec`, `LayoutSpec` e `PanelSpec`;
-- Layout Engine baseado em proporções;
-- Workspace Engine para orquestração;
-- registro de adaptadores de painel;
-- configuração inicial com três painéis móveis;
-- testes automatizados e CI.
-
-Rastreabilidade: Linear LEA-191 / GitHub PR #1.
-
-## `0.1.1` — Migração segura
-
-A fundação modular alterou a estrutura do projeto e tornou o atualizador legado incompatível. Esta versão criou uma passagem segura entre as duas arquiteturas.
-
-Entregas principais:
-
-- detecção da instalação antiga;
-- backup integral;
-- preservação de URLs;
-- instalação em diretórios versionados;
-- link atômico `current`;
-- restaurador do backup mais recente;
-- novo atualizador.
-
-Rastreabilidade: Linear LEA-192 / GitHub PR #2.
-
-## `0.1.2` — Primeira interface gráfica
-
-Esta versão corrigiu o comportamento do atalho e entregou a primeira casca gráfica funcional.
-
-Entregas principais:
-
-- janela desktop em Tkinter;
-- três painéis móveis responsivos;
-- recálculo do layout;
-- cabeçalho e estado visual dos painéis;
-- CLI de diagnóstico separada;
-- launcher gráfico sem terminal.
-
-Rastreabilidade: Linear LEA-193 / GitHub PR #3.
-
-## Consolidação documental — LEA-194
-
-A LEA-194 não alterou a versão funcional do aplicativo. Ela criou a documentação estratégica e operacional necessária para orientar os próximos marcos.
+A ideia de abrir três navegadores evoluiu para uma plataforma de workspaces.
 
 Entregas:
 
-- visão e princípios do produto;
-- roadmap;
-- índice documental;
-- responsabilidades dos Engines;
-- manual da Fábrica de Softwares;
-- governança da documentação.
+- modelos de workspace, layout e painel;
+- Layout Engine e Workspace Engine;
+- registro de adaptadores;
+- testes e CI.
 
-Rastreabilidade: Linear LEA-194 / GitHub PR #4.
+Rastreabilidade: LEA-191 / PR #1.
 
-## `0.2.0` — Primeiro Browser Engine funcional
+## `0.1.1` — Migração segura
 
-Esta versão transformou os painéis navegador de placeholders em hosts capazes de abrir conteúdo web real em sessões X11 compatíveis.
+Criou a passagem da instalação legada para a arquitetura modular.
 
-Entregas principais:
+Entregas:
 
-- contrato `BrowserBackend`;
-- `BrowserEngine` para ciclo de vida;
-- `BrowserPanelAdapter`;
-- normalização de URLs HTTP/HTTPS;
-- backend Brave/Chromium em X11;
-- incorporação com `xdotool windowreparent`;
+- backup integral;
+- preservação de configurações;
+- releases versionadas e link `current`;
+- restaurador e atualizador.
+
+Rastreabilidade: LEA-192 / PR #2.
+
+## `0.1.2` — Primeira interface gráfica
+
+Entregou a janela desktop responsiva e separou a GUI do diagnóstico.
+
+Rastreabilidade: LEA-193 / PR #3.
+
+## Consolidação documental — LEA-194
+
+Criou visão, princípios, roadmap, histórico, documentação arquitetural e manual da Fábrica de Softwares.
+
+Rastreabilidade: LEA-194 / PR #4.
+
+## `0.2.0` — Browser Engine
+
+Transformou painéis navegador em hosts de conteúdo web real.
+
+Entregas:
+
+- `BrowserEngine` e `BrowserPanelAdapter`;
+- Brave/Chromium em modo aplicativo;
+- incorporação X11 com `xdotool`;
 - perfis separados por painel;
-- estados visuais e fallback;
-- testes headless e ADR-0003.
+- redimensionamento, reabertura e encerramento;
+- fallback e estados visuais.
 
-Validação de aceite:
+Aceite em 25/07/2026:
 
-- executada no Linux Mint em 25/07/2026;
-- ChatGPT e GitHub funcionaram simultaneamente em painéis independentes;
-- maximização, restauração e redimensionamento preservaram os limites.
+- ChatGPT e GitHub funcionaram simultaneamente;
+- maximizar, restaurar e redimensionar preservaram os painéis.
 
-Rastreabilidade: Linear LEA-195 / GitHub PRs #5 e #6.
+Rastreabilidade: LEA-195 / PRs #5 e #6.
 
 ## `0.3.0` — Workspaces persistentes
 
-Esta versão transforma a configuração fixa em um catálogo local de áreas de trabalho que pode evoluir sem perder o estado do usuário.
+Substituiu a configuração fixa por um catálogo local versionado.
 
-Entregas principais:
+Entregas:
 
-- `WorkspaceRepository` com catálogo JSON versionado;
-- `schema_version` explícito;
-- gravação atômica com `os.replace`;
-- restauração automática do último workspace ativo;
-- criação de workspace por cópia;
-- renomeação, edição e exclusão;
-- edição dos títulos, tipos e destinos dos painéis;
-- seleção de layouts disponíveis;
-- `WorkspaceSessionEngine` independente de Tkinter;
-- migração automática do bundle único legado;
-- quarentena de JSON corrompido com restauração segura do padrão;
-- catálogo em `XDG_DATA_HOME`, separado do código versionado;
-- diagnóstico com catálogo, esquema e workspace ativo;
-- testes de persistência, migração, recuperação e sessão.
+- `WorkspaceRepository` e `WorkspaceSessionEngine`;
+- gravação atômica e recuperação de corrupção;
+- criação, cópia, renomeação, edição e exclusão;
+- seleção de layouts;
+- restauração automática do último workspace;
+- dados separados das releases.
 
-Limites da versão:
+Aceite em 25/07/2026:
 
-- não persiste automaticamente cookies ou processos de navegador abertos;
-- não cria layouts novos pela interface, apenas seleciona os disponíveis;
-- captura, gravação, Application Engine e plugins permanecem posteriores;
-- exige validação visual final no Linux Mint após atualização.
+- criação, renomeação, alternância e edição confirmadas;
+- último workspace restaurado após reiniciar;
+- tipos ainda não implementados permaneceram corretamente marcados como planejados.
 
-Rastreabilidade: Linear LEA-196 / pull request da LEA-196.
+Rastreabilidade: LEA-196 / PR #7.
+
+## `0.4.0` — Application Engine
+
+Status: candidato do trem, ainda não promovido à `main`.
+
+Objetivo: executar aplicações Linux reais em painéis, sem duplicar a lógica de processo e janela em cada Engine.
+
+Entregas preparadas:
+
+- `PanelRuntime` comum;
+- execução de comandos sem shell;
+- `ApplicationPanelAdapter` e `ApplicationEngine`;
+- backend inicial X11;
+- localização de janela por PID e pistas de classe/nome;
+- incorporação quando compatível;
+- fallback explícito para janela externa;
+- redimensionamento, reabertura e encerramento;
+- candidato isolado com dados próprios;
+- testes e ADR-0005.
+
+Limites:
+
+- algumas aplicações não aceitam reparenting;
+- Wayland nativo permanece posterior;
+- Terminal e PDF reutilizarão a fundação nas LEAs seguintes;
+- promoção depende de CI e teste no Linux Mint.
+
+Rastreabilidade: LEA-197 / branch própria / trem `train/road-to-1.0`.

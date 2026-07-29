@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
-from triview_workspace.domain import LayoutSpec, NormalizedRect, PixelRect
+from triview_workspace.domain import LayoutSpec, NormalizedRect, PixelRect, Viewport
 
 
 class LayoutEngine:
     """Converts normalized slots to pixel rectangles for the current viewport."""
+
+    def arrange(
+        self,
+        layout: LayoutSpec,
+        viewport: Viewport,
+    ) -> tuple[PixelRect, ...]:
+        """Arrange a layout using the typed viewport contract."""
+
+        return self.calculate(layout, viewport.width, viewport.height)
 
     def calculate(
         self,

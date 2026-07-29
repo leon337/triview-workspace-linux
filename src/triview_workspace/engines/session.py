@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import replace
 
 from triview_workspace.domain import LayoutSpec, PanelSpec, WorkspaceSpec
-from triview_workspace.infrastructure import WorkspaceCatalog, WorkspaceRepository
+from triview_workspace.infrastructure import (
+    WorkspaceCatalog,
+    WorkspaceRepository,
+    WorkspaceStorageError,
+)
 
 
 class WorkspaceSessionEngine:
@@ -58,6 +62,33 @@ class WorkspaceSessionEngine:
         workspace = replace(self.current_workspace, panels=panels)
         self.catalog = self.repository.save_workspace(self.catalog, workspace)
         return self.current_workspace, self.current_layout
+
+    def save_layout(
+        self,
+        layout: LayoutSpec,
+        *,
+        select: bool = False,
+    ) -> tuple[WorkspaceSpec, LayoutSpec]:
+        """Persist a new layout without silently replacing an existing one."""
+
+        if any(item.id == layout.id for item in self.catalog.layouts):
+            raise WorkspaceStorageError(f"O layout {layout.id!r} já existe.")
+        if select and len(self.current_workspace.panels) > len(layout.slots):
+            raise ValueError("O novo layout não comporta os painéis atuais.")
+
+        workspace = self.current_workspace
+        if select:
+            workspace = replace(workspace, layout_id=layout.id)
+
+        self.catalog = self.repository.save_workspace(
+            self.catalog,
+            workspace,
+            layout,
+            make_active=True,
+        )
+        if select:
+            return self.current_workspace, self.current_layout
+        return self.current_workspace, layout
 
     def change_layout(self, layout_id: str) -> tuple[WorkspaceSpec, LayoutSpec]:
         layout = self.catalog.layout_by_id(layout_id)

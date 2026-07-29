@@ -1,0 +1,4 @@
+0.11.0
+module=triview_workspace.gui_sessions
+base=train/road-to-1.0
+status=awaiting-linux-mint-acceptance

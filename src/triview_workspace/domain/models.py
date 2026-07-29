@@ -50,6 +50,18 @@ class PixelRect:
 
 
 @dataclass(frozen=True, slots=True)
+class Viewport:
+    """Physical viewport dimensions used by responsive layout engines."""
+
+    width: int
+    height: int
+
+    def __post_init__(self) -> None:
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError("Viewport dimensions must be greater than zero.")
+
+
+@dataclass(frozen=True, slots=True)
 class PanelSpec:
     """Persistent description of one panel."""
 

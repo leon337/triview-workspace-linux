@@ -1,169 +1,57 @@
 # Roadmap do produto
 
-Este roadmap registra direção e sequência. Datas não são prometidas por este documento. Cada marco só muda para concluído após implementação, testes, integração na branch principal e documentação.
+Uma funcionalidade só é concluída após implementação, CI, integração no trem e teste de aceite no Linux Mint.
 
-## Marcos concluídos
+## Marcos validados
 
-### `0.1.0` — Fundação modular
+- `0.1.0` Fundação modular — **concluído**;
+- `0.1.1` Migração segura — **concluído**;
+- `0.1.2` Interface gráfica — **concluído**;
+- LEA-194 Documentação — **concluído**;
+- `0.2.0` Browser Engine — **validado no Linux Mint**;
+- `0.3.0` Workspaces persistentes — **validado no Linux Mint**.
 
-Status: **concluído**
+## Trem LEA-197–205
 
-- modelos de workspace, layout e painel;
-- Layout Engine proporcional;
-- Workspace Engine;
-- registro extensível de adaptadores;
-- configuração de exemplo com três painéis;
-- testes e CI iniciais.
+A branch `main` permanece estável. A integração ocorre em `train/road-to-1.0`.
 
-### `0.1.1` — Migração e atualização segura
+### `0.4.0` — Application Engine — LEA-197
+Status: **integrado ao trem; aguardando teste**
 
-Status: **concluído**
+### `0.5.0` — Terminal Engine — LEA-198
+Status: **integrado ao trem; aguardando teste**
 
-- migração da instalação legada;
-- preservação de URLs e configurações;
-- backups e restauração;
-- instalação em diretórios versionados;
-- atualizador com troca atômica da versão ativa.
+### `0.6.0` — PDF Engine — LEA-199
+Status: **integrado ao trem; aguardando teste**
 
-### `0.1.2` — Primeira interface gráfica
+### `0.7.0` — Capture Engine — LEA-200
+Status: **integrado ao trem; aguardando teste**
 
-Status: **concluído**
+### `0.8.0` — Recording Engine — LEA-201
+Status: **integrado ao trem; aguardando teste**
 
-- janela desktop real;
-- três painéis móveis;
-- redimensionamento responsivo;
-- maximizar, minimizar e restaurar pelo gerenciador de janelas;
-- CLI de diagnóstico mantida separadamente.
+### `0.9.0` — Plugin Engine — LEA-202
+Status: **implementado no candidato; aguardando CI e teste**
 
-### LEA-194 — Consolidação documental
+- manifestos declarativos e API versionada;
+- ativação explícita;
+- diretórios permitidos e symlinks ignorados;
+- execução pelo Application Engine sem shell;
+- diagnóstico e isolamento de falhas.
 
-Status: **concluído**
-
-- visão e princípios do produto;
-- roadmap e histórico de versões;
-- responsabilidades dos Engines;
-- manual da Fábrica de Softwares;
-- índice documental central.
-
-### `0.2.0` — Primeiro painel funcional
-
-Status: **concluído e validado no Linux Mint**
-
-- Browser Engine com contrato de backend substituível;
-- Browser Adapter integrado ao Panel Registry;
-- URL HTTP/HTTPS validada e normalizada;
-- Brave/Chromium incorporado com X11 e `xdotool`;
-- perfis locais separados por painel;
-- redimensionamento e estados visuais;
-- fallback controlado;
-- validação real de ChatGPT e GitHub simultâneos.
-
-Limite conhecido: o backend inicial é validado em X11, mas ainda não oferece incorporação nativa em Wayland.
-
-### `0.3.0` — Workspaces persistentes
-
-Status: **concluído tecnicamente; aguardando validação visual no Linux Mint**
-
-- catálogo JSON com esquema versionado;
-- gravação atômica e recuperação de arquivo corrompido;
-- migração do bundle único legado;
-- restauração automática do último workspace;
-- criação por cópia do workspace atual;
-- renomeação e exclusão controlada;
-- edição de títulos, tipos e destinos dos painéis;
-- seleção de layouts disponíveis;
-- Session Engine desacoplado da interface;
-- dados persistentes fora dos diretórios versionados da aplicação;
-- testes de persistência, migração, recuperação e sessão.
-
-## Próximos marcos recomendados
-
-### `0.4.0` — Captura individual de imagem
-
+### `0.10.0` — Layout Engine avançado — LEA-203
 Status: **planejado**
 
-- print de um único painel;
-- nomes e diretórios organizados por workspace, painel e data;
-- feedback visual de sucesso ou falha;
-- histórico inicial de capturas.
-
-### `0.5.0` — Gravação individual por painel
-
+### `0.11.0` — Session Engine completo — LEA-204
 Status: **planejado**
 
-- iniciar, pausar e encerrar gravação de um painel;
-- indicador de gravação;
-- seleção de formato e qualidade suportados;
-- organização automática dos vídeos;
-- avaliação separada de X11 e Wayland.
-
-### `0.6.0` — Aplicações e terminais
-
+### `1.0.0` — Workspace Hub — LEA-205
 Status: **planejado**
 
-- Application Adapter;
-- Terminal Adapter;
-- validação de aplicações que aceitam ou não incorporação;
-- fallback para execução externa controlada.
+## Posterior
 
-### `0.7.0` — Sessões e perfis de navegador
-
-Status: **planejado**
-
-- cookies e autenticação persistentes por painel quando suportados;
-- gerenciamento de perfis de navegador;
-- isolamento de configurações;
-- recuperação de processos após encerramento inesperado.
-
-### `0.8.0` — Layouts e refinamento visual
-
-Status: **planejado**
-
-- painéis ocupando maior percentual da tela maximizada;
-- margens e espaçamentos responsivos;
-- breakpoints para três colunas, duas mais uma e coluna única;
-- editor completo de layouts;
-- acessibilidade e conforto de leitura.
-
-### `0.9.0` — Plugins e preparação de estabilidade
-
-Status: **planejado**
-
-- contratos públicos para adaptadores;
-- descoberta controlada de plugins;
-- validação de compatibilidade;
-- revisão de segurança, desempenho e recuperação.
-
-### `0.10.0` — Compatibilidade gráfica ampliada
-
-Status: **planejado**
-
-- backend nativo ou híbrido para Wayland;
-- seleção automática de backend gráfico;
-- fallback para janela externa controlada quando necessário;
-- matriz de compatibilidade por distribuição e sessão gráfica.
-
-### `1.0.0` — Primeira versão estável
-
-Status: **planejado**
-
-Critérios mínimos esperados:
-
-- instalação e atualização confiáveis;
-- workspaces persistentes;
-- ao menos um navegador ou conteúdo web funcional;
-- ao menos uma integração de aplicação validada;
-- print individual funcional;
-- gravação individual funcional em pelo menos um ambiente gráfico suportado;
-- documentação de usuário e arquitetura;
-- testes de regressão e restauração.
-
-## Itens transversais
-
-- testes automatizados;
-- CI;
-- logs e mensagens de erro;
-- documentação;
-- backup e compatibilidade de dados;
-- avaliação de X11 e Wayland;
-- rastreabilidade Linear ↔ GitHub.
+- Wayland nativo;
+- múltiplos monitores;
+- sincronização opcional;
+- marketplace e assinatura de plugins;
+- agentes de IA.

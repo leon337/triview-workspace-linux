@@ -13,11 +13,19 @@ REQUIRED_DOCUMENTS = (
     "docs/architecture/README.md",
     "docs/architecture/ENGINES.md",
     "docs/factory/SOFTWARE_FACTORY_WORKFLOW.md",
-    "docs/decisions/ADR-0001-workspace-platform.md",
-    "docs/decisions/ADR-0002-documentation-source-of-truth.md",
-    "docs/decisions/ADR-0003-browser-x11-reparenting.md",
-    "docs/decisions/ADR-0004-versioned-workspace-catalog.md",
-    "docs/work/LEA-196.md",
+    "docs/factory/DEVELOPMENT_TRAIN_LEA-197-205.md",
+    "docs/decisions/ADR-0005-application-engine-panel-runtime.md",
+    "docs/decisions/ADR-0006-terminal-engine-emulator-adapters.md",
+    "docs/decisions/ADR-0007-pdf-viewer-runtime.md",
+    "docs/decisions/ADR-0008-panel-window-capture.md",
+    "docs/decisions/ADR-0009-panel-region-recording-ffmpeg.md",
+    "docs/decisions/ADR-0010-declarative-plugin-manifests.md",
+    "docs/work/LEA-197.md",
+    "docs/work/LEA-198.md",
+    "docs/work/LEA-199.md",
+    "docs/work/LEA-200.md",
+    "docs/work/LEA-201.md",
+    "docs/work/LEA-202.md",
 )
 LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)")
 
@@ -30,7 +38,6 @@ def test_required_documentation_exists() -> None:
 def test_internal_markdown_links_resolve() -> None:
     broken: list[str] = []
     markdown_files = [ROOT / "README.md", *sorted((ROOT / "docs").rglob("*.md"))]
-
     for document in markdown_files:
         text = document.read_text(encoding="utf-8")
         for raw_target in LINK_PATTERN.findall(text):
@@ -40,19 +47,43 @@ def test_internal_markdown_links_resolve() -> None:
             resolved = (document.parent / target).resolve()
             if not resolved.is_file():
                 broken.append(f"{document.relative_to(ROOT)} -> {target}")
-
     assert not broken, "Broken Markdown links:\n" + "\n".join(broken)
 
 
-def test_roadmap_distinguishes_completed_and_planned_capabilities() -> None:
+def test_roadmap_tracks_the_development_train() -> None:
     roadmap = (ROOT / "docs/product/ROADMAP.md").read_text(encoding="utf-8")
     for heading in (
-        "Primeiro painel funcional",
-        "Workspaces persistentes",
-        "Captura individual de imagem",
-        "Gravação individual por painel",
-        "Plugins",
+        "Application Engine",
+        "Terminal Engine",
+        "PDF Engine",
+        "Capture Engine",
+        "Recording Engine",
+        "Plugin Engine",
+        "Layout Engine avançado",
+        "Session Engine completo",
+        "Workspace Hub",
     ):
         assert heading in roadmap
-    assert "catálogo JSON com esquema versionado" in roadmap
-    assert roadmap.count("Status: **planejado**") >= 7
+    assert "train/road-to-1.0" in roadmap
+    for identifier in (
+        "LEA-197",
+        "LEA-198",
+        "LEA-199",
+        "LEA-200",
+        "LEA-201",
+        "LEA-202",
+    ):
+        assert identifier in roadmap
+    assert roadmap.count("Status: **planejado**") >= 3
+
+
+def test_release_documentation_identifies_1_0_0a1_and_safe_channels() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    updater = (ROOT / "docs/updater.md").read_text(encoding="utf-8")
+
+    assert "versão de liberação: `1.0.0a1`" in readme
+    assert "`stable` quando nenhuma escolha anterior existe" in readme
+    assert "## 1.0.0a1 — Liberação RC4 aceita" in changelog
+    assert "`stable` é o canal padrão" in updater
+    assert "O canal de testes nunca é selecionado implicitamente" in updater

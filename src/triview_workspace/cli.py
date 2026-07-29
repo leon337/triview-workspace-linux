@@ -7,10 +7,14 @@ import json
 from pathlib import Path
 
 from triview_workspace.engines import (
+    ApplicationPanelAdapter,
     BrowserPanelAdapter,
     LayoutEngine,
     PanelRegistry,
+    PdfPanelAdapter,
     PlaceholderPanelAdapter,
+    PluginPanelAdapter,
+    TerminalPanelAdapter,
     WorkspaceEngine,
 )
 from triview_workspace.infrastructure import WorkspaceRepository, load_workspace_bundle
@@ -20,48 +24,21 @@ DEFAULT_WORKSPACE = Path("config/workspaces/three-mobile.json")
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Abra ou inspecione um workspace do TriView.")
-    parser.add_argument(
-        "--workspace",
-        type=Path,
-        default=None,
-        help=(
-            "Arquivo JSON de workspace. Quando omitido, restaura o último workspace persistido."
-        ),
-    )
-    parser.add_argument(
-        "--data-file",
-        type=Path,
-        default=None,
-        help="Caminho alternativo para o catálogo persistente de workspaces.",
-    )
-    parser.add_argument(
-        "--diagnostic",
-        action="store_true",
-        help="Imprime o workspace calculado como JSON sem abrir a interface.",
-    )
+    parser.add_argument("--workspace", type=Path, default=None)
+    parser.add_argument("--data-file", type=Path, default=None)
+    parser.add_argument("--diagnostic", action="store_true")
     parser.add_argument("--width", type=int, default=1366)
     parser.add_argument("--height", type=int, default=768)
     return parser
 
 
-def resolve_workspace(
-    workspace_path: Path | None,
-    data_file: Path | None,
-):
-    """Resolve an explicit bundle or the last persisted workspace.
-
-    Explicit diagnostic bundles are read-only: inspecting a file must not change the
-    user's active persisted workspace.
-    """
-
+def resolve_workspace(workspace_path: Path | None, data_file: Path | None):
     seed_workspace, seed_layout = load_workspace_bundle(DEFAULT_WORKSPACE)
     repository = WorkspaceRepository(data_file)
     catalog = repository.load_or_bootstrap(seed_workspace, seed_layout)
-
     if workspace_path is not None:
         workspace, layout = load_workspace_bundle(workspace_path)
         return repository, catalog, workspace, layout
-
     workspace, layout = repository.active_bundle(catalog)
     return repository, catalog, workspace, layout
 
@@ -74,11 +51,18 @@ def run_diagnostic(
 ) -> int:
     repository, catalog, workspace, layout = resolve_workspace(workspace_path, data_file)
     registry = PanelRegistry()
-    registry.register(BrowserPanelAdapter())
-    registry.register(PlaceholderPanelAdapter())
-    engine = WorkspaceEngine(LayoutEngine(), registry)
-    prepared = engine.prepare(workspace, layout, width, height)
-
+    for adapter in (
+        BrowserPanelAdapter(),
+        ApplicationPanelAdapter(),
+        TerminalPanelAdapter(),
+        PdfPanelAdapter(),
+        PluginPanelAdapter(),
+        PlaceholderPanelAdapter(),
+    ):
+        registry.register(adapter)
+    prepared = WorkspaceEngine(LayoutEngine(), registry).prepare(
+        workspace, layout, width, height
+    )
     payload = {
         "schema_version": catalog.schema_version,
         "catalog_path": str(repository.path),
@@ -94,6 +78,7 @@ def run_diagnostic(
                 "title": runtime.panel.title,
                 "kind": runtime.panel.kind.value,
                 "adapter": runtime.adapter_name,
+                "launch_request": dict(runtime.launch_request),
                 "bounds": {
                     "x": runtime.bounds.x,
                     "y": runtime.bounds.y,
@@ -112,7 +97,6 @@ def main() -> int:
     args = build_parser().parse_args()
     if args.diagnostic:
         return run_diagnostic(args.workspace, args.width, args.height, args.data_file)
-
     from triview_workspace.gui import main as gui_main
 
     return gui_main(args.workspace, args.data_file)

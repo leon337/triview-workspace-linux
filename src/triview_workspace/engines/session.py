@@ -134,5 +134,5 @@ class WorkspaceSessionEngine:
     def delete_current(self) -> tuple[WorkspaceSpec, LayoutSpec]:
         deleted_id = self.current_workspace.id
         self.catalog = self.repository.delete_workspace(self.catalog, deleted_id)
-        self.session_repository.delete(deleted_id)
+        self.session_repository.path_for(deleted_id).unlink(missing_ok=True)
         return self.current_workspace, self.current_layout

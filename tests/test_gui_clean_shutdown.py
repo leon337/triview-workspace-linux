@@ -64,6 +64,28 @@ def test_session_checkpoint_failure_does_not_trap_the_desktop(monkeypatch) -> No
     assert sequence == ["session_clean_shutdown_failed", "parent-close"]
 
 
+def test_observability_failure_does_not_trap_the_desktop(monkeypatch) -> None:
+    sequence: list[str] = []
+
+    class RecoveryEngine:
+        def finish(self, _workspace, _statuses) -> None:
+            sequence.append("finish")
+
+    window = _window()
+    window.recovery_engine = RecoveryEngine()
+    parent = gui.WorkspaceWindow.__mro__[1]
+    monkeypatch.setattr(parent, "_close", lambda _self: sequence.append("parent-close"))
+    monkeypatch.setattr(
+        gui,
+        "record_runtime_event",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("log unavailable")),
+    )
+
+    gui.WorkspaceWindow._close(window)
+
+    assert sequence == ["finish", "parent-close"]
+
+
 def test_close_without_session_engine_preserves_existing_runtime_path(monkeypatch) -> None:
     sequence: list[str] = []
     window = _window()

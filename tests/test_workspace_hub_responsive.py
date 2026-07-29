@@ -77,6 +77,15 @@ class FakeStatus:
         self.value = value
 
 
+class DerivedSessionWindow(SessionWorkspaceWindow):
+    """Represent RC4/live overrides that must remain in the reload chain."""
+
+    def _load_workspace_view(self, message: str) -> None:
+        self.test_events.append(("derived-before", self.workspace.id))
+        super()._load_workspace_view(message)
+        self.test_events.append(("derived-after", self.workspace.id))
+
+
 def test_geometry_fits_1366_by_768_linux_desktop() -> None:
     assert responsive_hub_geometry(1366, 768) == (940, 600)
     assert responsive_hub_geometry(800, 600) == (736, 490)
@@ -122,7 +131,7 @@ def test_action_frame_is_found_by_complete_button_contract() -> None:
     assert find_hub_action_frame(shell) is actions
 
 
-def test_hub_catalog_checkpoints_old_workspace_before_rendering_new_one(
+def test_hub_catalog_checkpoints_old_before_full_derived_reload(
     monkeypatch: Any,
 ) -> None:
     events: list[tuple[Any, ...]] = []
@@ -133,7 +142,8 @@ def test_hub_catalog_checkpoints_old_workspace_before_rendering_new_one(
     old_catalog = SimpleNamespace(workspace=old_workspace, layout=old_layout)
     new_catalog = SimpleNamespace(workspace=new_workspace, layout=new_layout)
 
-    window = object.__new__(SessionWorkspaceWindow)
+    window = object.__new__(DerivedSessionWindow)
+    window.test_events = events
     window.workspace = old_workspace
     window.layout = old_layout
     window.session_engine = FakeSessionEngine(old_catalog)
@@ -159,6 +169,7 @@ def test_hub_catalog_checkpoints_old_workspace_before_rendering_new_one(
 
     assert events == [
         ("sync", "development", "three-panels", True),
+        ("derived-before", "imported-workspace"),
         (
             "render",
             "imported-workspace",
@@ -166,14 +177,18 @@ def test_hub_catalog_checkpoints_old_workspace_before_rendering_new_one(
             "Workspace criado pelo Hub",
         ),
         ("begin", "imported-workspace"),
+        ("derived-after", "imported-workspace"),
     ]
     assert window.session_engine.catalog is new_catalog
     assert window.workspace is new_workspace
     assert window.layout is new_layout
     assert window._runtime_signature == ("imported-workspace", ())
+    assert window._triview_hub_catalog_reload is False
 
 
-def test_use_selected_persists_and_activates_created_workspace(monkeypatch: Any) -> None:
+def test_use_selected_persists_and_activates_created_workspace(
+    monkeypatch: Any,
+) -> None:
     existing_workspace = SimpleNamespace(id="development")
     existing_layout = SimpleNamespace(id="three-panels")
     created_workspace = SimpleNamespace(id="imported-workspace", name="Workspace Final")
@@ -190,12 +205,23 @@ def test_use_selected_persists_and_activates_created_workspace(monkeypatch: Any)
     calls: list[tuple[Any, ...]] = []
 
     class Hub:
-        def instantiate(self, entry_id: str, name: str, **kwargs: Any) -> tuple[Any, Any]:
+        def instantiate(
+            self,
+            entry_id: str,
+            name: str,
+            **kwargs: Any,
+        ) -> tuple[Any, Any]:
             calls.append(("instantiate", entry_id, name, kwargs))
             return created_workspace, created_layout
 
     class Repository:
-        def save_workspace(self, source: Any, workspace: Any, layout: Any, **kwargs: Any) -> Any:
+        def save_workspace(
+            self,
+            source: Any,
+            workspace: Any,
+            layout: Any,
+            **kwargs: Any,
+        ) -> Any:
             calls.append(("save", source, workspace, layout, kwargs))
             return persisted_catalog
 
@@ -210,7 +236,11 @@ def test_use_selected_persists_and_activates_created_workspace(monkeypatch: Any)
     dialog.selected = lambda: entry
     dialog._error = lambda error: calls.append(("error", str(error)))
 
-    monkeypatch.setattr(responsive_hub.simpledialog, "askstring", lambda *a, **k: "Workspace Final")
+    monkeypatch.setattr(
+        responsive_hub.simpledialog,
+        "askstring",
+        lambda *args, **kwargs: "Workspace Final",
+    )
     monkeypatch.setattr(
         responsive_hub,
         "activate_hub_catalog",

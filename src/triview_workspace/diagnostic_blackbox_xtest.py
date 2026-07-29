@@ -92,12 +92,15 @@ def annotate_xinput_origin(
     """Attach non-sensitive XI2 origin metadata and classify XTEST events."""
 
     device_id, source_device_id = xi2_device_pair(lines)
-    origin_evidence_available = device_id is not None or source_device_id is not None
-    classifier_available = bool(synthetic_device_ids) and origin_evidence_available
+    direct_xtest_device = device_id in synthetic_device_ids
+    source_identity_available = source_device_id is not None
+    classifier_available = bool(synthetic_device_ids) and (
+        source_identity_available or direct_xtest_device
+    )
     synthetic = bool(
         classifier_available
         and (
-            device_id in synthetic_device_ids
+            direct_xtest_device
             or source_device_id in synthetic_device_ids
         )
     )

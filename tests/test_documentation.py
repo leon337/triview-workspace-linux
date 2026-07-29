@@ -77,16 +77,22 @@ def test_roadmap_tracks_the_development_train() -> None:
     assert roadmap.count("Status: **planejado**") >= 3
 
 
-def test_release_documentation_identifies_1_0_0a2_and_safe_lifecycle() -> None:
+def test_release_documentation_identifies_1_0_0a3_and_four_entrypoints() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     updater = (ROOT / "docs/updater.md").read_text(encoding="utf-8")
 
-    assert "versão de liberação: `1.0.0a2`" in readme
-    assert "`stable` quando nenhuma escolha anterior existe" in readme
-    assert "triview-workspace-rollback" in readme
-    assert "## 1.0.0a2 — Rollback estável verificável" in changelog
-    assert "`stable` é o canal padrão" in updater
+    assert "versão de liberação: `1.0.0a3`" in readme
+    for command in (
+        "triview-workspace",
+        "triview-workspace-update",
+        "triview-workspace-diagnose",
+        "triview-workspace-rollback",
+    ):
+        assert command in readme
+        assert command in updater
+    assert "## 1.0.0a3 — Controladores e quatro atalhos estáveis" in changelog
+    assert "a release que ficou ativa" in updater
     assert "O canal de testes nunca é selecionado implicitamente" in updater
     assert "preserva integralmente o catálogo" in updater
 
@@ -94,7 +100,7 @@ def test_release_documentation_identifies_1_0_0a2_and_safe_lifecycle() -> None:
 def test_release_version_bump_preserves_packaging_and_quality_configuration() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
-    assert 'version = "1.0.0a2"' in pyproject
+    assert 'version = "1.0.0a3"' in pyproject
     assert "[tool.setuptools.packages.find]" in pyproject
     assert 'where = ["src"]' in pyproject
     assert "[tool.pytest.ini_options]" in pyproject

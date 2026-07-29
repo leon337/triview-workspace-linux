@@ -11,7 +11,6 @@ STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/triview-workspace"
 BIN_DIR="$HOME/.local/bin"
 APPLICATIONS_DIR="$HOME/.local/share/applications"
 LIFECYCLE_LOCK="$STATE_ROOT/lifecycle.lock"
-APP_LOCK="$STATE_ROOT/app.lock"
 
 CURRENT_TARGET="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
 ACTIVE_CHANNEL="$(tr -d '[:space:]' < "$CHANNEL_FILE" 2>/dev/null || true)"
@@ -46,11 +45,8 @@ if ! flock -n 9; then
   printf '[TriView Adoption] ERRO: outra operação de ciclo de vida está em execução.\n' >&2
   exit 2
 fi
-exec 8>"$APP_LOCK"
-if ! flock -n 8; then
-  printf '[TriView Adoption] ERRO: outra instância do TriView já está em execução.\n' >&2
-  exit 3
-fi
+# Do not reacquire app.lock here. stable-launch may already hold and pass that
+# lock to the CLI. The lifecycle lock serializes this short, idempotent repair.
 
 mkdir -p "$UPDATER_ROOT" "$BIN_DIR" "$APPLICATIONS_DIR"
 

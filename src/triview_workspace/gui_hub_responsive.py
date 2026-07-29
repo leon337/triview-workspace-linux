@@ -1,11 +1,14 @@
-"""Responsive layout hardening for the Workspace Hub dialog."""
+"""Responsive layout and activation hardening for the Workspace Hub dialog."""
 
 from __future__ import annotations
 
 import tkinter as tk
+from tkinter import simpledialog
 from typing import Any
 
+from triview_workspace.engines.workspace_hub import WorkspaceHubError
 from triview_workspace.gui_hub import WorkspaceHubDialog as BaseWorkspaceHubDialog
+from triview_workspace.gui_sessions import WorkspaceWindow as SessionWorkspaceWindow
 
 HUB_ACTION_LABELS = frozenset(
     {
@@ -17,6 +20,35 @@ HUB_ACTION_LABELS = frozenset(
         "Usar selecionado",
     }
 )
+_HUB_CATALOG_RELOAD_FLAG = "_triview_hub_catalog_reload"
+_SESSION_LOADER_MARKER = "_triview_hub_aware_session_loader"
+
+
+def _install_hub_aware_session_loader() -> None:
+    """Teach the Session layer to skip only a checkpoint already performed by Hub."""
+
+    existing_loader = SessionWorkspaceWindow._load_workspace_view
+    if getattr(existing_loader, _SESSION_LOADER_MARKER, False):
+        return
+
+    def hub_aware_loader(self: Any, message: str) -> None:
+        if not getattr(self, _HUB_CATALOG_RELOAD_FLAG, False):
+            existing_loader(self, message)
+            return
+
+        recovery_engine = getattr(self, "recovery_engine", None)
+        # Continue from the layer immediately below Session while preserving all
+        # higher RC4/live overrides that called into this method.
+        super(SessionWorkspaceWindow, self)._load_workspace_view(message)
+        if recovery_engine is not None:
+            recovery_engine.begin(self.workspace)
+            self._runtime_signature = self._signature({})
+
+    setattr(hub_aware_loader, _SESSION_LOADER_MARKER, True)
+    SessionWorkspaceWindow._load_workspace_view = hub_aware_loader
+
+
+_install_hub_aware_session_loader()
 
 
 def responsive_hub_geometry(screen_width: int, screen_height: int) -> tuple[int, int]:
@@ -57,8 +89,28 @@ def reserve_hub_action_bar(content: Any, actions: Any) -> None:
     content.pack(fill="both", expand=True, padx=16)
 
 
+def activate_hub_catalog(window: Any, catalog: Any, message: str) -> None:
+    """Checkpoint the old workspace and render the newly persisted Hub catalog."""
+
+    recovery_engine = getattr(window, "recovery_engine", None)
+    if recovery_engine is not None:
+        window._sync_runtime_state(force=True)
+
+    window.session_engine.catalog = catalog
+    window.workspace = window.session_engine.current_workspace
+    window.layout = window.session_engine.current_layout
+
+    setattr(window, _HUB_CATALOG_RELOAD_FLAG, True)
+    try:
+        # Start at the most-derived RC4 class. The Session-layer wrapper above
+        # skips only its duplicate pre-sync and keeps every other override active.
+        window._load_workspace_view(message)
+    finally:
+        setattr(window, _HUB_CATALOG_RELOAD_FLAG, False)
+
+
 class ResponsiveWorkspaceHubDialog(BaseWorkspaceHubDialog):
-    """Keep all Workspace Hub actions visible on constrained Linux desktops."""
+    """Keep Hub actions visible and fully activate workspaces created from entries."""
 
     def __init__(self, parent: tk.Tk, window: Any, hub: Any) -> None:
         super().__init__(parent, window, hub)
@@ -76,10 +128,51 @@ class ResponsiveWorkspaceHubDialog(BaseWorkspaceHubDialog):
         self.top.minsize(min(760, width), min(440, height))
         self.top.update_idletasks()
 
+    def use_selected(self) -> None:
+        """Instantiate, persist and render a selected Hub entry as a new workspace."""
+
+        entry = self.selected()
+        if entry is None:
+            self._error("Selecione um workspace ou template.")
+            return
+        name = simpledialog.askstring(
+            "Novo workspace independente",
+            "Nome do workspace que será criado:",
+            initialvalue=entry.name,
+            parent=self.top,
+        )
+        if name is None:
+            return
+
+        catalog = self.window.session_engine.catalog
+        try:
+            workspace, layout = self.hub.instantiate(
+                entry.id,
+                name,
+                existing_workspace_ids={item.id for item in catalog.workspaces},
+                existing_layout_ids={item.id for item in catalog.layouts},
+            )
+            persisted_catalog = self.window.repository.save_workspace(
+                catalog,
+                workspace,
+                layout,
+                make_active=True,
+            )
+            activate_hub_catalog(
+                self.window,
+                persisted_catalog,
+                "Workspace criado pelo Hub",
+            )
+        except (OSError, ValueError, WorkspaceHubError) as exc:
+            self._error(exc)
+            return
+        self.status.set(f"{workspace.name} criado e ativado")
+
 
 __all__ = [
     "HUB_ACTION_LABELS",
     "ResponsiveWorkspaceHubDialog",
+    "activate_hub_catalog",
     "find_hub_action_frame",
     "reserve_hub_action_bar",
     "responsive_hub_geometry",

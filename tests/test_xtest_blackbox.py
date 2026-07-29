@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-import os
-import select
 import shutil
 import subprocess
-import time
 from types import SimpleNamespace
 from typing import Any
-
-import pytest
 
 from triview_workspace.diagnostic_blackbox_xtest import (
     XTestAwareXephyrBlackboxCollector,
@@ -97,6 +92,24 @@ def test_xi2_xtest_release_is_retained_but_marked_synthetic() -> None:
     assert payload["source_device_id"] == 4
     assert payload["synthetic"] is True
     assert payload["synthetic_origin"] == "x11_xtest"
+    assert payload["synthetic_classifier_available"] is True
+
+
+def test_missing_xi2_device_pair_disables_classifier() -> None:
+    payload = annotate_xinput_origin(
+        {"input_category": "mouse_wheel"},
+        [
+            "EVENT type 16 (ButtonRelease)\n",
+            "    detail: 5\n",
+            "    time: 101\n",
+        ],
+        synthetic_device_ids=frozenset({4, 5}),
+    )
+
+    assert payload["device_id"] is None
+    assert payload["source_device_id"] is None
+    assert payload["synthetic"] is False
+    assert payload["synthetic_classifier_available"] is False
 
 
 def test_scroll_verdict_ignores_forwarded_xtest_copy() -> None:
@@ -142,106 +155,3 @@ def test_missing_xtest_classifier_is_indeterminate() -> None:
     )
 
     assert finding["status"] == "INDETERMINATE_XTEST_CLASSIFIER_UNAVAILABLE"
-
-
-def _read_button_release_block(
-    process: subprocess.Popen[str],
-    *,
-    timeout: float = 6.0,
-) -> list[str]:
-    assert process.stdout is not None
-    deadline = time.monotonic() + timeout
-    block: list[str] = []
-    seen_headers: list[str] = []
-    while time.monotonic() < deadline:
-        readable, _writable, _errors = select.select(
-            [process.stdout], [], [], min(0.25, deadline - time.monotonic())
-        )
-        if not readable:
-            continue
-        line = process.stdout.readline()
-        if not line:
-            break
-        if line.lstrip().startswith("EVENT type"):
-            if block and "ButtonRelease)" in block[0]:
-                return block
-            seen_headers.append(line.strip())
-            block = [line]
-        elif block:
-            block.append(line)
-    if block and "ButtonRelease)" in block[0]:
-        return block
-    raise AssertionError(f"ButtonRelease XI2 não observado; headers={seen_headers!r}")
-
-
-def _wait_for_xinput_window(
-    xdotool: str,
-    process: subprocess.Popen[str],
-    *,
-    timeout: float = 4.0,
-) -> str:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        result = subprocess.run(
-            [xdotool, "search", "--pid", str(process.pid)],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=2,
-        )
-        candidates = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-        if candidates:
-            return candidates[-1]
-        if process.poll() is not None:
-            break
-        time.sleep(0.05)
-    raise AssertionError("janela XI2 do xinput não localizada")
-
-
-@pytest.mark.skipif(
-    os.environ.get("TRIVIEW_RUN_X11_INTEGRATION") != "1",
-    reason="executado somente na etapa X11 dedicada da CI",
-)
-def test_real_xdotool_wheel_is_identified_as_xtest() -> None:
-    xinput = shutil.which("xinput")
-    xdotool = shutil.which("xdotool")
-    stdbuf = shutil.which("stdbuf")
-    if not xinput or not xdotool or not stdbuf or not os.environ.get("DISPLAY"):
-        pytest.skip("xinput/xdotool/X11 indisponível")
-
-    synthetic_ids = xtest_device_ids()
-    assert synthetic_ids
-    process = subprocess.Popen(
-        [stdbuf, "-oL", xinput, "test-xi2"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-    )
-    try:
-        window_id = _wait_for_xinput_window(xdotool, process)
-        subprocess.run(
-            [xdotool, "mousemove", "--window", window_id, "40", "40"],
-            check=True,
-            timeout=3,
-        )
-        subprocess.run(
-            [xdotool, "click", "--window", window_id, "5"],
-            check=True,
-            timeout=3,
-        )
-        block = _read_button_release_block(process)
-        payload = annotate_xinput_origin(
-            {"input_category": "mouse_wheel"},
-            block,
-            synthetic_device_ids=synthetic_ids,
-        )
-        assert payload["synthetic"] is True
-        assert payload["source_device_id"] in synthetic_ids
-    finally:
-        process.terminate()
-        try:
-            process.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=2)

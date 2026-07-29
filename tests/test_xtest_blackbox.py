@@ -95,6 +95,40 @@ def test_xi2_xtest_release_is_retained_but_marked_synthetic() -> None:
     assert payload["synthetic_classifier_available"] is True
 
 
+def test_direct_xtest_device_without_source_is_still_synthetic() -> None:
+    payload = annotate_xinput_origin(
+        {"input_category": "mouse_wheel"},
+        [
+            "EVENT type 16 (ButtonRelease)\n",
+            "    device: 4\n",
+            "    detail: 5\n",
+        ],
+        synthetic_device_ids=frozenset({4, 5}),
+    )
+
+    assert payload["device_id"] == 4
+    assert payload["source_device_id"] is None
+    assert payload["synthetic"] is True
+    assert payload["synthetic_classifier_available"] is True
+
+
+def test_master_device_without_source_disables_classifier() -> None:
+    payload = annotate_xinput_origin(
+        {"input_category": "mouse_wheel"},
+        [
+            "EVENT type 16 (ButtonRelease)\n",
+            "    device: 2\n",
+            "    detail: 5\n",
+        ],
+        synthetic_device_ids=frozenset({4, 5}),
+    )
+
+    assert payload["device_id"] == 2
+    assert payload["source_device_id"] is None
+    assert payload["synthetic"] is False
+    assert payload["synthetic_classifier_available"] is False
+
+
 def test_missing_xi2_device_pair_disables_classifier() -> None:
     payload = annotate_xinput_origin(
         {"input_category": "mouse_wheel"},

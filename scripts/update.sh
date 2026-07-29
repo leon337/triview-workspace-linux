@@ -114,98 +114,8 @@ for required_script in \
   }
 done
 
-resolve_stable_tag_sha() {
-  local version="$1"
-  local ref_url tag_url object_type object_sha
-  local -a ref_info tag_info
-
-  ref_url="https://api.github.com/repos/$REPO/git/ref/tags/v$version"
-  mapfile -t ref_info < <(
-    curl -fsSL -H 'Accept: application/vnd.github+json' "$ref_url" \
-      | python3 -c '
-import json, sys
-payload = json.load(sys.stdin)
-obj = payload.get("object") or {}
-print(obj.get("type", ""))
-print(obj.get("sha", ""))
-'
-  ) || return 1
-  ((${#ref_info[@]} == 2)) || return 1
-  object_type="${ref_info[0]}"
-  object_sha="${ref_info[1]}"
-
-  if [[ "$object_type" == "tag" ]]; then
-    tag_url="https://api.github.com/repos/$REPO/git/tags/$object_sha"
-    mapfile -t tag_info < <(
-      curl -fsSL -H 'Accept: application/vnd.github+json' "$tag_url" \
-        | python3 -c '
-import json, sys
-payload = json.load(sys.stdin)
-obj = payload.get("object") or {}
-print(obj.get("type", ""))
-print(obj.get("sha", ""))
-'
-    ) || return 1
-    ((${#tag_info[@]} == 2)) || return 1
-    [[ "${tag_info[0]}" == "commit" ]] || return 1
-    object_sha="${tag_info[1]}"
-  elif [[ "$object_type" != "commit" ]]; then
-    return 1
-  fi
-
-  [[ "$object_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
-  printf '%s\n' "$object_sha"
-}
-
-ACTIVE_VERSION="$(tr -d '[:space:]' < "$VERSION_FILE" 2>/dev/null || true)"
-ACTIVE_CHANNEL="$(tr -d '[:space:]' < "$CHANNEL_FILE" 2>/dev/null || true)"
-if [[ "$ACTIVE_CHANNEL" == "stable" && -n "$ACTIVE_VERSION" ]]; then
-  STABLE_REF="${TRIVIEW_STABLE_REF:-}"
-  if [[ -z "$STABLE_REF" ]]; then
-    STABLE_REF="$(resolve_stable_tag_sha "$ACTIVE_VERSION")" || {
-      printf '[TriView Updater] ERRO: não foi possível resolver a tag imutável v%s.\n' \
-        "$ACTIVE_VERSION" >&2
-      exit 1
-    }
-  fi
-  [[ "$STABLE_REF" =~ ^[0-9a-f]{40}$ ]] || {
-    printf '[TriView Updater] ERRO: SHA estável inválido: %s\n' "$STABLE_REF" >&2
-    exit 1
-  }
-  python3 - "$ACTIVE_CANDIDATE_FILE" "$ACTIVE_VERSION" "$STABLE_REF" <<'PY'
-from __future__ import annotations
-
-import json
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-version = sys.argv[2]
-ref = sys.argv[3]
-try:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-except (OSError, json.JSONDecodeError):
-    payload = {"schema_version": 1}
-payload.update(
-    {
-        "schema_version": 1,
-        "channel": "stable",
-        "candidate_id": "stable",
-        "version": version,
-        "ref": ref,
-        "module": "triview_workspace.cli",
-        "status": "stable-release",
-    }
-)
-temporary = path.with_suffix(".tmp")
-temporary.write_text(
-    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-    encoding="utf-8",
-)
-temporary.replace(path)
-PY
-fi
-
+# Primeiro instala a suíte da release que já ficou ativa. Assim, uma falha
+# posterior de rede/proveniência nunca deixa código novo com controladores antigos.
 mkdir -p "$UPDATER_ROOT" "$BIN_DIR" "$APPLICATIONS_DIR"
 for controller in \
   update.sh \
@@ -384,3 +294,121 @@ $DIAGNOSE_DESKTOP|Diagnosticar TriView Workspace
 $ROLLBACK_DESKTOP|Restaurar TriView Workspace
 DESKTOP_LIST
 done
+
+resolve_stable_tag_sha() {
+  local version="$1"
+  local ref_url tag_url object_type object_sha
+  local -a ref_info tag_info
+
+  ref_url="https://api.github.com/repos/$REPO/git/ref/tags/v$version"
+  mapfile -t ref_info < <(
+    curl -fsSL -H 'Accept: application/vnd.github+json' "$ref_url" \
+      | python3 -c '
+import json, sys
+payload = json.load(sys.stdin)
+obj = payload.get("object") or {}
+print(obj.get("type", ""))
+print(obj.get("sha", ""))
+'
+  ) || return 1
+  ((${#ref_info[@]} == 2)) || return 1
+  object_type="${ref_info[0]}"
+  object_sha="${ref_info[1]}"
+
+  if [[ "$object_type" == "tag" ]]; then
+    tag_url="https://api.github.com/repos/$REPO/git/tags/$object_sha"
+    mapfile -t tag_info < <(
+      curl -fsSL -H 'Accept: application/vnd.github+json' "$tag_url" \
+        | python3 -c '
+import json, sys
+payload = json.load(sys.stdin)
+obj = payload.get("object") or {}
+print(obj.get("type", ""))
+print(obj.get("sha", ""))
+'
+    ) || return 1
+    ((${#tag_info[@]} == 2)) || return 1
+    [[ "${tag_info[0]}" == "commit" ]] || return 1
+    object_sha="${tag_info[1]}"
+  elif [[ "$object_type" != "commit" ]]; then
+    return 1
+  fi
+
+  [[ "$object_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+  printf '%s\n' "$object_sha"
+}
+
+ACTIVE_VERSION="$(tr -d '[:space:]' < "$VERSION_FILE" 2>/dev/null || true)"
+ACTIVE_CHANNEL="$(tr -d '[:space:]' < "$CHANNEL_FILE" 2>/dev/null || true)"
+if [[ "$ACTIVE_CHANNEL" == "stable" && -n "$ACTIVE_VERSION" ]]; then
+  STABLE_REF="${TRIVIEW_STABLE_REF:-}"
+  REF_STATUS="stable-release"
+  if [[ -n "$STABLE_REF" && ! "$STABLE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+    printf '[TriView Updater] AVISO: SHA estável fornecido é inválido; proveniência ficará pendente.\n' >&2
+    STABLE_REF=""
+    REF_STATUS="stable-release-ref-unresolved"
+  elif [[ -z "$STABLE_REF" ]]; then
+    if ! STABLE_REF="$(resolve_stable_tag_sha "$ACTIVE_VERSION")"; then
+      printf '[TriView Updater] AVISO: tag v%s não pôde ser resolvida; código e controladores permanecem ativos.\n' \
+        "$ACTIVE_VERSION" >&2
+      STABLE_REF=""
+      REF_STATUS="stable-release-ref-unresolved"
+    fi
+  fi
+
+  python3 - \
+    "$ACTIVE_CANDIDATE_FILE" \
+    "$CURRENT_TARGET/candidate-release.json" \
+    "$ACTIVE_VERSION" \
+    "$STABLE_REF" \
+    "$REF_STATUS" <<'PY'
+from __future__ import annotations
+
+import json
+import pathlib
+import sys
+
+active_path = pathlib.Path(sys.argv[1])
+release_path = pathlib.Path(sys.argv[2])
+version = sys.argv[3]
+ref = sys.argv[4]
+status = sys.argv[5]
+try:
+    payload = json.loads(active_path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    payload = {"schema_version": 1}
+payload.update(
+    {
+        "schema_version": 1,
+        "channel": "stable",
+        "candidate_id": "stable",
+        "version": version,
+        "ref": ref,
+        "module": "triview_workspace.cli",
+        "status": status,
+    }
+)
+temporary = active_path.with_suffix(".tmp")
+temporary.write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+temporary.replace(active_path)
+
+release_payload = {
+    "schema_version": 1,
+    "candidate_id": "stable",
+    "version": version,
+    "resolved_sha": ref,
+    "source_ref": f"v{version}",
+    "module": "triview_workspace.cli",
+    "status": status,
+}
+release_temporary = release_path.with_suffix(".tmp")
+release_temporary.write_text(
+    json.dumps(release_payload, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+release_temporary.replace(release_path)
+PY
+fi

@@ -22,12 +22,13 @@ export TRIVIEW_RUNTIME_MODULE="$MODULE"
 # runtime evidence source; raw lines are never copied directly to the ZIP.
 # The package preserves the conceptual section ÚLTIMOS EVENTOS DO RUNTIME.
 # Collector inheritance chain retained for audit compatibility:
-# triview_workspace.diagnostic_blackbox_xephyr extends
+# triview_workspace.diagnostic_blackbox_xtest extends
+# triview_workspace.diagnostic_blackbox_xephyr, which extends
 # triview_workspace.diagnostic_blackbox_verified, which extends
 # triview_workspace.diagnostic_blackbox_shareable and
 # triview_workspace.diagnostic_blackbox_final / the byte-safe event reader.
-# The final collector refreshes provenance after auto-launch and resolves live
-# X11 ancestry without exporting raw process arguments or private content.
+# The final collector refreshes provenance, resolves live X11 ancestry and
+# separates physical input from the XTEST events injected by xdotool.
 
 show_result() {
   local title="$1"
@@ -71,7 +72,7 @@ PY
   cd "$CURRENT_TARGET"
 
   set +e
-  package="$(python3 -m triview_workspace.diagnostic_blackbox_xephyr \
+  package="$(python3 -m triview_workspace.diagnostic_blackbox_xtest \
     --output-dir "$REPORT_DIR" \
     --timeout-seconds "${TRIVIEW_DIAGNOSTIC_TIMEOUT_SECONDS:-900}" \
     --auto-launch \

@@ -66,6 +66,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Resolve version
         id: version
         shell: bash
@@ -83,19 +85,52 @@ jobs:
           )"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
-      - name: Publish release when absent
+      - name: Publish release when absent and verify immutable target
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
         shell: bash
         run: |
+          set -Eeuo pipefail
+
+          resolve_remote_tag_sha() {
+            local row sha ref selected=""
+            while read -r sha ref; do
+              [[ -n "$sha" && -n "$ref" ]] || continue
+              if [[ "$ref" == "refs/tags/$TAG^{}" ]]; then
+                selected="$sha"
+                break
+              fi
+              if [[ "$ref" == "refs/tags/$TAG" ]]; then
+                selected="$sha"
+              fi
+            done < <(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}")
+            printf '%s\n' "$selected"
+          }
+
+          existing_tag_sha="$(resolve_remote_tag_sha)"
+          if [[ -n "$existing_tag_sha" && "$existing_tag_sha" != "$GITHUB_SHA" ]]; then
+            echo "Tag $TAG já existe e aponta para $existing_tag_sha, não para $GITHUB_SHA." >&2
+            exit 1
+          fi
+
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; nothing to do."
+            [[ "$existing_tag_sha" == "$GITHUB_SHA" ]] || {
+              echo "Release $TAG existe sem uma tag verificável no SHA atual." >&2
+              exit 1
+            }
+            echo "Release $TAG já existe e aponta para o SHA autorizado $GITHUB_SHA."
             exit 0
           fi
 
-          gh release create "$TAG" \
-            --target "$GITHUB_SHA" \
-            --title "TriView Workspace $VERSION" \
+          release_args=(
+            "$TAG"
+            --target "$GITHUB_SHA"
+            --title "TriView Workspace $VERSION"
             --notes "Versão aprovada do TriView Workspace. Inclui workspaces vivos, navegadores incorporados via Xephyr, diagnóstico caixa-preta sanitizado e atualização estável com backup e rollback."
+          )
+          if [[ -n "$existing_tag_sha" ]]; then
+            release_args+=(--verify-tag)
+          fi
+          gh release create "${release_args[@]}"

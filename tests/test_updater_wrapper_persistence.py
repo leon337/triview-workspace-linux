@@ -33,10 +33,13 @@ script_dir="$(dirname "$(readlink -f "$0")")"
 updater_root="$TRIVIEW_APP_ROOT/updater"
 release="$TRIVIEW_APP_ROOT/releases/accepted"
 mkdir -p "$updater_root" "$release/scripts"
+if [[ ! -f "$release/scripts/update.sh" ]]; then
+  for name in update.sh update-core.sh stable-launch.sh stable-diagnose.sh stable-rollback.sh; do
+    cp -a "$script_dir/$name" "$release/scripts/$name"
+  done
+fi
+# Simula a sobrescrita feita pelo núcleo legado no controlador persistente.
 cp -a "$0" "$updater_root/update.sh"
-for name in update.sh update-core.sh stable-launch.sh stable-diagnose.sh stable-rollback.sh; do
-  cp -a "$script_dir/$name" "$release/scripts/$name"
-done
 temporary="$TRIVIEW_APP_ROOT/.current-test"
 rm -f "$temporary"
 ln -s "$release" "$temporary"

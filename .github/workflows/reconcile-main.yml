@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - release/reconcile-main-1.0.0a1
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read

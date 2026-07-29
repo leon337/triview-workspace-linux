@@ -3,9 +3,9 @@ set -Eeuo pipefail
 
 EXECUTING_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 
-# Bash pode ler este arquivo progressivamente. O núcleo legado substitui
-# updater/update.sh durante a atualização; por isso o controlador precisa
-# continuar a partir de uma cópia imutável antes de chamar o núcleo.
+# O núcleo legado pode substituir updater/update.sh durante a execução.
+# O controlador continua a partir de uma cópia imutável e, depois da troca,
+# instala os controladores pertencentes à release que ficou ativa.
 if [[ "${TRIVIEW_UPDATER_CONTROLLER_SNAPSHOT:-0}" != "1" ]]; then
   snapshot="$(mktemp)"
   cp -a "$EXECUTING_PATH" "$snapshot"
@@ -19,15 +19,14 @@ CONTROLLER_SOURCE="$EXECUTING_PATH"
 ORIGINAL_WRAPPER="$(readlink -f "${TRIVIEW_UPDATER_ORIGINAL_WRAPPER:?caminho original ausente}")"
 SCRIPT_DIR="$(dirname "$ORIGINAL_WRAPPER")"
 CORE_SCRIPT="$SCRIPT_DIR/update-core.sh"
-ROLLBACK_SOURCE="$SCRIPT_DIR/stable-rollback.sh"
 APP_ROOT="${TRIVIEW_APP_ROOT:-$HOME/.local/share/triview-workspace}"
 CHANNEL_FILE="$APP_ROOT/UPDATE_CHANNEL"
 UPDATER_ROOT="$APP_ROOT/updater"
-TARGET_WRAPPER="$UPDATER_ROOT/update.sh"
-TARGET_CORE="$UPDATER_ROOT/update-core.sh"
-TARGET_ROLLBACK="$UPDATER_ROOT/stable-rollback.sh"
-STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/triview-workspace"
+STATE_BASE="${XDG_STATE_HOME:-$HOME/.local/state}"
+STATE_ROOT="$STATE_BASE/triview-workspace"
 LIFECYCLE_LOCK="$STATE_ROOT/lifecycle.lock"
+BIN_DIR="$HOME/.local/bin"
+APPLICATIONS_DIR="$HOME/.local/share/applications"
 
 cleanup() {
   rm -f "$CONTROLLER_SOURCE" || true
@@ -35,14 +34,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-[[ -f "$CORE_SCRIPT" ]] || {
-  printf '[TriView Updater] ERRO: núcleo do atualizador ausente: %s\n' "$CORE_SCRIPT" >&2
-  exit 1
-}
-[[ -f "$ROLLBACK_SOURCE" ]] || {
-  printf '[TriView Updater] ERRO: rollback estável ausente: %s\n' "$ROLLBACK_SOURCE" >&2
-  exit 1
-}
+for required_script in \
+  update-core.sh \
+  stable-launch.sh \
+  stable-diagnose.sh \
+  stable-rollback.sh; do
+  [[ -f "$SCRIPT_DIR/$required_script" ]] || {
+    printf '[TriView Updater] ERRO: controlador ausente: %s\n' \
+      "$SCRIPT_DIR/$required_script" >&2
+    exit 1
+  }
+done
 command -v flock >/dev/null 2>&1 || {
   printf '[TriView Updater] ERRO: flock não encontrado.\n' >&2
   exit 1
@@ -79,54 +81,181 @@ set -e
 ((status == 0)) || exit "$status"
 ((dry_run == 0)) || exit 0
 
-# O núcleo instala a si próprio em updater/update.sh. Restauramos o
-# controlador a partir da cópia imutável e mantemos núcleo e rollback ao lado.
-mkdir -p "$UPDATER_ROOT"
-if [[ "$CORE_SCRIPT" != "$TARGET_CORE" ]] && ! cmp -s "$CORE_SCRIPT" "$TARGET_CORE"; then
-  cp -a "$CORE_SCRIPT" "$TARGET_CORE"
-fi
-if ! cmp -s "$CONTROLLER_SOURCE" "$TARGET_WRAPPER"; then
-  cp -a "$CONTROLLER_SOURCE" "$TARGET_WRAPPER"
-fi
-if [[ "$ROLLBACK_SOURCE" != "$TARGET_ROLLBACK" ]] && ! cmp -s "$ROLLBACK_SOURCE" "$TARGET_ROLLBACK"; then
-  cp -a "$ROLLBACK_SOURCE" "$TARGET_ROLLBACK"
-fi
-chmod +x "$TARGET_WRAPPER" "$TARGET_CORE" "$TARGET_ROLLBACK"
+CURRENT_TARGET="$(readlink -f "$APP_ROOT/current" 2>/dev/null || true)"
+[[ -n "$CURRENT_TARGET" && -d "$CURRENT_TARGET/scripts" ]] || {
+  printf '[TriView Updater] ERRO: release ativa sem diretório de controladores.\n' >&2
+  exit 1
+}
+ACTIVE_SCRIPTS="$CURRENT_TARGET/scripts"
 
-ROLLBACK_LAUNCHER="$HOME/.local/bin/triview-workspace-rollback"
-APPLICATIONS_DIR="$HOME/.local/share/applications"
-ROLLBACK_DESKTOP="$APPLICATIONS_DIR/triview-workspace-rollback.desktop"
-mkdir -p "$HOME/.local/bin" "$APPLICATIONS_DIR"
+for required_script in \
+  update.sh \
+  update-core.sh \
+  stable-launch.sh \
+  stable-diagnose.sh \
+  stable-rollback.sh; do
+  [[ -f "$ACTIVE_SCRIPTS/$required_script" ]] || {
+    printf '[TriView Updater] ERRO: release ativa incompleta: %s\n' \
+      "$ACTIVE_SCRIPTS/$required_script" >&2
+    exit 1
+  }
+done
+
+mkdir -p "$UPDATER_ROOT" "$BIN_DIR" "$APPLICATIONS_DIR"
+for controller in \
+  update.sh \
+  update-core.sh \
+  stable-launch.sh \
+  stable-diagnose.sh \
+  stable-rollback.sh; do
+  source_controller="$ACTIVE_SCRIPTS/$controller"
+  target_controller="$UPDATER_ROOT/$controller"
+  if [[ "$source_controller" != "$target_controller" ]] \
+    && ! cmp -s "$source_controller" "$target_controller" 2>/dev/null; then
+    cp -a "$source_controller" "$target_controller"
+  fi
+  chmod +x "$target_controller"
+done
+
+APP_LAUNCHER="$BIN_DIR/triview-workspace"
+UPDATE_LAUNCHER="$BIN_DIR/triview-workspace-update"
+DIAGNOSE_LAUNCHER="$BIN_DIR/triview-workspace-diagnose"
+ROLLBACK_LAUNCHER="$BIN_DIR/triview-workspace-rollback"
+
+cat > "$APP_LAUNCHER" <<LAUNCHER
+#!/usr/bin/env bash
+set -Eeuo pipefail
+exec "$UPDATER_ROOT/stable-launch.sh" "\$@"
+LAUNCHER
+
+cat > "$UPDATE_LAUNCHER" <<LAUNCHER
+#!/usr/bin/env bash
+set -uo pipefail
+STATE_ROOT="\${XDG_STATE_HOME:-\$HOME/.local/state}/triview-workspace"
+mkdir -p "\$STATE_ROOT"
+timestamp="\$(date +%Y%m%d-%H%M%S)"
+LOG_FILE="\$STATE_ROOT/update-\$timestamp.log"
+set +e
+TRIVIEW_UPDATER_WRAPPED=1 "$UPDATER_ROOT/update.sh" "\$@" 2>&1 | tee -a "\$LOG_FILE"
+status=\${PIPESTATUS[0]}
+set -e
+printf '\n============================================================\n'
+if ((status == 0)); then
+  title='TriView Workspace — atualização concluída'
+  text="A atualização foi concluída com sucesso.\\n\\nLog: \$LOG_FILE"
+  printf 'ATUALIZAÇÃO FINALIZADA COM SUCESSO.\n'
+else
+  title='TriView Workspace — erro na atualização'
+  text="A atualização terminou com erro (código \$status).\\n\\nLog: \$LOG_FILE"
+  printf 'A ATUALIZAÇÃO TERMINOU COM ERRO (código %s).\n' "\$status"
+fi
+printf 'Log salvo em: %s\n' "\$LOG_FILE"
+printf '============================================================\n\n'
+if command -v zenity >/dev/null 2>&1 && [[ -n "\${DISPLAY:-}\${WAYLAND_DISPLAY:-}" ]]; then
+  if ((status == 0)); then
+    zenity --info --title="\$title" --text="\$text" --width=540 >/dev/null 2>&1 || true
+  else
+    zenity --error --title="\$title" --text="\$text" --width=540 >/dev/null 2>&1 || true
+  fi
+fi
+if [[ "\${TRIVIEW_NO_PAUSE:-0}" != "1" && -t 0 ]]; then
+  read -r -p 'Pressione ENTER para fechar esta janela... ' _ || true
+fi
+exit "\$status"
+LAUNCHER
+
+cat > "$DIAGNOSE_LAUNCHER" <<LAUNCHER
+#!/usr/bin/env bash
+set -Eeuo pipefail
+exec "$UPDATER_ROOT/stable-diagnose.sh" "\$@"
+LAUNCHER
 
 cat > "$ROLLBACK_LAUNCHER" <<LAUNCHER
 #!/usr/bin/env bash
 set -Eeuo pipefail
-exec "$TARGET_ROLLBACK" "\$@"
+exec "$UPDATER_ROOT/stable-rollback.sh" "\$@"
 LAUNCHER
-chmod +x "$ROLLBACK_LAUNCHER"
+chmod +x \
+  "$APP_LAUNCHER" \
+  "$UPDATE_LAUNCHER" \
+  "$DIAGNOSE_LAUNCHER" \
+  "$ROLLBACK_LAUNCHER"
 
-terminal_flag="true"
-rollback_exec="$ROLLBACK_LAUNCHER"
-if command -v x-terminal-emulator >/dev/null 2>&1; then
-  rollback_exec="$(command -v x-terminal-emulator) -e $ROLLBACK_LAUNCHER"
-  terminal_flag="false"
-elif command -v gnome-terminal >/dev/null 2>&1; then
-  rollback_exec="$(command -v gnome-terminal) -- $ROLLBACK_LAUNCHER"
-  terminal_flag="false"
-fi
+terminal_command() {
+  local launcher="$1"
+  if command -v x-terminal-emulator >/dev/null 2>&1; then
+    printf '%s -e %s\n' "$(command -v x-terminal-emulator)" "$launcher"
+  elif command -v gnome-terminal >/dev/null 2>&1; then
+    printf '%s -- %s\n' "$(command -v gnome-terminal)" "$launcher"
+  else
+    printf '%s\n' "$launcher"
+  fi
+}
+
+APP_DESKTOP="$APPLICATIONS_DIR/triview-workspace.desktop"
+UPDATE_DESKTOP="$APPLICATIONS_DIR/triview-workspace-update.desktop"
+DIAGNOSE_DESKTOP="$APPLICATIONS_DIR/triview-workspace-diagnose.desktop"
+ROLLBACK_DESKTOP="$APPLICATIONS_DIR/triview-workspace-rollback.desktop"
+UPDATE_EXEC="$(terminal_command "$UPDATE_LAUNCHER")"
+ROLLBACK_EXEC="$(terminal_command "$ROLLBACK_LAUNCHER")"
+UPDATE_TERMINAL=true
+ROLLBACK_TERMINAL=true
+[[ "$UPDATE_EXEC" != "$UPDATE_LAUNCHER" ]] && UPDATE_TERMINAL=false
+[[ "$ROLLBACK_EXEC" != "$ROLLBACK_LAUNCHER" ]] && ROLLBACK_TERMINAL=false
+
+cat > "$APP_DESKTOP" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=TriView Workspace
+Comment=Plataforma modular de áreas de trabalho
+Exec=$APP_LAUNCHER
+Icon=preferences-desktop-display
+Terminal=false
+Categories=Utility;Development;
+StartupNotify=true
+DESKTOP
+
+cat > "$UPDATE_DESKTOP" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Atualizar TriView Workspace
+Comment=Atualiza o TriView com backup e validação
+Exec=$UPDATE_EXEC
+Icon=system-software-update
+Terminal=$UPDATE_TERMINAL
+Categories=Utility;Development;
+StartupNotify=true
+DESKTOP
+
+cat > "$DIAGNOSE_DESKTOP" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Diagnosticar TriView Workspace
+Comment=Gera um pacote caixa-preta sanitizado para auditoria
+Exec=$DIAGNOSE_LAUNCHER
+Icon=utilities-system-monitor
+Terminal=false
+Categories=Utility;Development;
+StartupNotify=true
+DESKTOP
 
 cat > "$ROLLBACK_DESKTOP" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=Restaurar TriView Workspace
-Comment=Restaura a versão anterior do TriView sem remover dados persistentes
-Exec=$rollback_exec
+Comment=Restaura a versão anterior sem remover dados persistentes
+Exec=$ROLLBACK_EXEC
 Icon=edit-undo
-Terminal=$terminal_flag
+Terminal=$ROLLBACK_TERMINAL
 Categories=Utility;Development;
 StartupNotify=true
 DESKTOP
-chmod +x "$ROLLBACK_DESKTOP"
+chmod +x \
+  "$APP_DESKTOP" \
+  "$UPDATE_DESKTOP" \
+  "$DIAGNOSE_DESKTOP" \
+  "$ROLLBACK_DESKTOP"
+
 command -v update-desktop-database >/dev/null 2>&1 \
   && update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
 
@@ -137,9 +266,16 @@ if command -v xdg-user-dir >/dev/null 2>&1; then
 fi
 for desktop_dir in "${desktop_dirs[@]}"; do
   [[ -d "$desktop_dir" ]] || continue
-  desktop_copy="$desktop_dir/Restaurar TriView Workspace.desktop"
-  cp -f "$ROLLBACK_DESKTOP" "$desktop_copy"
-  chmod +x "$desktop_copy"
-  command -v gio >/dev/null 2>&1 \
-    && gio set "$desktop_copy" metadata::trusted true >/dev/null 2>&1 || true
+  while IFS='|' read -r source_desktop visible_name; do
+    desktop_copy="$desktop_dir/$visible_name.desktop"
+    cp -f "$source_desktop" "$desktop_copy"
+    chmod +x "$desktop_copy"
+    command -v gio >/dev/null 2>&1 \
+      && gio set "$desktop_copy" metadata::trusted true >/dev/null 2>&1 || true
+  done <<DESKTOP_LIST
+$APP_DESKTOP|TriView Workspace
+$UPDATE_DESKTOP|Atualizar TriView Workspace
+$DIAGNOSE_DESKTOP|Diagnosticar TriView Workspace
+$ROLLBACK_DESKTOP|Restaurar TriView Workspace
+DESKTOP_LIST
 done

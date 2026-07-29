@@ -4,14 +4,15 @@ Plataforma modular de áreas de trabalho para Linux.
 
 ## Estado da liberação
 
-- versão de liberação: `1.0.0a1`;
+- versão de liberação: `1.0.0a2`;
 - interface RC4 proporcional: aprovada no Linux Mint/X11;
 - Browser Panels: incorporados em displays Xephyr autenticados, sem exposição externa;
 - workspaces vivos: preservam processos, janelas, conversas, rolagem e foco durante a mesma execução;
 - scroll e teclado nos navegadores incorporados: aprovados;
 - diagnóstico caixa-preta: disponível com coleta sanitizada e pacote único;
 - Application, Terminal, PDF, Capture, Recording e Plugin Engines: integrados;
-- atualização estável: backup, validação, troca atômica e rollback.
+- atualização estável: backup, validação e troca atômica;
+- rollback estável: valida backup controlado, preserva dados, troca `current` atomicamente e gera relatório.
 
 O desempenho de vários workspaces vivos continua acompanhado separadamente. A política de otimização não pode encerrar conversas silenciosamente.
 
@@ -70,7 +71,15 @@ O canal `testing` exige opt-in explícito e manifesto habilitado com commit SHA 
 bash scripts/update.sh --testing
 ```
 
-O manifesto de testes versionado permanece desabilitado depois da liberação. Consulte [a estratégia de atualização](docs/updater.md).
+O manifesto de testes versionado permanece desabilitado depois da liberação.
+
+Após uma atualização estável bem-sucedida, o atalho **Restaurar TriView Workspace** e o comando abaixo restauram o backup controlado mais recente sem substituir o catálogo ou os demais dados persistentes:
+
+```bash
+triview-workspace-rollback
+```
+
+O rollback valida compilação, diagnóstico e módulo principal antes da troca, cria um backup pré-rollback, substitui o link `current` atomicamente e registra relatório auditável. Consulte [a estratégia de atualização](docs/updater.md).
 
 ## Documentação
 
@@ -104,4 +113,5 @@ src/triview_workspace/
 - LEA-226: objetivo estratégico de liberação;
 - LEA-229–246: validações físicas, instalador, atalhos e RC4;
 - LEA-247–259: scroll, sessões vivas, contenção Xephyr e diagnóstico caixa-preta;
-- LEA-260–263: integração no train, reconciliação com main e endurecimento da publicação.
+- LEA-260–264: integração no train, reconciliação com main, publicação e RC final;
+- LEA-265: rollback estável verificável e liberação `1.0.0a2`.

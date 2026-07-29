@@ -11,18 +11,25 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "config" / "update-channels" / "testing.json"
 UPDATER = ROOT / "scripts" / "update.sh"
 CORE = ROOT / "scripts" / "update-core.sh"
+ROLLBACK = ROOT / "scripts" / "stable-rollback.sh"
 PUBLISH_WORKFLOW = ROOT / ".github" / "workflows" / "publish-bootstrap-release.yml"
 
 
-def _wrapper_fixture(tmp_path: Path, core_body: str = "#!/usr/bin/env bash\nprintf 'ARGS:%s\\n' \"$*\"\n") -> tuple[Path, Path]:
+def _wrapper_fixture(
+    tmp_path: Path,
+    core_body: str = "#!/usr/bin/env bash\nprintf 'ARGS:%s\\n' \"$*\"\n",
+) -> tuple[Path, Path]:
     script_dir = tmp_path / "scripts"
     script_dir.mkdir()
     wrapper = script_dir / "update.sh"
     core = script_dir / "update-core.sh"
+    rollback = script_dir / "stable-rollback.sh"
     wrapper.write_text(UPDATER.read_text(encoding="utf-8"), encoding="utf-8")
     core.write_text(core_body, encoding="utf-8")
+    rollback.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
     wrapper.chmod(0o755)
     core.chmod(0o755)
+    rollback.chmod(0o755)
     return wrapper, core
 
 
@@ -124,8 +131,15 @@ def test_wrapper_reinstalls_itself_and_second_run_is_idempotent(tmp_path: Path) 
 
     persistent_wrapper = app_root / "updater" / "update.sh"
     persistent_core = app_root / "updater" / "update-core.sh"
-    assert persistent_wrapper.read_text(encoding="utf-8") == wrapper.read_text(encoding="utf-8")
-    assert persistent_core.read_text(encoding="utf-8") == core.read_text(encoding="utf-8")
+    persistent_rollback = app_root / "updater" / "stable-rollback.sh"
+    assert persistent_wrapper.read_text(encoding="utf-8") == wrapper.read_text(
+        encoding="utf-8"
+    )
+    assert persistent_core.read_text(encoding="utf-8") == core.read_text(
+        encoding="utf-8"
+    )
+    assert persistent_rollback.is_file()
+    assert (tmp_path / "home" / ".local" / "bin" / "triview-workspace-rollback").is_file()
 
     subprocess.run(
         ["bash", str(persistent_wrapper), "--stable"],
@@ -136,6 +150,7 @@ def test_wrapper_reinstalls_itself_and_second_run_is_idempotent(tmp_path: Path) 
     )
     assert persistent_wrapper.is_file()
     assert persistent_core.is_file()
+    assert persistent_rollback.is_file()
 
 
 def test_disabled_repository_manifest_blocks_explicit_testing(tmp_path: Path) -> None:
@@ -237,3 +252,4 @@ def test_release_publication_waits_for_complete_verification() -> None:
     assert "tests/test_browser_xephyr_x11_integration.py" in text
     assert "bash -n scripts/*.sh packaging/*.sh" in text
     assert "gh release create" in text
+    assert '"scripts/stable-rollback.sh"' in text

@@ -20,6 +20,35 @@ HUB_ACTION_LABELS = frozenset(
         "Usar selecionado",
     }
 )
+_HUB_CATALOG_RELOAD_FLAG = "_triview_hub_catalog_reload"
+_SESSION_LOADER_MARKER = "_triview_hub_aware_session_loader"
+
+
+def _install_hub_aware_session_loader() -> None:
+    """Teach the Session layer to skip only a checkpoint already performed by Hub."""
+
+    existing_loader = SessionWorkspaceWindow._load_workspace_view
+    if getattr(existing_loader, _SESSION_LOADER_MARKER, False):
+        return
+
+    def hub_aware_loader(self: Any, message: str) -> None:
+        if not getattr(self, _HUB_CATALOG_RELOAD_FLAG, False):
+            existing_loader(self, message)
+            return
+
+        recovery_engine = getattr(self, "recovery_engine", None)
+        # Continue from the layer immediately below Session while preserving all
+        # higher RC4/live overrides that called into this method.
+        super(SessionWorkspaceWindow, self)._load_workspace_view(message)
+        if recovery_engine is not None:
+            recovery_engine.begin(self.workspace)
+            self._runtime_signature = self._signature({})
+
+    setattr(hub_aware_loader, _SESSION_LOADER_MARKER, True)
+    SessionWorkspaceWindow._load_workspace_view = hub_aware_loader
+
+
+_install_hub_aware_session_loader()
 
 
 def responsive_hub_geometry(screen_width: int, screen_height: int) -> tuple[int, int]:
@@ -61,13 +90,7 @@ def reserve_hub_action_bar(content: Any, actions: Any) -> None:
 
 
 def activate_hub_catalog(window: Any, catalog: Any, message: str) -> None:
-    """Activate one persisted Hub workspace without losing the prior runtime checkpoint.
-
-    SessionWorkspaceWindow normally checkpoints the current workspace before every
-    reload. The Hub already persisted a different active workspace, so this helper
-    performs that checkpoint while the old window state is still selected, updates
-    both the engine and window state, then resumes the lower rendering chain.
-    """
+    """Checkpoint the old workspace and render the newly persisted Hub catalog."""
 
     recovery_engine = getattr(window, "recovery_engine", None)
     if recovery_engine is not None:
@@ -77,14 +100,13 @@ def activate_hub_catalog(window: Any, catalog: Any, message: str) -> None:
     window.workspace = window.session_engine.current_workspace
     window.layout = window.session_engine.current_layout
 
-    # Skip only SessionWorkspaceWindow._load_workspace_view because its pre-sync
-    # has already run against the correct previous workspace. All lower GUI layers
-    # (recording, capture, shell, RC4 runtime wiring) still execute normally.
-    super(SessionWorkspaceWindow, window)._load_workspace_view(message)
-
-    if recovery_engine is not None:
-        recovery_engine.begin(window.workspace)
-        window._runtime_signature = window._signature({})
+    setattr(window, _HUB_CATALOG_RELOAD_FLAG, True)
+    try:
+        # Start at the most-derived RC4 class. The Session-layer wrapper above
+        # skips only its duplicate pre-sync and keeps every other override active.
+        window._load_workspace_view(message)
+    finally:
+        setattr(window, _HUB_CATALOG_RELOAD_FLAG, False)
 
 
 class ResponsiveWorkspaceHubDialog(BaseWorkspaceHubDialog):

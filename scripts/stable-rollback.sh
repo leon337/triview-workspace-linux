@@ -9,9 +9,11 @@ CATALOG_FILE="${TRIVIEW_DATA_FILE:-$DATA_ROOT/triview-workspace/workspaces.json}
 CURRENT_LINK="$APP_ROOT/current"
 VERSION_FILE="$APP_ROOT/VERSION"
 CHANNEL_FILE="$APP_ROOT/UPDATE_CHANNEL"
+ACTIVE_CANDIDATE_FILE="$APP_ROOT/ACTIVE-CANDIDATE.json"
 LOCK_FILE="$STATE_ROOT/lifecycle.lock"
 REPORTS_DIR="$STATE_ROOT/stable-rollback-reports"
 LOGS_DIR="$STATE_ROOT/stable-rollbacks"
+TRANSACTIONS_DIR="$STATE_ROOT/transactions"
 
 BACKUP_OVERRIDE=""
 DRY_RUN=0
@@ -19,6 +21,10 @@ TMP_DIR=""
 RESTORE_DIR=""
 COMMITTED=0
 RESULT_SUMMARY="Rollback encerrado."
+TEMP_VERSION_FILE=""
+TEMP_CHANNEL_FILE=""
+TEMP_ACTIVE_FILE=""
+TRANSACTION_FILE=""
 
 while (($#)); do
   case "$1" in
@@ -42,7 +48,13 @@ while (($#)); do
   esac
 done
 
-mkdir -p "$APP_ROOT/releases" "$BACKUP_ROOT" "$STATE_ROOT" "$REPORTS_DIR" "$LOGS_DIR"
+mkdir -p \
+  "$APP_ROOT/releases" \
+  "$BACKUP_ROOT" \
+  "$STATE_ROOT" \
+  "$REPORTS_DIR" \
+  "$LOGS_DIR" \
+  "$TRANSACTIONS_DIR"
 STAMP="$(date -u +%Y%m%dT%H%M%S%NZ)"
 LOG_FILE="$LOGS_DIR/rollback-$STAMP.log"
 
@@ -83,12 +95,44 @@ show_result() {
   fi
 }
 
+mark_transaction_incomplete() {
+  [[ -n "$TRANSACTION_FILE" && -f "$TRANSACTION_FILE" ]] || return 0
+  python3 - "$TRANSACTION_FILE" <<'PY' || true
+from __future__ import annotations
+
+import datetime as dt
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, ValueError):
+    payload = {"schema_version": 1, "event": "stable_rollback_transaction"}
+payload["state"] = "commit_incomplete"
+payload["updated_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+temporary = path.with_suffix(".tmp")
+temporary.write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+temporary.replace(path)
+PY
+}
+
 cleanup() {
   local status=$?
   trap - EXIT
   [[ -n "$TMP_DIR" ]] && rm -rf "$TMP_DIR"
+  [[ -n "$TEMP_VERSION_FILE" ]] && rm -f "$TEMP_VERSION_FILE"
+  [[ -n "$TEMP_CHANNEL_FILE" ]] && rm -f "$TEMP_CHANNEL_FILE"
+  [[ -n "$TEMP_ACTIVE_FILE" ]] && rm -f "$TEMP_ACTIVE_FILE"
   if ((COMMITTED == 0)) && [[ -n "$RESTORE_DIR" && -d "$RESTORE_DIR" ]]; then
     rm -rf "$RESTORE_DIR"
+  elif ((status != 0 && COMMITTED == 1)); then
+    mark_transaction_incomplete
+    log "AVISO: o código restaurado permanece ativo; a transação registra finalização incompleta."
   fi
   show_result "$status"
   exit "$status"
@@ -287,23 +331,99 @@ pathlib.Path(path).write_text(
 )
 PY
 
+TEMP_VERSION_FILE="$APP_ROOT/.VERSION-$STAMP"
+TEMP_CHANNEL_FILE="$APP_ROOT/.UPDATE_CHANNEL-$STAMP"
+TEMP_ACTIVE_FILE="$APP_ROOT/.ACTIVE-CANDIDATE-$STAMP.json"
+printf '%s\n' "$VERSION" > "$TEMP_VERSION_FILE"
+printf 'stable\n' > "$TEMP_CHANNEL_FILE"
+python3 - "$TEMP_ACTIVE_FILE" "$VERSION" "$SELECTED_BACKUP" <<'PY'
+from __future__ import annotations
+
+import json
+import pathlib
+import sys
+
+path, version, selected_backup = sys.argv[1:]
+payload = {
+    "schema_version": 1,
+    "channel": "stable",
+    "candidate_id": "stable-rollback",
+    "version": version,
+    "ref": "",
+    "module": "triview_workspace.cli",
+    "status": "stable-rollback-restored",
+    "selected_backup": selected_backup,
+}
+pathlib.Path(path).write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+PY
+
+TRANSACTION_FILE="$TRANSACTIONS_DIR/$STAMP-stable-rollback.json"
+python3 - "$TRANSACTION_FILE" "$CURRENT_TARGET" "$RESTORE_DIR" "$SELECTED_BACKUP" \
+  "$PRE_ROLLBACK_BACKUP" "$VERSION" <<'PY'
+from __future__ import annotations
+
+import datetime as dt
+import json
+import pathlib
+import sys
+
+path, old_current, new_current, selected_backup, pre_backup, version = sys.argv[1:]
+payload = {
+    "schema_version": 1,
+    "event": "stable_rollback_transaction",
+    "state": "prepared",
+    "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+    "old_current": old_current,
+    "new_current": new_current,
+    "selected_backup": selected_backup,
+    "pre_rollback_backup": pre_backup,
+    "version": version,
+}
+pathlib.Path(path).write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+PY
+
 TEMP_LINK="$APP_ROOT/.current-rollback-$STAMP"
 ln -s "$RESTORE_DIR" "$TEMP_LINK"
 mv -Tf "$TEMP_LINK" "$CURRENT_LINK"
+COMMITTED=1
 
-write_atomic() {
-  local path="$1"
-  local value="$2"
-  local temporary="${path}.tmp-$STAMP"
-  printf '%s\n' "$value" > "$temporary"
-  mv -f "$temporary" "$path"
-}
-write_atomic "$VERSION_FILE" "$VERSION"
-write_atomic "$CHANNEL_FILE" "stable"
+mv -f "$TEMP_VERSION_FILE" "$VERSION_FILE"
+TEMP_VERSION_FILE=""
+mv -f "$TEMP_CHANNEL_FILE" "$CHANNEL_FILE"
+TEMP_CHANNEL_FILE=""
+mv -f "$TEMP_ACTIVE_FILE" "$ACTIVE_CANDIDATE_FILE"
+TEMP_ACTIVE_FILE=""
+
+python3 - "$TRANSACTION_FILE" <<'PY'
+from __future__ import annotations
+
+import datetime as dt
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+payload = json.loads(path.read_text(encoding="utf-8"))
+payload["state"] = "committed"
+payload["updated_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+temporary = path.with_suffix(".tmp")
+temporary.write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+temporary.replace(path)
+PY
 
 REPORT="$REPORTS_DIR/$STAMP-rollback.json"
 python3 - "$REPORT" "$CURRENT_TARGET" "$RESTORE_DIR" "$SELECTED_BACKUP" \
-  "$PRE_ROLLBACK_BACKUP" "$CATALOG_FILE" "$LOG_FILE" "$VERSION" <<'PY'
+  "$PRE_ROLLBACK_BACKUP" "$CATALOG_FILE" "$LOG_FILE" "$VERSION" \
+  "$TRANSACTION_FILE" "$ACTIVE_CANDIDATE_FILE" <<'PY'
 from __future__ import annotations
 
 import datetime as dt
@@ -320,6 +440,8 @@ import sys
     catalog,
     log_path,
     version,
+    transaction,
+    active_candidate,
 ) = sys.argv[1:]
 payload = {
     "schema_version": 1,
@@ -334,6 +456,8 @@ payload = {
     "data_restored": False,
     "data_policy": "preserve-current-user-data",
     "atomic_current_switch": True,
+    "transaction": transaction,
+    "active_candidate": active_candidate,
     "log": log_path,
 }
 pathlib.Path(path).write_text(
@@ -342,11 +466,11 @@ pathlib.Path(path).write_text(
 )
 PY
 
-COMMITTED=1
 RESTORE_DIR=""
 RESULT_SUMMARY="Versão restaurada: $VERSION. Dados preservados. Relatório: $REPORT"
 log "Rollback concluído."
 log "Versão ativa: $VERSION"
 log "Dados preservados: $CATALOG_FILE"
 log "Backup pré-rollback: $PRE_ROLLBACK_BACKUP"
+log "Transação: $TRANSACTION_FILE"
 log "Relatório: $REPORT"

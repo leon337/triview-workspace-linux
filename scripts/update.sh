@@ -19,14 +19,18 @@ CONTROLLER_SOURCE="$EXECUTING_PATH"
 ORIGINAL_WRAPPER="$(readlink -f "${TRIVIEW_UPDATER_ORIGINAL_WRAPPER:?caminho original ausente}")"
 SCRIPT_DIR="$(dirname "$ORIGINAL_WRAPPER")"
 CORE_SCRIPT="$SCRIPT_DIR/update-core.sh"
+REPO="${TRIVIEW_REPO:-leon337/triview-workspace-linux}"
 APP_ROOT="${TRIVIEW_APP_ROOT:-$HOME/.local/share/triview-workspace}"
 CHANNEL_FILE="$APP_ROOT/UPDATE_CHANNEL"
+VERSION_FILE="$APP_ROOT/VERSION"
+ACTIVE_CANDIDATE_FILE="$APP_ROOT/ACTIVE-CANDIDATE.json"
 UPDATER_ROOT="$APP_ROOT/updater"
 ROLLBACK_SOURCE="$SCRIPT_DIR/stable-rollback.sh"
 TARGET_ROLLBACK="$UPDATER_ROOT/stable-rollback.sh"
 STATE_BASE="${XDG_STATE_HOME:-$HOME/.local/state}"
 STATE_ROOT="$STATE_BASE/triview-workspace"
 LIFECYCLE_LOCK="$STATE_ROOT/lifecycle.lock"
+APP_LOCK="$STATE_ROOT/app.lock"
 BIN_DIR="$HOME/.local/bin"
 APPLICATIONS_DIR="$HOME/.local/share/applications"
 
@@ -47,16 +51,23 @@ for required_script in \
     exit 1
   }
 done
-command -v flock >/dev/null 2>&1 || {
-  printf '[TriView Updater] ERRO: flock não encontrado.\n' >&2
-  exit 1
-}
+for required_command in flock curl python3; do
+  command -v "$required_command" >/dev/null 2>&1 || {
+    printf '[TriView Updater] ERRO: %s não encontrado.\n' "$required_command" >&2
+    exit 1
+  }
+done
 
 mkdir -p "$STATE_ROOT"
 exec 9>"$LIFECYCLE_LOCK"
 if ! flock -n 9; then
   printf '[TriView Updater] ERRO: outra operação de instalação, atualização ou rollback já está em execução.\n' >&2
   exit 2
+fi
+exec 8>"$APP_LOCK"
+if ! flock -n 8; then
+  printf '[TriView Updater] ERRO: feche o TriView Workspace antes de atualizar.\n' >&2
+  exit 3
 fi
 
 explicit_cli_channel=0
@@ -102,6 +113,98 @@ for required_script in \
     exit 1
   }
 done
+
+resolve_stable_tag_sha() {
+  local version="$1"
+  local ref_url tag_url object_type object_sha
+  local -a ref_info tag_info
+
+  ref_url="https://api.github.com/repos/$REPO/git/ref/tags/v$version"
+  mapfile -t ref_info < <(
+    curl -fsSL -H 'Accept: application/vnd.github+json' "$ref_url" \
+      | python3 -c '
+import json, sys
+payload = json.load(sys.stdin)
+obj = payload.get("object") or {}
+print(obj.get("type", ""))
+print(obj.get("sha", ""))
+'
+  ) || return 1
+  ((${#ref_info[@]} == 2)) || return 1
+  object_type="${ref_info[0]}"
+  object_sha="${ref_info[1]}"
+
+  if [[ "$object_type" == "tag" ]]; then
+    tag_url="https://api.github.com/repos/$REPO/git/tags/$object_sha"
+    mapfile -t tag_info < <(
+      curl -fsSL -H 'Accept: application/vnd.github+json' "$tag_url" \
+        | python3 -c '
+import json, sys
+payload = json.load(sys.stdin)
+obj = payload.get("object") or {}
+print(obj.get("type", ""))
+print(obj.get("sha", ""))
+'
+    ) || return 1
+    ((${#tag_info[@]} == 2)) || return 1
+    [[ "${tag_info[0]}" == "commit" ]] || return 1
+    object_sha="${tag_info[1]}"
+  elif [[ "$object_type" != "commit" ]]; then
+    return 1
+  fi
+
+  [[ "$object_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+  printf '%s\n' "$object_sha"
+}
+
+ACTIVE_VERSION="$(tr -d '[:space:]' < "$VERSION_FILE" 2>/dev/null || true)"
+ACTIVE_CHANNEL="$(tr -d '[:space:]' < "$CHANNEL_FILE" 2>/dev/null || true)"
+if [[ "$ACTIVE_CHANNEL" == "stable" && -n "$ACTIVE_VERSION" ]]; then
+  STABLE_REF="${TRIVIEW_STABLE_REF:-}"
+  if [[ -z "$STABLE_REF" ]]; then
+    STABLE_REF="$(resolve_stable_tag_sha "$ACTIVE_VERSION")" || {
+      printf '[TriView Updater] ERRO: não foi possível resolver a tag imutável v%s.\n' \
+        "$ACTIVE_VERSION" >&2
+      exit 1
+    }
+  fi
+  [[ "$STABLE_REF" =~ ^[0-9a-f]{40}$ ]] || {
+    printf '[TriView Updater] ERRO: SHA estável inválido: %s\n' "$STABLE_REF" >&2
+    exit 1
+  }
+  python3 - "$ACTIVE_CANDIDATE_FILE" "$ACTIVE_VERSION" "$STABLE_REF" <<'PY'
+from __future__ import annotations
+
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+version = sys.argv[2]
+ref = sys.argv[3]
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    payload = {"schema_version": 1}
+payload.update(
+    {
+        "schema_version": 1,
+        "channel": "stable",
+        "candidate_id": "stable",
+        "version": version,
+        "ref": ref,
+        "module": "triview_workspace.cli",
+        "status": "stable-release",
+    }
+)
+temporary = path.with_suffix(".tmp")
+temporary.write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+temporary.replace(path)
+PY
+fi
 
 mkdir -p "$UPDATER_ROOT" "$BIN_DIR" "$APPLICATIONS_DIR"
 for controller in \

@@ -1,0 +1,137 @@
+name: Publish stable release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+      - "scripts/update.sh"
+      - "scripts/update-core.sh"
+      - "scripts/stable-rollback.sh"
+      - ".github/workflows/publish-bootstrap-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+      - name: Install X11 integration dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb xauth xdotool xinput xserver-xephyr x11-utils
+      - name: Compile
+        run: python -m compileall -q src tests
+      - name: Validate shell scripts
+        run: bash -n scripts/*.sh packaging/*.sh
+      - name: Tests
+        run: pytest --junitxml=release-pytest-results.xml
+      - name: X11 wheel integration
+        run: |
+          xvfb-run -a env TRIVIEW_RUN_X11_INTEGRATION=1 \
+            pytest -q tests/test_browser_wheel_x11_integration.py
+      - name: XTEST device integration
+        run: |
+          xvfb-run -a bash -lc '
+            xinput list --short | tee /tmp/triview-xinput-list.txt
+            grep -qi "XTEST pointer" /tmp/triview-xinput-list.txt
+            grep -qi "XTEST keyboard" /tmp/triview-xinput-list.txt
+          '
+      - name: Xephyr containment integration
+        run: |
+          xvfb-run -a env TRIVIEW_RUN_XEPHYR_INTEGRATION=1 \
+            pytest -q tests/test_browser_xephyr_x11_integration.py
+      - name: Upload release verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-pytest-results
+          path: release-pytest-results.xml
+          if-no-files-found: error
+
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          version="$(python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          text = Path('pyproject.toml').read_text(encoding='utf-8')
+          match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+          if not match:
+              raise SystemExit('version not found')
+          print(match.group(1))
+          PY
+          )"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+      - name: Publish release when absent and verify immutable target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          resolve_remote_tag_sha() {
+            local row sha ref selected=""
+            while read -r sha ref; do
+              [[ -n "$sha" && -n "$ref" ]] || continue
+              if [[ "$ref" == "refs/tags/$TAG^{}" ]]; then
+                selected="$sha"
+                break
+              fi
+              if [[ "$ref" == "refs/tags/$TAG" ]]; then
+                selected="$sha"
+              fi
+            done < <(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}")
+            printf '%s\n' "$selected"
+          }
+
+          existing_tag_sha="$(resolve_remote_tag_sha)"
+          if [[ -n "$existing_tag_sha" && "$existing_tag_sha" != "$GITHUB_SHA" ]]; then
+            echo "Tag $TAG já existe e aponta para $existing_tag_sha, não para $GITHUB_SHA." >&2
+            exit 1
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            [[ "$existing_tag_sha" == "$GITHUB_SHA" ]] || {
+              echo "Release $TAG existe sem uma tag verificável no SHA atual." >&2
+              exit 1
+            }
+            echo "Release $TAG já existe e aponta para o SHA autorizado $GITHUB_SHA."
+            exit 0
+          fi
+
+          release_args=(
+            "$TAG"
+            --target "$GITHUB_SHA"
+            --title "TriView Workspace $VERSION"
+            --notes "Versão aprovada do TriView Workspace. Inclui workspaces vivos, navegadores incorporados via Xephyr, diagnóstico caixa-preta sanitizado, atualização estável e rollback verificável com preservação de dados."
+          )
+          if [[ -n "$existing_tag_sha" ]]; then
+            release_args+=(--verify-tag)
+          fi
+          gh release create "${release_args[@]}"

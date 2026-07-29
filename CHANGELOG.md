@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.0.0a2 — Rollback estável verificável
+
+- adiciona `scripts/stable-rollback.sh` para restaurar backups controlados da instalação estável;
+- recusa backups fora da raiz oficial e valida estrutura, versão, compilação, diagnóstico e módulo principal antes da troca;
+- bloqueia rollback enquanto o TriView está ativo ou quando outra operação de ciclo de vida possui o lock;
+- cria backup pré-rollback da versão corrente e preserva o catálogo e os demais dados persistentes;
+- restaura o código em novo diretório de release e substitui o link `current` atomicamente;
+- atualiza versão e canal por escrita atômica e gera log e relatório JSON auditável;
+- permite operação inversa usando automaticamente o backup pré-rollback mais recente;
+- instala comando e atalho oficial **Restaurar TriView Workspace** junto do atualizador persistente;
+- adiciona testes de restauração, reversão, dry-run, confinamento de caminho, preservação de dados e persistência do controlador;
+- inclui o script de rollback no gate completo de publicação da release.
+
+Nenhum módulo de GUI, Browser, Xephyr, workspace ou diagnóstico funcional fisicamente aceito foi alterado.
+
+## 1.0.0a1 — Liberação RC4 aceita
+
+- consolida a interface RC4 proporcional aprovada no Linux Mint;
+- mantém workspaces vivos por `park/restore`, sem destruir ou relançar sessões ao alternar;
+- preserva PID, PGID, Window ID, conversa, rolagem e foco durante a mesma execução;
+- encaminha roda e teclado ao Browser Panel correto;
+- inicia navegadores dentro de Xephyr autenticado, impedindo exposição externa antes da incorporação;
+- adiciona diagnóstico caixa-preta sanitizado com linha do tempo correlacionada de usuário, sistema, X11 e TriView;
+- distingue eventos físicos de eventos sintéticos XTEST no veredito do scroll;
+- entrega atalhos oficiais de abertura, atualização, diagnóstico e rollback;
+- reconcilia os hotfixes históricos do atualizador de `main` sem descartar o trem aceito;
+- define `stable` como canal padrão e exige opt-in explícito para `testing`;
+- condiciona a publicação da release à suíte completa, shell, X11, XTEST e Xephyr em PASS.
+
+Aceite físico registrado: flash externo, scroll, teclado e continuidade entre workspaces em PASS.
+
 ## 0.9.0 — Plugin Engine
 
 - adiciona manifestos declarativos com esquema e API versionados;

@@ -77,10 +77,27 @@ def test_roadmap_tracks_the_development_train() -> None:
     assert roadmap.count("Status: **planejado**") >= 3
 
 
-def test_candidate_documentation_distinguishes_stable_and_candidate() -> None:
-    index = (ROOT / "docs/README.md").read_text(encoding="utf-8").lower()
+def test_release_documentation_identifies_1_0_0a2_and_safe_lifecycle() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "versão estável" in index
-    assert "candidato atual" in index
-    assert "`main`: estável" in readme
-    assert "TriView Workspace — LEA-202" in readme
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    updater = (ROOT / "docs/updater.md").read_text(encoding="utf-8")
+
+    assert "versão de liberação: `1.0.0a2`" in readme
+    assert "`stable` quando nenhuma escolha anterior existe" in readme
+    assert "triview-workspace-rollback" in readme
+    assert "## 1.0.0a2 — Rollback estável verificável" in changelog
+    assert "`stable` é o canal padrão" in updater
+    assert "O canal de testes nunca é selecionado implicitamente" in updater
+    assert "preserva integralmente o catálogo" in updater
+
+
+def test_release_version_bump_preserves_packaging_and_quality_configuration() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert 'version = "1.0.0a2"' in pyproject
+    assert "[tool.setuptools.packages.find]" in pyproject
+    assert 'where = ["src"]' in pyproject
+    assert "[tool.pytest.ini_options]" in pyproject
+    assert 'testpaths = ["tests"]' in pyproject
+    assert "[tool.ruff]" in pyproject
+    assert 'target-version = "py311"' in pyproject

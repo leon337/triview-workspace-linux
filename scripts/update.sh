@@ -1,138 +1,145 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-REPO="${TRIVIEW_REPO:-leon337/triview-workspace-linux}"
-CHANNEL="${TRIVIEW_CHANNEL:-main}"
+EXECUTING_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+
+# Bash pode ler este arquivo progressivamente. O núcleo legado substitui
+# updater/update.sh durante a atualização; por isso o controlador precisa
+# continuar a partir de uma cópia imutável antes de chamar o núcleo.
+if [[ "${TRIVIEW_UPDATER_CONTROLLER_SNAPSHOT:-0}" != "1" ]]; then
+  snapshot="$(mktemp)"
+  cp -a "$EXECUTING_PATH" "$snapshot"
+  chmod +x "$snapshot"
+  export TRIVIEW_UPDATER_CONTROLLER_SNAPSHOT=1
+  export TRIVIEW_UPDATER_ORIGINAL_WRAPPER="$EXECUTING_PATH"
+  exec bash "$snapshot" "$@"
+fi
+
+CONTROLLER_SOURCE="$EXECUTING_PATH"
+ORIGINAL_WRAPPER="$(readlink -f "${TRIVIEW_UPDATER_ORIGINAL_WRAPPER:?caminho original ausente}")"
+SCRIPT_DIR="$(dirname "$ORIGINAL_WRAPPER")"
+CORE_SCRIPT="$SCRIPT_DIR/update-core.sh"
+ROLLBACK_SOURCE="$SCRIPT_DIR/stable-rollback.sh"
 APP_ROOT="${TRIVIEW_APP_ROOT:-$HOME/.local/share/triview-workspace}"
-BACKUP_ROOT="${TRIVIEW_BACKUP_ROOT:-$HOME/.local/share/triview-workspace-backups}"
-DATA_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}"
-CATALOG_FILE="${TRIVIEW_DATA_FILE:-$DATA_ROOT/triview-workspace/workspaces.json}"
-CURRENT_LINK="$APP_ROOT/current"
-DATA_DIR="$APP_ROOT/data"
-DRY_RUN=0
+CHANNEL_FILE="$APP_ROOT/UPDATE_CHANNEL"
+UPDATER_ROOT="$APP_ROOT/updater"
+TARGET_WRAPPER="$UPDATER_ROOT/update.sh"
+TARGET_CORE="$UPDATER_ROOT/update-core.sh"
+TARGET_ROLLBACK="$UPDATER_ROOT/stable-rollback.sh"
+STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/triview-workspace"
+LIFECYCLE_LOCK="$STATE_ROOT/lifecycle.lock"
 
-if [[ "${1:-}" == "--dry-run" ]]; then DRY_RUN=1; shift; fi
+cleanup() {
+  rm -f "$CONTROLLER_SOURCE" || true
+  return 0
+}
+trap cleanup EXIT
 
-log() { printf '[TriView Updater] %s\n' "$*"; }
-fail() { log "ERRO: $*" >&2; exit 1; }
-run() { if ((DRY_RUN)); then printf '[DRY-RUN]'; printf ' %q' "$@"; printf '\n'; else "$@"; fi; }
+[[ -f "$CORE_SCRIPT" ]] || {
+  printf '[TriView Updater] ERRO: núcleo do atualizador ausente: %s\n' "$CORE_SCRIPT" >&2
+  exit 1
+}
+[[ -f "$ROLLBACK_SOURCE" ]] || {
+  printf '[TriView Updater] ERRO: rollback estável ausente: %s\n' "$ROLLBACK_SOURCE" >&2
+  exit 1
+}
+command -v flock >/dev/null 2>&1 || {
+  printf '[TriView Updater] ERRO: flock não encontrado.\n' >&2
+  exit 1
+}
 
-command -v curl >/dev/null 2>&1 || fail "curl não encontrado."
-command -v tar >/dev/null 2>&1 || fail "tar não encontrado."
-command -v python3 >/dev/null 2>&1 || fail "python3 não encontrado."
-
-mkdir -p "$APP_ROOT/releases" "$BACKUP_ROOT" "$DATA_DIR"
-timestamp="$(date +%Y%m%d-%H%M%S)"
-backup_dir="$BACKUP_ROOT/update-$timestamp"
-tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
-
-if [[ -L "$CURRENT_LINK" ]]; then
-  current_target="$(readlink -f "$CURRENT_LINK")"
-  run mkdir -p "$backup_dir"
-  if ((DRY_RUN)); then
-    log "[DRY-RUN] copiar versão atual para $backup_dir/current"
-  else
-    cp -a "$current_target" "$backup_dir/current"
-  fi
+mkdir -p "$STATE_ROOT"
+exec 9>"$LIFECYCLE_LOCK"
+if ! flock -n 9; then
+  printf '[TriView Updater] ERRO: outra operação de instalação, atualização ou rollback já está em execução.\n' >&2
+  exit 2
 fi
 
-if [[ -f "$CATALOG_FILE" ]]; then
-  run mkdir -p "$backup_dir"
-  if ((DRY_RUN)); then
-    log "[DRY-RUN] copiar catálogo persistente para $backup_dir/workspaces.json"
-  else
-    cp -a "$CATALOG_FILE" "$backup_dir/workspaces.json"
-  fi
+explicit_cli_channel=0
+dry_run=0
+for argument in "$@"; do
+  case "$argument" in
+    --stable|--testing) explicit_cli_channel=1 ;;
+    --dry-run) dry_run=1 ;;
+  esac
+done
+
+forwarded_args=("$@")
+if ((explicit_cli_channel == 0)) \
+  && [[ -z "${TRIVIEW_UPDATE_CHANNEL:-}" ]] \
+  && [[ ! -f "$CHANNEL_FILE" ]]; then
+  forwarded_args=(--stable "${forwarded_args[@]}")
 fi
 
-release_api="https://api.github.com/repos/$REPO/releases/latest"
-archive_url=""
-if archive_url="$(curl -fsSL "$release_api" 2>/dev/null | python3 -c 'import json,sys; data=json.load(sys.stdin); print(data.get("tarball_url", ""))' 2>/dev/null)" && [[ -n "$archive_url" ]]; then
-  log "Usando a release estável mais recente."
-else
-  archive_url="https://github.com/$REPO/archive/refs/heads/$CHANNEL.tar.gz"
-  log "Ainda não há release estável; usando a branch $CHANNEL."
+set +e
+bash "$CORE_SCRIPT" "${forwarded_args[@]}"
+status=$?
+set -e
+
+((status == 0)) || exit "$status"
+((dry_run == 0)) || exit 0
+
+# O núcleo instala a si próprio em updater/update.sh. Restauramos o
+# controlador a partir da cópia imutável e mantemos núcleo e rollback ao lado.
+mkdir -p "$UPDATER_ROOT"
+if [[ "$CORE_SCRIPT" != "$TARGET_CORE" ]] && ! cmp -s "$CORE_SCRIPT" "$TARGET_CORE"; then
+  cp -a "$CORE_SCRIPT" "$TARGET_CORE"
 fi
-
-log "Baixando atualização..."
-run curl -fL "$archive_url" -o "$tmp_dir/source.tar.gz"
-run mkdir -p "$tmp_dir/extracted"
-run tar -xzf "$tmp_dir/source.tar.gz" -C "$tmp_dir/extracted" --strip-components=1
-
-if ((DRY_RUN)); then
-  log "A validação e troca atômica seriam executadas agora."
-  exit 0
+if ! cmp -s "$CONTROLLER_SOURCE" "$TARGET_WRAPPER"; then
+  cp -a "$CONTROLLER_SOURCE" "$TARGET_WRAPPER"
 fi
+if [[ "$ROLLBACK_SOURCE" != "$TARGET_ROLLBACK" ]] && ! cmp -s "$ROLLBACK_SOURCE" "$TARGET_ROLLBACK"; then
+  cp -a "$ROLLBACK_SOURCE" "$TARGET_ROLLBACK"
+fi
+chmod +x "$TARGET_WRAPPER" "$TARGET_CORE" "$TARGET_ROLLBACK"
 
-[[ -f "$tmp_dir/extracted/pyproject.toml" ]] || fail "Pacote baixado inválido."
-[[ -d "$tmp_dir/extracted/src/triview_workspace" ]] || fail "Código da aplicação ausente."
-python3 -m compileall -q "$tmp_dir/extracted/src"
-version="$(python3 - <<PY
-from pathlib import Path
-import re
-text = Path('$tmp_dir/extracted/pyproject.toml').read_text(encoding='utf-8')
-match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
-print(match.group(1) if match else '$timestamp')
-PY
-)"
-release_dir="$APP_ROOT/releases/$version-$timestamp"
-mkdir -p "$release_dir"
-cp -a "$tmp_dir/extracted/." "$release_dir/"
-
-export PYTHONPATH="$release_dir/src"
-cd "$release_dir"
-python3 -m triview_workspace.cli \
-  --diagnostic \
-  --workspace "$release_dir/config/workspaces/three-mobile.json" \
-  --data-file "$tmp_dir/diagnostic-workspaces.json" >/dev/null
-
-temp_link="$APP_ROOT/.current-$timestamp"
-ln -s "$release_dir" "$temp_link"
-mv -Tf "$temp_link" "$CURRENT_LINK"
-printf '%s\n' "$version" > "$APP_ROOT/VERSION"
-
-BIN_DIR="$HOME/.local/bin"
+ROLLBACK_LAUNCHER="$HOME/.local/bin/triview-workspace-rollback"
 APPLICATIONS_DIR="$HOME/.local/share/applications"
-mkdir -p "$BIN_DIR" "$APPLICATIONS_DIR"
-cat > "$BIN_DIR/triview-workspace" <<EOF
+ROLLBACK_DESKTOP="$APPLICATIONS_DIR/triview-workspace-rollback.desktop"
+mkdir -p "$HOME/.local/bin" "$APPLICATIONS_DIR"
+
+cat > "$ROLLBACK_LAUNCHER" <<LAUNCHER
 #!/usr/bin/env bash
 set -Eeuo pipefail
-APP_ROOT="$APP_ROOT"
-CURRENT="\$APP_ROOT/current"
-export PYTHONPATH="\$CURRENT/src\${PYTHONPATH:+:\$PYTHONPATH}"
-cd "\$CURRENT"
-exec python3 -m triview_workspace.cli "\$@"
-EOF
-chmod +x "$BIN_DIR/triview-workspace"
-cat > "$APPLICATIONS_DIR/triview-workspace.desktop" <<EOF
+exec "$TARGET_ROLLBACK" "\$@"
+LAUNCHER
+chmod +x "$ROLLBACK_LAUNCHER"
+
+terminal_flag="true"
+rollback_exec="$ROLLBACK_LAUNCHER"
+if command -v x-terminal-emulator >/dev/null 2>&1; then
+  rollback_exec="$(command -v x-terminal-emulator) -e $ROLLBACK_LAUNCHER"
+  terminal_flag="false"
+elif command -v gnome-terminal >/dev/null 2>&1; then
+  rollback_exec="$(command -v gnome-terminal) -- $ROLLBACK_LAUNCHER"
+  terminal_flag="false"
+fi
+
+cat > "$ROLLBACK_DESKTOP" <<DESKTOP
 [Desktop Entry]
 Type=Application
-Name=TriView Workspace
-Comment=Plataforma modular de áreas de trabalho
-Exec=$BIN_DIR/triview-workspace
-Icon=preferences-desktop-display
-Terminal=false
+Name=Restaurar TriView Workspace
+Comment=Restaura a versão anterior do TriView sem remover dados persistentes
+Exec=$rollback_exec
+Icon=edit-undo
+Terminal=$terminal_flag
 Categories=Utility;Development;
 StartupNotify=true
-EOF
-chmod +x "$APPLICATIONS_DIR/triview-workspace.desktop"
-update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
+DESKTOP
+chmod +x "$ROLLBACK_DESKTOP"
+command -v update-desktop-database >/dev/null 2>&1 \
+  && update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
 
-log "Atualização concluída. Versão ativa: $version"
-log "Catálogo persistente preservado em: $CATALOG_FILE"
-log "Backup: $backup_dir"
-
-if ! command -v xdotool >/dev/null 2>&1; then
-  log "AVISO: xdotool não foi encontrado; o Browser Engine permanecerá indisponível."
-  log "Instale no Linux Mint/Ubuntu com: sudo apt install xdotool"
+desktop_dirs=("$HOME/Desktop" "$HOME/Área de Trabalho" "$HOME/Área de trabalho")
+if command -v xdg-user-dir >/dev/null 2>&1; then
+  detected_desktop="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
+  [[ -n "$detected_desktop" ]] && desktop_dirs=("$detected_desktop" "${desktop_dirs[@]}")
 fi
-
-if ! command -v brave-browser >/dev/null 2>&1 \
-  && ! command -v brave >/dev/null 2>&1 \
-  && ! command -v chromium >/dev/null 2>&1 \
-  && ! command -v chromium-browser >/dev/null 2>&1 \
-  && ! command -v google-chrome >/dev/null 2>&1 \
-  && ! command -v google-chrome-stable >/dev/null 2>&1; then
-  log "AVISO: nenhum navegador Brave/Chromium compatível foi encontrado."
-fi
+for desktop_dir in "${desktop_dirs[@]}"; do
+  [[ -d "$desktop_dir" ]] || continue
+  desktop_copy="$desktop_dir/Restaurar TriView Workspace.desktop"
+  cp -f "$ROLLBACK_DESKTOP" "$desktop_copy"
+  chmod +x "$desktop_copy"
+  command -v gio >/dev/null 2>&1 \
+    && gio set "$desktop_copy" metadata::trusted true >/dev/null 2>&1 || true
+done

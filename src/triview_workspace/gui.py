@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import logging
 
+import triview_workspace.gui_hub as _hub_gui
 import triview_workspace.gui_rc4_atomic as _atomic_gui
 from triview_workspace.engines.browser_xephyr_managed import (
     ManagedXephyrEmbeddedBraveBrowserBackend,
 )
+from triview_workspace.gui_hub_responsive import ResponsiveWorkspaceHubDialog
 from triview_workspace.runtime_observability import record_runtime_event
 
 # Keep the long-lived atomic entry point while replacing its runtime factory
@@ -15,6 +17,10 @@ from triview_workspace.runtime_observability import record_runtime_event
 _atomic_gui.XephyrEmbeddedBraveBrowserBackend = (
     ManagedXephyrEmbeddedBraveBrowserBackend
 )
+
+# gui_hub.WorkspaceWindow resolves this module global when the user opens the Hub.
+# Replace only the dialog implementation; the Hub repository and window chain remain intact.
+_hub_gui.WorkspaceHubDialog = ResponsiveWorkspaceHubDialog
 
 
 def _record_shutdown_event(event: str, **fields: object) -> None:

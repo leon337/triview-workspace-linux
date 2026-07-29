@@ -1,18 +1,33 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
-SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+EXECUTING_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+
+# Bash pode ler este arquivo progressivamente. O núcleo legado substitui
+# updater/update.sh durante a atualização; por isso o controlador precisa
+# continuar a partir de uma cópia imutável antes de chamar o núcleo.
+if [[ "${TRIVIEW_UPDATER_CONTROLLER_SNAPSHOT:-0}" != "1" ]]; then
+  snapshot="$(mktemp)"
+  cp -a "$EXECUTING_PATH" "$snapshot"
+  chmod +x "$snapshot"
+  export TRIVIEW_UPDATER_CONTROLLER_SNAPSHOT=1
+  export TRIVIEW_UPDATER_ORIGINAL_WRAPPER="$EXECUTING_PATH"
+  exec bash "$snapshot" "$@"
+fi
+
+CONTROLLER_SOURCE="$EXECUTING_PATH"
+ORIGINAL_WRAPPER="$(readlink -f "${TRIVIEW_UPDATER_ORIGINAL_WRAPPER:?caminho original ausente}")"
+SCRIPT_DIR="$(dirname "$ORIGINAL_WRAPPER")"
 CORE_SCRIPT="$SCRIPT_DIR/update-core.sh"
 APP_ROOT="${TRIVIEW_APP_ROOT:-$HOME/.local/share/triview-workspace}"
 CHANNEL_FILE="$APP_ROOT/UPDATE_CHANNEL"
 UPDATER_ROOT="$APP_ROOT/updater"
 TARGET_WRAPPER="$UPDATER_ROOT/update.sh"
 TARGET_CORE="$UPDATER_ROOT/update-core.sh"
-WRAPPER_SNAPSHOT=""
 
 cleanup() {
-  [[ -n "$WRAPPER_SNAPSHOT" ]] && rm -f "$WRAPPER_SNAPSHOT"
+  rm -f "$CONTROLLER_SOURCE" || true
+  return 0
 }
 trap cleanup EXIT
 
@@ -37,14 +52,6 @@ if ((explicit_cli_channel == 0)) \
   forwarded_args=(--stable "${forwarded_args[@]}")
 fi
 
-# O núcleo legado instala a si próprio em updater/update.sh. Quando o
-# controlador já está nesse caminho, o arquivo pode ser sobrescrito durante
-# a execução. O snapshot preserva os bytes autorizados antes de chamar o núcleo.
-if ((dry_run == 0)); then
-  WRAPPER_SNAPSHOT="$(mktemp)"
-  cp -a "$SCRIPT_PATH" "$WRAPPER_SNAPSHOT"
-fi
-
 set +e
 bash "$CORE_SCRIPT" "${forwarded_args[@]}"
 status=$?
@@ -53,11 +60,13 @@ set -e
 ((status == 0)) || exit "$status"
 ((dry_run == 0)) || exit 0
 
+# O núcleo instala a si próprio em updater/update.sh. Restauramos o
+# controlador a partir da cópia imutável e mantemos o núcleo ao lado dele.
 mkdir -p "$UPDATER_ROOT"
 if [[ "$CORE_SCRIPT" != "$TARGET_CORE" ]] && ! cmp -s "$CORE_SCRIPT" "$TARGET_CORE"; then
   cp -a "$CORE_SCRIPT" "$TARGET_CORE"
 fi
-if ! cmp -s "$WRAPPER_SNAPSHOT" "$TARGET_WRAPPER"; then
-  cp -a "$WRAPPER_SNAPSHOT" "$TARGET_WRAPPER"
+if ! cmp -s "$CONTROLLER_SOURCE" "$TARGET_WRAPPER"; then
+  cp -a "$CONTROLLER_SOURCE" "$TARGET_WRAPPER"
 fi
 chmod +x "$TARGET_WRAPPER" "$TARGET_CORE"

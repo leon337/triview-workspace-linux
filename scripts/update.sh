@@ -22,6 +22,8 @@ CORE_SCRIPT="$SCRIPT_DIR/update-core.sh"
 APP_ROOT="${TRIVIEW_APP_ROOT:-$HOME/.local/share/triview-workspace}"
 CHANNEL_FILE="$APP_ROOT/UPDATE_CHANNEL"
 UPDATER_ROOT="$APP_ROOT/updater"
+ROLLBACK_SOURCE="$SCRIPT_DIR/stable-rollback.sh"
+TARGET_ROLLBACK="$UPDATER_ROOT/stable-rollback.sh"
 STATE_BASE="${XDG_STATE_HOME:-$HOME/.local/state}"
 STATE_ROOT="$STATE_BASE/triview-workspace"
 LIFECYCLE_LOCK="$STATE_ROOT/lifecycle.lock"
@@ -120,7 +122,7 @@ done
 APP_LAUNCHER="$BIN_DIR/triview-workspace"
 UPDATE_LAUNCHER="$BIN_DIR/triview-workspace-update"
 DIAGNOSE_LAUNCHER="$BIN_DIR/triview-workspace-diagnose"
-ROLLBACK_LAUNCHER="$BIN_DIR/triview-workspace-rollback"
+ROLLBACK_LAUNCHER="$HOME/.local/bin/triview-workspace-rollback"
 
 cat > "$APP_LAUNCHER" <<LAUNCHER
 #!/usr/bin/env bash

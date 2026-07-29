@@ -2,83 +2,69 @@
 
 Plataforma modular de áreas de trabalho para Linux.
 
-O produto gerencia **workspaces compostos por painéis independentes**. Navegadores, aplicações, terminais, PDFs e componentes futuros são resolvidos por adaptadores, sem limitar o núcleo ao caso inicial de três janelas.
+## Estado deste candidato
 
-## Estado atual
+- versão candidata: `0.9.0`;
+- `main`: estável em `0.3.0`;
+- Browser e workspaces persistentes: validados;
+- Application, Terminal, PDF, Capture e Recording Engines: integrados ao trem;
+- Plugin Engine: candidato LEA-202;
+- Layout, Session e Hub: LEA-203–205.
 
-- Versão funcional estável: `0.3.3`.
-- Interface gráfica responsiva: disponível.
-- Browser Engine: validado no Linux Mint/X11.
-- Workspaces persistentes: disponíveis.
-- Criação, cópia, edição, renomeação, seleção e exclusão: disponíveis.
-- Restauração automática do último workspace: disponível.
-- Migração, backup, restauração e atualização versionada: disponíveis.
-- Canal controlado de testes: preparado e fixado inicialmente na LEA-197.
-- Resultado do atualizador: exibido em caixa gráfica, salvo em log e mantido no Terminal quando aplicável.
-- Atalhos antigos da Área de Trabalho: substituídos automaticamente pela versão canônica.
-- Application Engine, captura, gravação e plugins: permanecem fora da `main` até o aceite sequencial.
+## Plugins declarativos
 
-A versão `0.3.3` mantém o comportamento funcional da `0.3.0`, preserva o canal controlado introduzido na `0.3.1` e corrige a distribuição do atualizador em atalhos antigos da Área de Trabalho. O catálogo versionado continua em `~/.local/share/triview-workspace/workspaces.json` ou no diretório indicado por `XDG_DATA_HOME`.
+Plugins vivem em:
 
-## Gerenciar workspaces
-
-A barra superior permite:
-
-- selecionar um workspace salvo;
-- criar uma cópia do workspace atual;
-- renomear o workspace;
-- editar título, tipo e destino dos painéis;
-- selecionar layouts disponíveis;
-- excluir workspaces, mantendo sempre ao menos um;
-- restaurar automaticamente o último workspace utilizado na próxima abertura.
-
-Quando o catálogo JSON está corrompido, o arquivo é preservado com sufixo `corrupt-<data>` e a aplicação restaura o workspace padrão, informando o ocorrido.
-
-## Requisitos do Browser Engine inicial
-
-- Linux com sessão gráfica e variável `DISPLAY`;
-- Brave, Chromium ou Google Chrome compatível;
-- `xdotool` instalado.
-
-No Linux Mint/Ubuntu:
-
-```bash
-sudo apt update
-sudo apt install xdotool
+```text
+${XDG_DATA_HOME:-~/.local/share}/triview-workspace/plugins/<id>/manifest.json
 ```
 
-O backend inicial não oferece incorporação nativa em Wayland.
+Eles não carregam código Python. Cada manifesto declara um comando versionado e permanece desativado até autorização explícita no botão **Plugins**.
 
-## Executar localmente
+Painel:
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e '.[dev]'
-triview-workspace
+```text
+Tipo: custom
+Destino: plugin:text-editor
 ```
 
-Diagnóstico do último workspace persistido, sem abrir a interface:
+## Instalar o candidato e o exemplo
 
 ```bash
-triview-workspace --diagnostic
+bash scripts/install-candidate.sh \
+  LEA-202 \
+  leonpcsn/lea-202-implementar-plugin-engine-seguro
+
+bash scripts/install-example-plugin.sh
 ```
 
-Abrir e importar explicitamente um bundle legado:
+O atalho criado é **TriView Workspace — LEA-202**. O exemplo usa o editor `xed`, quando instalado.
 
-```bash
-triview-workspace --workspace config/workspaces/three-mobile.json
-```
+## Segurança
 
-Usar um catálogo alternativo para testes:
-
-```bash
-triview-workspace --data-file /tmp/triview-workspaces.json
-```
+- manifesto e API versionados;
+- ativação explícita;
+- IDs e diretórios validados;
+- symlinks ignorados;
+- execução sem shell;
+- argumentos adicionais somente quando autorizados;
+- falha isolada com diagnóstico.
 
 ## Documentação
 
-- [Índice central](docs/README.md)
-- [Visão do produto](docs/product/VISION.md)
-- [Estratégia de atualização](docs/updater.md)
+- [Índice](docs/README.md)
+- [Roadmap](docs/product/ROADMAP.md)
+- [Trem LEA-197–205](docs/factory/DEVELOPMENT_TRAIN_LEA-197-205.md)
+- [LEA-197](docs/work/LEA-197.md)
+- [LEA-198](docs/work/LEA-198.md)
+- [LEA-199](docs/work/LEA-199.md)
+- [LEA-200](docs/work/LEA-200.md)
+- [LEA-201](docs/work/LEA-201.md)
+- [LEA-202](docs/work/LEA-202.md)
+
+## Rastreabilidade
+
+- LEA-191–196: base validada;
+- LEA-197–201: painéis, captura e gravação integrados ao trem;
+- LEA-202: Plugin Engine seguro;
+- LEA-203–205: etapas seguintes.

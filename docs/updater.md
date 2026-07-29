@@ -1,110 +1,81 @@
 # Estratégia de atualização
 
-## Objetivo operacional
+## Versão principal
 
-O usuário atualiza o TriView pelo atalho **Atualizar TriView Workspace**. O fluxo não exige clonagem, troca manual de branch ou execução de instaladores de candidato.
-
-A atualização possui dois canais:
-
-- `stable`: release oficial mais recente ou `main` quando ainda não existe release;
-- `testing`: somente o candidato explicitamente autorizado no manifesto controlado.
-
-## Bootstrap 0.3.1
-
-A versão `0.3.1` corrige somente o mecanismo de atualização. Ela não promove as funcionalidades das LEAs 197–205 para a `main`.
-
-Na primeira execução do atalho antigo, a `main` atualizada instala o bootstrap `0.3.1`. Na execução seguinte, o novo controlador consulta o canal de testes e instala apenas a LEA autorizada.
-
-## Controlador persistente
-
-O controlador passa a viver fora das releases:
+A instalação principal usa:
 
 ```text
-~/.local/share/triview-workspace/updater/update.sh
-```
-
-O atalho gráfico chama esse arquivo persistente. Assim, instalar uma branch candidata não substitui o mecanismo responsável por selecionar a próxima LEA.
-
-O canal local fica em:
-
-```text
-~/.local/share/triview-workspace/UPDATE_CHANNEL
-```
-
-O candidato ativo fica registrado em:
-
-```text
-~/.local/share/triview-workspace/ACTIVE-CANDIDATE.json
-```
-
-## Canal de testes controlado
-
-O manifesto oficial fica em:
-
-```text
-config/update-channels/testing.json
-```
-
-Ele contém:
-
-- identificador da LEA;
-- versão esperada;
-- commit SHA completo e imutável;
-- módulo gráfico autorizado;
-- estado operacional.
-
-O atualizador rejeita:
-
-- manifesto desativado ou incompleto;
-- referência que não seja um SHA completo;
-- versão diferente da autorizada;
-- módulo sem função `main()`;
-- pacote sem `pyproject.toml` ou código da aplicação.
-
-## Fluxo de uma LEA por vez
-
-```text
-liberar LEA no manifesto
-→ usuário clica em Atualizar
-→ backup da versão e catálogo
-→ download do commit fixado
-→ compilação e diagnóstico isolado
-→ validação do módulo gráfico
-→ troca atômica do link current
-→ teste no Linux Mint
-→ registro de PASS ou FAIL
-→ somente depois liberar a próxima LEA
-```
-
-Enquanto o manifesto continuar apontando para o mesmo commit, novos cliques não reinstalam o candidato.
-
-## Preservação e rollback
-
-Antes da troca, o atualizador copia:
-
-```text
+~/.local/share/triview-workspace/releases/<versão>
 ~/.local/share/triview-workspace/current
-~/.local/share/triview-workspace/workspaces.json
 ```
 
-para:
+O atualizador `scripts/update.sh` baixa a release mais recente ou a branch `main`, valida o pacote, cria backup e troca o link `current` somente após sucesso.
+
+Dados persistentes ficam fora das releases:
 
 ```text
-~/.local/share/triview-workspace-backups/update-<data>/
+${XDG_DATA_HOME:-$HOME/.local/share}/triview-workspace/workspaces.json
 ```
 
-O catálogo persistente permanece fora das releases. O link `current` é trocado somente após compilação, diagnóstico e validação do módulo.
-
-## Candidato inicialmente autorizado
-
-O canal de testes começa bloqueado na sequência da fábrica:
+Antes da atualização, o catálogo é copiado para:
 
 ```text
-LEA-197 — Application Engine e Panel Runtime — 0.4.0
+~/.local/share/triview-workspace-backups/update-<data>/workspaces.json
 ```
 
-A LEA-198 não deve ser liberada antes do aceite ou da correção da LEA-197.
+O diagnóstico do pacote baixado usa um catálogo temporário para não alterar o último workspace do usuário.
+
+## Candidatos do trem LEA-197–205
+
+Candidatos não são instalados sobre a versão principal. O script `scripts/install-candidate.sh` recebe um identificador e uma branch:
+
+```bash
+bash scripts/install-candidate.sh LEA-197 \
+  leonpcsn/lea-197-implementar-application-engine-e-panel-runtime-comum
+```
+
+Cada candidato usa:
+
+```text
+~/.local/share/triview-workspace-candidates/<lea>
+~/.local/share/triview-workspace-candidate-data/<lea>
+~/.local/state/triview-workspace-candidates/<lea>
+```
+
+E cria um atalho separado:
+
+```text
+TriView Workspace — LEA-XXX
+```
+
+Consequências:
+
+- a branch `main` e seu link `current` não são modificados;
+- o catálogo da versão principal não é lido nem gravado;
+- vários candidatos podem coexistir;
+- remover um candidato não afeta a versão estável;
+- uma LEA pode ser testada antes de ser promovida.
 
 ## Requisitos do sistema
 
-O atualizador não instala pacotes do sistema sem autorização. A incorporação X11 utiliza `xdotool`. Sem ele, aplicações podem abrir externamente, mas não serão incorporadas ao painel.
+O instalador não instala pacotes do sistema sem autorização.
+
+Browser e incorporação de aplicações em X11 utilizam `xdotool`:
+
+```bash
+sudo apt update
+sudo apt install xdotool
+```
+
+Sem `xdotool`:
+
+- Browser Engine fica indisponível;
+- Application Engine pode abrir programas externamente, mas não incorporá-los.
+
+Programas configurados em painéis `application` também precisam estar instalados e executáveis.
+
+## Migração e restauração
+
+A primeira passagem da instalação legada usa o migrador oficial. `scripts/restore-latest.sh` restaura a cópia mais recente da aplicação e das configurações registradas nos backups.
+
+Candidatos são intencionalmente descartáveis e não participam da restauração da versão principal.

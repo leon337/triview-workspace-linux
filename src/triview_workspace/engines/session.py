@@ -1,23 +1,33 @@
-"""Workspace session orchestration over the persistent repository."""
+"""Workspace and operational-session orchestration over persistent repositories."""
 
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any, Mapping
 
 from triview_workspace.domain import LayoutSpec, PanelSpec, WorkspaceSpec
 from triview_workspace.infrastructure import (
+    SessionLoadResult,
+    SessionStateRepository,
     WorkspaceCatalog,
     WorkspaceRepository,
     WorkspaceStorageError,
+    snapshot_from_workspace,
 )
 
 
 class WorkspaceSessionEngine:
-    """Manage the active workspace without coupling persistence to Tkinter."""
+    """Manage structural and operational state without coupling persistence to Tkinter."""
 
-    def __init__(self, repository: WorkspaceRepository, catalog: WorkspaceCatalog) -> None:
+    def __init__(
+        self,
+        repository: WorkspaceRepository,
+        catalog: WorkspaceCatalog,
+        session_repository: SessionStateRepository | None = None,
+    ) -> None:
         self.repository = repository
         self.catalog = catalog
+        self.session_repository = session_repository or SessionStateRepository()
 
     @property
     def current_workspace(self) -> WorkspaceSpec:
@@ -26,6 +36,28 @@ class WorkspaceSessionEngine:
     @property
     def current_layout(self) -> LayoutSpec:
         return self.catalog.layout_by_id(self.current_workspace.layout_id)
+
+    def load_session(self, workspace_id: str | None = None) -> SessionLoadResult:
+        target = workspace_id or self.catalog.active_workspace_id
+        self.catalog.workspace_by_id(target)
+        return self.session_repository.load(target)
+
+    def checkpoint(
+        self,
+        workspace_id: str,
+        *,
+        focused_panel_id: str | None = None,
+        view_mode: str = "all",
+        runtime_states: Mapping[str, Mapping[str, Any]] | None = None,
+    ) -> None:
+        workspace = self.catalog.workspace_by_id(workspace_id)
+        snapshot = snapshot_from_workspace(
+            workspace,
+            focused_panel_id=focused_panel_id,
+            view_mode=view_mode,
+            runtime_states=runtime_states,
+        )
+        self.session_repository.save(snapshot)
 
     def switch(self, workspace_id: str) -> tuple[WorkspaceSpec, LayoutSpec]:
         self.catalog = self.repository.set_active(self.catalog, workspace_id)
@@ -39,6 +71,7 @@ class WorkspaceSessionEngine:
             cleaned,
             {workspace.id for workspace in self.catalog.workspaces},
         )
+        # Operational state is intentionally not copied into a duplicate.
         workspace = replace(self.current_workspace, id=workspace_id, name=cleaned)
         self.catalog = self.repository.save_workspace(self.catalog, workspace)
         return self.current_workspace, self.current_layout
@@ -99,8 +132,7 @@ class WorkspaceSessionEngine:
         return self.current_workspace, self.current_layout
 
     def delete_current(self) -> tuple[WorkspaceSpec, LayoutSpec]:
-        self.catalog = self.repository.delete_workspace(
-            self.catalog,
-            self.current_workspace.id,
-        )
+        deleted_id = self.current_workspace.id
+        self.catalog = self.repository.delete_workspace(self.catalog, deleted_id)
+        self.session_repository.delete(deleted_id)
         return self.current_workspace, self.current_layout

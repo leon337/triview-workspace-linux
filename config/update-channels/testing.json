@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "channel": "testing",
+  "enabled": true,
+  "candidate_id": "LEA-197",
+  "version": "0.3.3",
+  "ref": "c662c36cc46a5ca7bd69eeca0ed1e08d14138ce7",
+  "module": "triview_workspace.cli",
+  "status": "updater-desktop-shortcut-hotfix"
+}

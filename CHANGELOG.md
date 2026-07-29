@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1 — Canal controlado de testes
+
+- adiciona canais `stable` e `testing` ao atualizador;
+- fixa o canal de testes em um commit SHA completo da LEA-197;
+- instala um controlador persistente fora dos diretórios de release;
+- mantém o atalho **Atualizar TriView Workspace** independente da versão candidata ativa;
+- valida manifesto, versão, módulo gráfico, compilação e diagnóstico antes da troca;
+- preserva backup da versão atual e do catálogo persistente;
+- evita reinstalar o mesmo candidato quando o commit autorizado já está ativo;
+- adiciona testes de manifesto, resolução do candidato e dry-run;
+- não promove funcionalidades das LEAs 197–205 para a `main`.
+
 ## 0.3.0 — Workspaces persistentes
 
 - adiciona catálogo JSON com `schema_version` explícito;
@@ -78,7 +90,3 @@ Esta mudança não alterou a versão funcional da aplicação.
 
 - estrutura modular inicial;
 - modelos de workspace, layout e painel;
-- Layout Engine proporcional;
-- registro extensível de adaptadores;
-- configuração de exemplo com três painéis móveis;
-- testes automatizados e documentação arquitetural.

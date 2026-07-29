@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import triview_workspace.gui_rc4_atomic as _atomic_gui
 from triview_workspace.engines.browser_xephyr_managed import (
@@ -31,8 +32,6 @@ def _record_shutdown_event(event: str, **fields: object) -> None:
 class WorkspaceWindow(_AtomicWorkspaceWindow):
     """Finalize the original Session Engine before the hardened RC4 shutdown."""
 
-    _triview_clean_shutdown_hook = True
-
     def _close(self) -> None:
         if not self._closed:
             recovery_engine = getattr(self, "recovery_engine", None)
@@ -57,15 +56,24 @@ class WorkspaceWindow(_AtomicWorkspaceWindow):
         super()._close()
 
 
-# gui_rc4_atomic.main resolves this module global at call time. Replacing it here
-# preserves the approved main routine and runtime while adding the missing hook.
-_atomic_gui.WorkspaceWindow = WorkspaceWindow
+def main(
+    workspace_path: Path | None = None,
+    data_file: Path | None = None,
+) -> int:
+    """Run the approved atomic main with the clean-shutdown wrapper installed."""
+
+    previous_window = _atomic_gui.WorkspaceWindow
+    _atomic_gui.WorkspaceWindow = WorkspaceWindow
+    try:
+        return _atomic_gui.main(workspace_path, data_file)
+    finally:
+        _atomic_gui.WorkspaceWindow = previous_window
+
 
 APP_TITLE = _atomic_gui.APP_TITLE
 DEFAULT_WORKSPACE = _atomic_gui.DEFAULT_WORKSPACE
 PanelCard = _atomic_gui.PanelCard
 PanelEditorDialog = _atomic_gui.PanelEditorDialog
-main = _atomic_gui.main
 
 __all__ = [
     "APP_TITLE",

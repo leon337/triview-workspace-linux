@@ -29,7 +29,9 @@ jobs:
           BRANCH="release/reconcile-main-1.0.0a1"
 
           git fetch origin main train/road-to-1.0 "$BRANCH"
-          test "$(git rev-parse origin/train/road-to-1.0)" = "$TRAIN_SHA"
+          git merge-base --is-ancestor "$TRAIN_SHA" origin/train/road-to-1.0
+          train_delta="$(git diff --name-only "$TRAIN_SHA"..origin/train/road-to-1.0 | sort)"
+          test "$train_delta" = ".github/workflows/reconcile-main.yml"
           test "$(git rev-parse origin/main)" = "$MAIN_SHA"
           EXPECTED_REMOTE_SHA="$(git rev-parse "origin/$BRANCH")"
           printf '%s\n' "$EXPECTED_REMOTE_SHA" > /tmp/expected-remote-sha
@@ -129,8 +131,8 @@ EOF
 
           - publicação da branch: \`$PUBLISH_OUTCOME\`;
           - merge commit: \`${MERGE_SHA:-não gerado}\`;
-          - train esperado: \`8926e6a01c69e84a96b418ffefb934bb74288118\`;
-          - main esperada: \`77c8f3fb51966b33dd47f0aaa3b4511492125f7c\`.
+          - train funcional: \`8926e6a01c69e84a96b418ffefb934bb74288118\`;
+          - main preservada: \`77c8f3fb51966b33dd47f0aaa3b4511492125f7c\`.
 
           Quando a publicação estiver como \`success\`, a branch temporária conterá somente o merge reconciliado; o workflow temporário não fará parte da árvore final.
           EOF

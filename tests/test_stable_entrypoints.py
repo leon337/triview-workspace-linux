@@ -35,6 +35,14 @@ def _base_environment(tmp_path: Path) -> tuple[dict[str, str], Path, Path, Path]
     return env, app_root, data_home, state_home
 
 
+def _write_candidate_launch_stub(release: Path) -> None:
+    scripts = release / "scripts"
+    scripts.mkdir(parents=True, exist_ok=True)
+    launcher = scripts / "candidate-launch.sh"
+    launcher.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    launcher.chmod(0o755)
+
+
 def test_stable_launcher_sets_runtime_provenance_and_forwards_arguments(
     tmp_path: Path,
 ) -> None:
@@ -152,6 +160,7 @@ def test_stable_diagnostic_controller_returns_one_sanitized_package(
     release = app_root / "releases" / "1.0.0a3"
     package = release / "src" / "triview_workspace"
     package.mkdir(parents=True)
+    _write_candidate_launch_stub(release)
     (package / "__init__.py").write_text("", encoding="utf-8")
     (package / "diagnostic_blackbox_xtest.py").write_text(
         """from __future__ import annotations
@@ -198,3 +207,83 @@ print(archive)
     assert archives[0].is_file()
     assert "Pacote de diagnóstico estável:" in completed.stdout
     assert str(archives[0]) in completed.stdout
+
+
+def test_stable_diagnostic_refuses_an_existing_application_and_emits_contingency(
+    tmp_path: Path,
+) -> None:
+    env, app_root, _data_home, state_home = _base_environment(tmp_path)
+    release = app_root / "releases" / "1.0.0a3"
+    package = release / "src" / "triview_workspace"
+    package.mkdir(parents=True)
+    _write_candidate_launch_stub(release)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "diagnostic_blackbox_xtest.py").write_text(
+        "raise SystemExit(88)\n",
+        encoding="utf-8",
+    )
+    (package / "diagnostic_fallback_shareable.py").write_text(
+        """from __future__ import annotations
+
+import pathlib
+import sys
+
+output_dir = pathlib.Path(sys.argv[sys.argv.index("--output-dir") + 1])
+output_dir.mkdir(parents=True, exist_ok=True)
+archive = output_dir / "stable-contingency.zip"
+archive.write_bytes(b"PK\\x05\\x06" + b"\\x00" * 18)
+print(archive)
+""",
+        encoding="utf-8",
+    )
+    (app_root / "current").symlink_to(release)
+    lock_dir = state_home / "triview-workspace"
+    lock_dir.mkdir(parents=True)
+    lock_file = lock_dir / "app.lock"
+    ready = tmp_path / "diagnostic-lock-ready"
+    holder = subprocess.Popen(
+        [
+            "flock",
+            str(lock_file),
+            "bash",
+            "-c",
+            'touch "$1"; sleep 30',
+            "holder",
+            str(ready),
+        ],
+        start_new_session=True,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not ready.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert ready.exists()
+        env["TRIVIEW_DIAGNOSTIC_NO_OPEN"] = "1"
+        completed = subprocess.run(
+            ["bash", str(STABLE_DIAGNOSE)],
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert completed.returncode == 1
+        assert "Pacote de contingência estável:" in completed.stdout
+        assert "TriView já está aberto" in (
+            completed.stdout
+            + (
+                state_home
+                / "triview-workspace"
+                / "diagnostic-blackbox.stderr.log"
+            ).read_text(encoding="utf-8")
+            if (
+                state_home
+                / "triview-workspace"
+                / "diagnostic-blackbox.stderr.log"
+            ).exists()
+            else completed.stdout
+        )
+        assert list((lock_dir / "diagnostics").glob("stable-contingency.zip"))
+    finally:
+        if holder.poll() is None:
+            os.killpg(holder.pid, signal.SIGTERM)
+            holder.wait(timeout=5)

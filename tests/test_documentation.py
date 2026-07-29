@@ -89,3 +89,15 @@ def test_release_documentation_identifies_1_0_0a2_and_safe_lifecycle() -> None:
     assert "`stable` é o canal padrão" in updater
     assert "O canal de testes nunca é selecionado implicitamente" in updater
     assert "preserva integralmente o catálogo" in updater
+
+
+def test_release_version_bump_preserves_packaging_and_quality_configuration() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert 'version = "1.0.0a2"' in pyproject
+    assert "[tool.setuptools.packages.find]" in pyproject
+    assert 'where = ["src"]' in pyproject
+    assert "[tool.pytest.ini_options]" in pyproject
+    assert 'testpaths = ["tests"]' in pyproject
+    assert "[tool.ruff]" in pyproject
+    assert 'target-version = "py311"' in pyproject

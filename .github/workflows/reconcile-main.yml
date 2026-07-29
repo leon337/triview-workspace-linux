@@ -1,4 +1,4 @@
-name: Reconcile main and validate
+name: Diagnose main reconciliation
 
 on:
   push:
@@ -6,139 +6,133 @@ on:
       - release/reconcile-main-1.0.0a1
 
 permissions:
-  contents: write
+  contents: read
   issues: write
   pull-requests: write
 
 jobs:
-  reconcile:
+  diagnose:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Build deterministic merge tree
+      - name: Reconcile and record every gate
+        id: reconcile
         shell: bash
         run: |
-          set -Eeuo pipefail
+          set -uo pipefail
           TRAIN_SHA="8926e6a01c69e84a96b418ffefb934bb74288118"
           MAIN_SHA="77c8f3fb51966b33dd47f0aaa3b4511492125f7c"
-          BRANCH="release/reconcile-main-1.0.0a1"
+          report=/tmp/reconcile-diagnostic.md
+          overall=0
 
-          git fetch origin main train/road-to-1.0 "$BRANCH"
-          test "$(git rev-parse origin/train/road-to-1.0)" = "$TRAIN_SHA"
-          test "$(git rev-parse origin/main)" = "$MAIN_SHA"
+          {
+            echo '## Diagnóstico da resolução de conflitos'
+            echo
+            echo '```text'
+          } > "$report"
 
-          git reset --hard "$TRAIN_SHA"
+          run_gate() {
+            local name="$1"
+            shift
+            "$@" >> "$report" 2>&1
+            local status=$?
+            printf '%s=%s\n' "$name" "$status" >> "$report"
+            if ((status != 0)); then overall=1; fi
+            return 0
+          }
+
+          run_gate fetch git fetch origin main train/road-to-1.0
+          run_gate verify_train test "$(git rev-parse origin/train/road-to-1.0 2>/dev/null)" = "$TRAIN_SHA"
+          run_gate verify_main test "$(git rev-parse origin/main 2>/dev/null)" = "$MAIN_SHA"
+          run_gate reset git reset --hard "$TRAIN_SHA"
+
           git config user.name "TriView Release Bot"
           git config user.email "actions@users.noreply.github.com"
 
-          set +e
-          git merge --no-commit --no-ff "$MAIN_SHA"
+          git merge --no-commit --no-ff "$MAIN_SHA" >> "$report" 2>&1
           merge_status=$?
-          set -e
-          test "$merge_status" -eq 1
+          echo "merge_status=$merge_status" >> "$report"
 
-          expected_conflicts="$(cat <<'EOF'
-CHANGELOG.md
+          actual_conflicts="$(git diff --name-only --diff-filter=U | sort)"
+          echo 'conflicts_begin' >> "$report"
+          printf '%s\n' "$actual_conflicts" >> "$report"
+          echo 'conflicts_end' >> "$report"
+
+          expected_conflicts="CHANGELOG.md
 README.md
 docs/updater.md
 pyproject.toml
-src/triview_workspace/__init__.py
-EOF
-)"
-          actual_conflicts="$(git diff --name-only --diff-filter=U | sort)"
-          test "$actual_conflicts" = "$expected_conflicts"
+src/triview_workspace/__init__.py"
+          if [[ "$actual_conflicts" == "$expected_conflicts" ]]; then
+            echo 'conflict_inventory=0' >> "$report"
+          else
+            echo 'conflict_inventory=1' >> "$report"
+            overall=1
+          fi
 
-          # The accepted train owns release identity and current documentation.
-          # The main-only updater code, workflow, manifest and tests already merge cleanly.
           git checkout --ours -- \
             CHANGELOG.md \
             README.md \
             docs/updater.md \
             pyproject.toml \
-            src/triview_workspace/__init__.py
+            src/triview_workspace/__init__.py >> "$report" 2>&1
+          checkout_status=$?
+          echo "checkout_ours=$checkout_status" >> "$report"
+          ((checkout_status == 0)) || overall=1
+
           git add \
             CHANGELOG.md \
             README.md \
             docs/updater.md \
             pyproject.toml \
-            src/triview_workspace/__init__.py
+            src/triview_workspace/__init__.py >> "$report" 2>&1
+          add_status=$?
+          echo "add_resolution=$add_status" >> "$report"
+          ((add_status == 0)) || overall=1
 
-          test -z "$(git diff --name-only --diff-filter=U)"
-          test -f .github/workflows/publish-bootstrap-release.yml
-          test -f config/update-channels/testing.json
-          test -f tests/test_update_channel.py
-          bash -n scripts/update.sh
+          unresolved="$(git diff --name-only --diff-filter=U)"
+          if [[ -z "$unresolved" ]]; then
+            echo 'unresolved=0' >> "$report"
+          else
+            echo 'unresolved=1' >> "$report"
+            printf '%s\n' "$unresolved" >> "$report"
+            overall=1
+          fi
+
+          for path in \
+            .github/workflows/publish-bootstrap-release.yml \
+            config/update-channels/testing.json \
+            tests/test_update_channel.py; do
+            if [[ -f "$path" ]]; then
+              echo "present:$path=0" >> "$report"
+            else
+              echo "present:$path=1" >> "$report"
+              overall=1
+            fi
+          done
+
+          bash -n scripts/update.sh >> "$report" 2>&1
+          echo "update_syntax=$?" >> "$report"
           grep -q 'version = "1.0.0a1"' pyproject.toml
+          echo "pyproject_version=$?" >> "$report"
           grep -q '__version__ = "1.0.0a1"' src/triview_workspace/__init__.py
+          echo "package_version=$?" >> "$report"
 
-          git status --short
-      - name: Install test dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e '.[dev]'
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            xvfb xauth xdotool xinput xserver-xephyr x11-utils
-      - name: Compile
-        run: python -m compileall -q src tests
-      - name: Full test suite
-        run: pytest --junitxml=pytest-results.xml
-      - name: X11 wheel integration
-        run: |
-          xvfb-run -a env TRIVIEW_RUN_X11_INTEGRATION=1 \
-            pytest -q tests/test_browser_wheel_x11_integration.py
-      - name: XTEST device integration
-        run: |
-          xvfb-run -a bash -lc '
-            xinput list --short | tee /tmp/triview-xinput-list.txt
-            grep -qi "XTEST pointer" /tmp/triview-xinput-list.txt
-            grep -qi "XTEST keyboard" /tmp/triview-xinput-list.txt
-          '
-      - name: Xephyr containment integration
-        run: |
-          xvfb-run -a env TRIVIEW_RUN_XEPHYR_INTEGRATION=1 \
-            pytest -q tests/test_browser_xephyr_x11_integration.py
-      - name: Commit and push reconciled history
-        id: publish
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          BRANCH="release/reconcile-main-1.0.0a1"
-          EXPECTED_REMOTE_SHA="$GITHUB_SHA"
-          git commit -m "release: reconcile accepted train with main updater hotfixes"
-          MERGE_SHA="$(git rev-parse HEAD)"
-          git push \
-            --force-with-lease="refs/heads/$BRANCH:$EXPECTED_REMOTE_SHA" \
-            origin "HEAD:refs/heads/$BRANCH"
-          echo "merge_sha=$MERGE_SHA" >> "$GITHUB_OUTPUT"
-      - name: Publish reconciliation result
+          echo 'status_begin' >> "$report"
+          git status --short >> "$report" 2>&1
+          echo 'status_end' >> "$report"
+          echo "overall=$overall" >> "$report"
+          echo '```' >> "$report"
+
+          cat "$report"
+          echo "overall=$overall" >> "$GITHUB_OUTPUT"
+      - name: Publish diagnostic on PR #52
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          MERGE_SHA: ${{ steps.publish.outputs.merge_sha }}
-        run: |
-          cat > /tmp/reconciliation-pass.md <<EOF
-          ## Reconciliação automática concluída
-
-          - veredito: \`PASS_RECONCILED_TREE\`;
-          - merge commit: \`$MERGE_SHA\`;
-          - train preservado como primeiro pai;
-          - main preservada como segundo pai;
-          - hotfixes do atualizador incorporados;
-          - identidade 1.0.0a1 preservada;
-          - suíte completa, X11, XTEST e Xephyr: PASS.
-
-          A branch temporária foi substituída pelo commit de reconciliação. O workflow temporário não integra a árvore final.
-          EOF
-          gh pr comment 52 --repo "$GITHUB_REPOSITORY" --body-file /tmp/reconciliation-pass.md
-      - name: Upload test report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: reconciliation-pytest-results
-          path: pytest-results.xml
-          if-no-files-found: warn
+        run: gh pr comment 52 --repo "$GITHUB_REPOSITORY" --body-file /tmp/reconcile-diagnostic.md
+      - name: Preserve failure signal
+        if: steps.reconcile.outputs.overall != '0'
+        run: exit 1

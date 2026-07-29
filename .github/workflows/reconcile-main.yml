@@ -1,0 +1,46 @@
+name: Reconcile main inspection
+
+on:
+  push:
+    branches:
+      - release/reconcile-main-1.0.0a1
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Inspect frozen reconciliation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          TRAIN_SHA="8926e6a01c69e84a96b418ffefb934bb74288118"
+          MAIN_SHA="77c8f3fb51966b33dd47f0aaa3b4511492125f7c"
+
+          git fetch origin main train/road-to-1.0
+          test "$(git rev-parse origin/train/road-to-1.0)" = "$TRAIN_SHA"
+          test "$(git rev-parse origin/main)" = "$MAIN_SHA"
+
+          git reset --hard "$TRAIN_SHA"
+          git config user.name "TriView Release Bot"
+          git config user.email "actions@users.noreply.github.com"
+
+          set +e
+          git merge --no-commit --no-ff "$MAIN_SHA"
+          merge_status=$?
+          set -e
+
+          echo "merge_status=$merge_status"
+          echo "--- conflicted files ---"
+          git diff --name-only --diff-filter=U || true
+          echo "--- status ---"
+          git status --short
+
+          if ((merge_status != 0)); then
+            exit 1
+          fi

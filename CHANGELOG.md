@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.0a2 — Rollback estável verificável
+
+- adiciona `scripts/stable-rollback.sh` para restaurar backups controlados da instalação estável;
+- recusa backups fora da raiz oficial e valida estrutura, versão, compilação, diagnóstico e módulo principal antes da troca;
+- bloqueia rollback enquanto o TriView está ativo ou quando outra operação de ciclo de vida possui o lock;
+- cria backup pré-rollback da versão corrente e preserva o catálogo e os demais dados persistentes;
+- restaura o código em novo diretório de release e substitui o link `current` atomicamente;
+- atualiza versão e canal por escrita atômica e gera log e relatório JSON auditável;
+- permite operação inversa usando automaticamente o backup pré-rollback mais recente;
+- instala comando e atalho oficial **Restaurar TriView Workspace** junto do atualizador persistente;
+- adiciona testes de restauração, reversão, dry-run, confinamento de caminho, preservação de dados e persistência do controlador;
+- inclui o script de rollback no gate completo de publicação da release.
+
+Nenhum módulo de GUI, Browser, Xephyr, workspace ou diagnóstico funcional fisicamente aceito foi alterado.
+
 ## 1.0.0a1 — Liberação RC4 aceita
 
 - consolida a interface RC4 proporcional aprovada no Linux Mint;

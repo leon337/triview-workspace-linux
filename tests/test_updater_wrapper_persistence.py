@@ -7,30 +7,46 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WRAPPER = ROOT / "scripts" / "update.sh"
+STABLE_LAUNCH = ROOT / "scripts" / "stable-launch.sh"
+STABLE_DIAGNOSE = ROOT / "scripts" / "stable-diagnose.sh"
 ROLLBACK = ROOT / "scripts" / "stable-rollback.sh"
 
 
-def test_persistent_wrapper_survives_core_overwrite_on_every_run(tmp_path: Path) -> None:
+def test_release_owned_controller_survives_legacy_core_overwrite_on_every_run(
+    tmp_path: Path,
+) -> None:
     scripts = tmp_path / "scripts"
     scripts.mkdir()
     wrapper = scripts / "update.sh"
     core = scripts / "update-core.sh"
+    stable_launch = scripts / "stable-launch.sh"
+    stable_diagnose = scripts / "stable-diagnose.sh"
     rollback = scripts / "stable-rollback.sh"
     wrapper.write_text(WRAPPER.read_text(encoding="utf-8"), encoding="utf-8")
+    stable_launch.write_text(STABLE_LAUNCH.read_text(encoding="utf-8"), encoding="utf-8")
+    stable_diagnose.write_text(STABLE_DIAGNOSE.read_text(encoding="utf-8"), encoding="utf-8")
     rollback.write_text(ROLLBACK.read_text(encoding="utf-8"), encoding="utf-8")
     core.write_text(
         """#!/usr/bin/env bash
 set -Eeuo pipefail
+script_dir="$(dirname "$(readlink -f "$0")")"
 updater_root="$TRIVIEW_APP_ROOT/updater"
-mkdir -p "$updater_root"
+release="$TRIVIEW_APP_ROOT/releases/accepted"
+mkdir -p "$updater_root" "$release/scripts"
 cp -a "$0" "$updater_root/update.sh"
+for name in update.sh update-core.sh stable-launch.sh stable-diagnose.sh stable-rollback.sh; do
+  cp -a "$script_dir/$name" "$release/scripts/$name"
+done
+temporary="$TRIVIEW_APP_ROOT/.current-test"
+rm -f "$temporary"
+ln -s "$release" "$temporary"
+mv -Tf "$temporary" "$TRIVIEW_APP_ROOT/current"
 exit 0
 """,
         encoding="utf-8",
     )
-    wrapper.chmod(0o755)
-    core.chmod(0o755)
-    rollback.chmod(0o755)
+    for path in (wrapper, core, stable_launch, stable_diagnose, rollback):
+        path.chmod(0o755)
 
     app_root = tmp_path / "app"
     env = os.environ.copy()
@@ -38,11 +54,18 @@ exit 0
         {
             "HOME": str(tmp_path / "home"),
             "TRIVIEW_APP_ROOT": str(app_root),
+            "XDG_STATE_HOME": str(tmp_path / "state"),
             "TRIVIEW_NO_RESULT_UI": "1",
+            "TRIVIEW_NO_PAUSE": "1",
         }
     )
-    expected_wrapper = wrapper.read_text(encoding="utf-8")
-    expected_rollback = rollback.read_text(encoding="utf-8")
+    expected = {
+        "update.sh": wrapper.read_text(encoding="utf-8"),
+        "update-core.sh": core.read_text(encoding="utf-8"),
+        "stable-launch.sh": stable_launch.read_text(encoding="utf-8"),
+        "stable-diagnose.sh": stable_diagnose.read_text(encoding="utf-8"),
+        "stable-rollback.sh": rollback.read_text(encoding="utf-8"),
+    }
 
     subprocess.run(
         ["bash", str(wrapper), "--stable"],
@@ -52,25 +75,17 @@ exit 0
         text=True,
     )
 
-    persistent_wrapper = app_root / "updater" / "update.sh"
-    persistent_core = app_root / "updater" / "update-core.sh"
-    persistent_rollback = app_root / "updater" / "stable-rollback.sh"
-    assert persistent_wrapper.read_text(encoding="utf-8") == expected_wrapper
-    assert persistent_core.read_text(encoding="utf-8") == core.read_text(
-        encoding="utf-8"
-    )
-    assert persistent_rollback.read_text(encoding="utf-8") == expected_rollback
+    persistent_root = app_root / "updater"
+    for name, content in expected.items():
+        assert (persistent_root / name).read_text(encoding="utf-8") == content
 
     subprocess.run(
-        ["bash", str(persistent_wrapper), "--stable"],
+        ["bash", str(persistent_root / "update.sh"), "--stable"],
         env=env,
         check=True,
         capture_output=True,
         text=True,
     )
 
-    assert persistent_wrapper.read_text(encoding="utf-8") == expected_wrapper
-    assert persistent_core.read_text(encoding="utf-8") == core.read_text(
-        encoding="utf-8"
-    )
-    assert persistent_rollback.read_text(encoding="utf-8") == expected_rollback
+    for name, content in expected.items():
+        assert (persistent_root / name).read_text(encoding="utf-8") == content

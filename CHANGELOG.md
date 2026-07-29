@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.0a1 — Liberação RC4 aceita
+
+- consolida a interface RC4 proporcional aprovada no Linux Mint;
+- mantém workspaces vivos por `park/restore`, sem destruir ou relançar sessões ao alternar;
+- preserva PID, PGID, Window ID, conversa, rolagem e foco durante a mesma execução;
+- encaminha roda e teclado ao Browser Panel correto;
+- inicia navegadores dentro de Xephyr autenticado, impedindo exposição externa antes da incorporação;
+- adiciona diagnóstico caixa-preta sanitizado com linha do tempo correlacionada de usuário, sistema, X11 e TriView;
+- distingue eventos físicos de eventos sintéticos XTEST no veredito do scroll;
+- entrega atalhos oficiais de abertura, atualização, diagnóstico e rollback;
+- reconcilia os hotfixes históricos do atualizador de `main` sem descartar o trem aceito;
+- define `stable` como canal padrão e exige opt-in explícito para `testing`;
+- condiciona a publicação da release à suíte completa, shell, X11, XTEST e Xephyr em PASS.
+
+Aceite físico registrado: flash externo, scroll, teclado e continuidade entre workspaces em PASS.
+
 ## 0.9.0 — Plugin Engine
 
 - adiciona manifestos declarativos com esquema e API versionados;

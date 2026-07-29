@@ -1,81 +1,110 @@
 # Estratégia de atualização
 
-## Versão principal
+## Instalação principal
 
-A instalação principal usa:
+A instalação estável usa:
 
 ```text
 ~/.local/share/triview-workspace/releases/<versão>
 ~/.local/share/triview-workspace/current
 ```
 
-O atualizador `scripts/update.sh` baixa a release mais recente ou a branch `main`, valida o pacote, cria backup e troca o link `current` somente após sucesso.
-
-Dados persistentes ficam fora das releases:
+O catálogo persistente permanece fora das releases:
 
 ```text
 ${XDG_DATA_HOME:-$HOME/.local/share}/triview-workspace/workspaces.json
 ```
 
-Antes da atualização, o catálogo é copiado para:
+Antes de qualquer troca, a versão ativa e o catálogo são copiados para:
 
 ```text
-~/.local/share/triview-workspace-backups/update-<data>/workspaces.json
+~/.local/share/triview-workspace-backups/update-<data>/
 ```
 
-O diagnóstico do pacote baixado usa um catálogo temporário para não alterar o último workspace do usuário.
+A nova versão é validada em diretório isolado. O link `current` é substituído atomicamente somente depois de compilação, diagnóstico e importação do módulo principal concluírem com sucesso.
 
-## Candidatos do trem LEA-197–205
+## Controlador e núcleo
 
-Candidatos não são instalados sobre a versão principal. O script `scripts/install-candidate.sh` recebe um identificador e uma branch:
+`scripts/update.sh` é o controlador de canal. `scripts/update-core.sh` contém o atualizador legado endurecido e compatível com instalações anteriores.
+
+Depois de uma atualização bem-sucedida, os dois arquivos são instalados em:
+
+```text
+~/.local/share/triview-workspace/updater/update.sh
+~/.local/share/triview-workspace/updater/update-core.sh
+```
+
+O atalho oficial executa o controlador, mostra o resultado e grava o log em:
+
+```text
+${XDG_STATE_HOME:-$HOME/.local/state}/triview-workspace/update-<data>.log
+```
+
+## Canal stable
+
+`stable` é o canal padrão quando não existe escolha explícita por argumento, variável de ambiente ou arquivo persistido.
 
 ```bash
-bash scripts/install-candidate.sh LEA-197 \
-  leonpcsn/lea-197-implementar-application-engine-e-panel-runtime-comum
+bash scripts/update.sh --stable
 ```
 
-Cada candidato usa:
+O canal estável consulta a release mais recente. Enquanto nenhuma release existir, usa a branch `main`. Depois do sucesso, grava `stable` em:
 
 ```text
-~/.local/share/triview-workspace-candidates/<lea>
-~/.local/share/triview-workspace-candidate-data/<lea>
-~/.local/state/triview-workspace-candidates/<lea>
+~/.local/share/triview-workspace/UPDATE_CHANNEL
 ```
 
-E cria um atalho separado:
+## Canal testing
 
-```text
-TriView Workspace — LEA-XXX
+O canal de testes nunca é selecionado implicitamente. Ele exige uma destas escolhas:
+
+```bash
+bash scripts/update.sh --testing
 ```
 
-Consequências:
+```bash
+TRIVIEW_UPDATE_CHANNEL=testing bash scripts/update.sh
+```
 
-- a branch `main` e seu link `current` não são modificados;
-- o catálogo da versão principal não é lido nem gravado;
-- vários candidatos podem coexistir;
-- remover um candidato não afeta a versão estável;
-- uma LEA pode ser testada antes de ser promovida.
+ou arquivo `UPDATE_CHANNEL` contendo `testing`.
+
+Além do opt-in, o manifesto deve:
+
+- usar `schema_version: 1`;
+- declarar `channel: testing`;
+- estar explicitamente habilitado;
+- identificar candidato, versão, módulo e status;
+- fixar um commit SHA hexadecimal completo de 40 caracteres.
+
+O manifesto versionado em `config/update-channels/testing.json` fica desabilitado após a liberação 1.0.0a1. Uma nova campanha de testes deve habilitar deliberadamente um manifesto revisado e auditável.
+
+## Publicação
+
+O workflow de publicação não cria tag ou release imediatamente após o push. Primeiro executa:
+
+1. instalação das dependências de desenvolvimento;
+2. compilação de `src` e `tests`;
+3. validação sintática de todos os scripts shell;
+4. suíte pytest completa;
+5. integração real da roda em X11;
+6. presença e classificação dos dispositivos XTEST;
+7. contenção Xephyr autenticada.
+
+Somente quando o job `verify` termina em PASS o job `release` pode criar a tag `v<versão>` e a GitHub Release apontando para o SHA exato de `main`.
+
+## Restauração e rollback
+
+O atualizador preserva a versão anterior e o catálogo antes da troca. Os atalhos oficiais de rollback e os scripts de restauração operam sobre esses backups sem remover os dados persistentes do usuário.
+
+O diagnóstico do pacote baixado usa um catálogo temporário. Validar uma atualização não altera o último workspace selecionado.
 
 ## Requisitos do sistema
 
-O instalador não instala pacotes do sistema sem autorização.
-
-Browser e incorporação de aplicações em X11 utilizam `xdotool`:
+No Linux Mint/Ubuntu com X11:
 
 ```bash
 sudo apt update
-sudo apt install xdotool
+sudo apt install xdotool xauth xserver-xephyr x11-utils
 ```
 
-Sem `xdotool`:
-
-- Browser Engine fica indisponível;
-- Application Engine pode abrir programas externamente, mas não incorporá-los.
-
-Programas configurados em painéis `application` também precisam estar instalados e executáveis.
-
-## Migração e restauração
-
-A primeira passagem da instalação legada usa o migrador oficial. `scripts/restore-latest.sh` restaura a cópia mais recente da aplicação e das configurações registradas nos backups.
-
-Candidatos são intencionalmente descartáveis e não participam da restauração da versão principal.
+Também é necessário um navegador Brave, Chromium ou Google Chrome compatível. A ausência de dependências do Browser Engine deve ser informada; nunca deve transformar uma atualização parcial em versão ativa.

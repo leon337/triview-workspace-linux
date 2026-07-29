@@ -9,6 +9,12 @@ CHANNEL_FILE="$APP_ROOT/UPDATE_CHANNEL"
 UPDATER_ROOT="$APP_ROOT/updater"
 TARGET_WRAPPER="$UPDATER_ROOT/update.sh"
 TARGET_CORE="$UPDATER_ROOT/update-core.sh"
+WRAPPER_SNAPSHOT=""
+
+cleanup() {
+  [[ -n "$WRAPPER_SNAPSHOT" ]] && rm -f "$WRAPPER_SNAPSHOT"
+}
+trap cleanup EXIT
 
 [[ -f "$CORE_SCRIPT" ]] || {
   printf '[TriView Updater] ERRO: núcleo do atualizador ausente: %s\n' "$CORE_SCRIPT" >&2
@@ -31,6 +37,14 @@ if ((explicit_cli_channel == 0)) \
   forwarded_args=(--stable "${forwarded_args[@]}")
 fi
 
+# O núcleo legado instala a si próprio em updater/update.sh. Quando o
+# controlador já está nesse caminho, o arquivo pode ser sobrescrito durante
+# a execução. O snapshot preserva os bytes autorizados antes de chamar o núcleo.
+if ((dry_run == 0)); then
+  WRAPPER_SNAPSHOT="$(mktemp)"
+  cp -a "$SCRIPT_PATH" "$WRAPPER_SNAPSHOT"
+fi
+
 set +e
 bash "$CORE_SCRIPT" "${forwarded_args[@]}"
 status=$?
@@ -39,15 +53,11 @@ set -e
 ((status == 0)) || exit "$status"
 ((dry_run == 0)) || exit 0
 
-# O núcleo legado instala a si próprio como update.sh. Reaplicamos o
-# controlador e mantemos o núcleo ao lado dele para que execuções futuras
-# preservem a seleção segura de canal. Comparações de caminho e conteúdo
-# tornam a operação idempotente quando já estamos no diretório persistente.
 mkdir -p "$UPDATER_ROOT"
 if [[ "$CORE_SCRIPT" != "$TARGET_CORE" ]] && ! cmp -s "$CORE_SCRIPT" "$TARGET_CORE"; then
   cp -a "$CORE_SCRIPT" "$TARGET_CORE"
 fi
-if [[ "$SCRIPT_PATH" != "$TARGET_WRAPPER" ]] && ! cmp -s "$SCRIPT_PATH" "$TARGET_WRAPPER"; then
-  cp -a "$SCRIPT_PATH" "$TARGET_WRAPPER"
+if ! cmp -s "$WRAPPER_SNAPSHOT" "$TARGET_WRAPPER"; then
+  cp -a "$WRAPPER_SNAPSHOT" "$TARGET_WRAPPER"
 fi
 chmod +x "$TARGET_WRAPPER" "$TARGET_CORE"

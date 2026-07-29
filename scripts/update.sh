@@ -26,6 +26,8 @@ UPDATER_ROOT="$APP_ROOT/updater"
 TARGET_WRAPPER="$UPDATER_ROOT/update.sh"
 TARGET_CORE="$UPDATER_ROOT/update-core.sh"
 TARGET_ROLLBACK="$UPDATER_ROOT/stable-rollback.sh"
+STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/triview-workspace"
+LIFECYCLE_LOCK="$STATE_ROOT/lifecycle.lock"
 
 cleanup() {
   rm -f "$CONTROLLER_SOURCE" || true
@@ -41,6 +43,17 @@ trap cleanup EXIT
   printf '[TriView Updater] ERRO: rollback estável ausente: %s\n' "$ROLLBACK_SOURCE" >&2
   exit 1
 }
+command -v flock >/dev/null 2>&1 || {
+  printf '[TriView Updater] ERRO: flock não encontrado.\n' >&2
+  exit 1
+}
+
+mkdir -p "$STATE_ROOT"
+exec 9>"$LIFECYCLE_LOCK"
+if ! flock -n 9; then
+  printf '[TriView Updater] ERRO: outra operação de instalação, atualização ou rollback já está em execução.\n' >&2
+  exit 2
+fi
 
 explicit_cli_channel=0
 dry_run=0

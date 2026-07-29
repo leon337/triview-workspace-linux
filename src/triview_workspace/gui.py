@@ -59,6 +59,13 @@ else:
                             workspace_id=self.workspace.id,
                             open_panel_ids=sorted(statuses),
                         )
+
+                # Preserve the explicit RC4 bridge lifecycle contract in the
+                # effective atomic class inspected and executed by the gates.
+                bridge = getattr(self, "_wheel_bridge", None)
+                if bridge is not None:
+                    bridge.close()
+                    self._wheel_bridge = None
             super()._close()
 
     # The approved atomic main resolves WorkspaceWindow from its own module.

@@ -2,7 +2,7 @@
 
 The Browser wheel bridge forwards one physical wheel release with ``xdotool``.
 That forwarding uses the XTEST virtual pointer and is visible to ``xinput
- test-xi2`` as a second XI2 event.  This collector keeps both events for audit,
+ test-xi2`` as a second XI2 event. This collector keeps both events for audit,
 but only physical-device events participate in the one-to-one release verdict.
 """
 
@@ -70,7 +70,9 @@ def xi2_device_pair(lines: list[str]) -> tuple[int | None, int | None]:
         key, value = line.strip().split(":", 1)
         details[key.strip().casefold().replace(" ", "_")] = value.strip()
 
-    device_numbers = [int(value) for value in _INTEGER_PATTERN.findall(details.get("device", ""))]
+    device_numbers = [
+        int(value) for value in _INTEGER_PATTERN.findall(details.get("device", ""))
+    ]
     device_id = device_numbers[0] if device_numbers else None
     source_device_id = device_numbers[1] if len(device_numbers) > 1 else None
     explicit_source = _INTEGER_PATTERN.search(
@@ -90,8 +92,10 @@ def annotate_xinput_origin(
     """Attach non-sensitive XI2 origin metadata and classify XTEST events."""
 
     device_id, source_device_id = xi2_device_pair(lines)
+    origin_evidence_available = device_id is not None or source_device_id is not None
+    classifier_available = bool(synthetic_device_ids) and origin_evidence_available
     synthetic = bool(
-        synthetic_device_ids
+        classifier_available
         and (
             device_id in synthetic_device_ids
             or source_device_id in synthetic_device_ids
@@ -103,7 +107,7 @@ def annotate_xinput_origin(
         "source_device_id": source_device_id,
         "synthetic": synthetic,
         "synthetic_origin": "x11_xtest" if synthetic else None,
-        "synthetic_classifier_available": bool(synthetic_device_ids),
+        "synthetic_classifier_available": classifier_available,
     }
 
 

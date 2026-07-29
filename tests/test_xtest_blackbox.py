@@ -152,6 +152,7 @@ def _read_button_release_block(
     assert process.stdout is not None
     deadline = time.monotonic() + timeout
     block: list[str] = []
+    seen_headers: list[str] = []
     while time.monotonic() < deadline:
         readable, _writable, _errors = select.select(
             [process.stdout], [], [], min(0.25, deadline - time.monotonic())
@@ -162,14 +163,15 @@ def _read_button_release_block(
         if not line:
             break
         if line.lstrip().startswith("EVENT type"):
-            if block and "(ButtonRelease)" in block[0]:
+            if block and "ButtonRelease)" in block[0]:
                 return block
+            seen_headers.append(line.strip())
             block = [line]
         elif block:
             block.append(line)
-    if block and "(ButtonRelease)" in block[0]:
+    if block and "ButtonRelease)" in block[0]:
         return block
-    raise AssertionError("ButtonRelease XI2 não observado")
+    raise AssertionError(f"ButtonRelease XI2 não observado; headers={seen_headers!r}")
 
 
 @pytest.mark.skipif(

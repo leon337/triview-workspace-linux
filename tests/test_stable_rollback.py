@@ -96,12 +96,26 @@ def test_stable_rollback_restores_backup_and_preserves_current_user_data(
     assert (restored_target / "marker.txt").read_text(encoding="utf-8") == "previous"
     assert (app_root / "VERSION").read_text(encoding="utf-8").strip() == "1.0.0a1"
     assert (app_root / "UPDATE_CHANNEL").read_text(encoding="utf-8").strip() == "stable"
+    active = json.loads((app_root / "ACTIVE-CANDIDATE.json").read_text(encoding="utf-8"))
+    assert active["candidate_id"] == "stable-rollback"
+    assert active["version"] == "1.0.0a1"
+    assert active["status"] == "stable-rollback-restored"
     assert catalog.read_text(encoding="utf-8") == '{"preserve": true}\n'
 
     pre_backups = sorted(backup_root.glob("rollback-*"))
     assert len(pre_backups) == 1
     assert (pre_backups[0] / "current" / "marker.txt").read_text(encoding="utf-8") == "current"
     assert (pre_backups[0] / "workspaces.json").read_text(encoding="utf-8") == '{"preserve": true}\n'
+
+    transactions = sorted(
+        (state_root / "triview-workspace" / "transactions").glob(
+            "*-stable-rollback.json"
+        )
+    )
+    assert len(transactions) == 1
+    transaction = json.loads(transactions[0].read_text(encoding="utf-8"))
+    assert transaction["state"] == "committed"
+    assert transaction["version"] == "1.0.0a1"
 
     reports = sorted(
         (state_root / "triview-workspace" / "stable-rollback-reports").glob("*.json")
@@ -112,6 +126,8 @@ def test_stable_rollback_restores_backup_and_preserves_current_user_data(
     assert report["data_restored"] is False
     assert report["data_policy"] == "preserve-current-user-data"
     assert report["atomic_current_switch"] is True
+    assert Path(report["transaction"]) == transactions[0]
+    assert Path(report["active_candidate"]) == app_root / "ACTIVE-CANDIDATE.json"
 
     subprocess.run(
         ["bash", str(ROLLBACK)],
@@ -124,6 +140,8 @@ def test_stable_rollback_restores_backup_and_preserves_current_user_data(
     assert ((app_root / "current").resolve() / "marker.txt").read_text(
         encoding="utf-8"
     ) == "current"
+    active = json.loads((app_root / "ACTIVE-CANDIDATE.json").read_text(encoding="utf-8"))
+    assert active["version"] == "1.0.0a2"
     assert catalog.read_text(encoding="utf-8") == '{"preserve": true}\n'
 
 
@@ -182,10 +200,76 @@ def test_stable_rollback_dry_run_validates_without_mutation(tmp_path: Path) -> N
     assert not list(backup_root.glob("rollback-*"))
     assert not list((app_root / "releases").glob("*stable-rollback-*"))
     assert not (app_root / "VERSION").exists()
+    assert not (app_root / "ACTIVE-CANDIDATE.json").exists()
     assert catalog.read_text(encoding="utf-8") == '{"preserve": true}\n'
     assert not list(
         (state_root / "triview-workspace" / "stable-rollback-reports").glob("*.json")
     )
+    assert not list(
+        (state_root / "triview-workspace" / "transactions").glob(
+            "*-stable-rollback.json"
+        )
+    )
+
+
+def test_post_switch_metadata_failure_keeps_restored_code_and_marks_transaction(
+    tmp_path: Path,
+) -> None:
+    env, app_root, backup_root, _data_root, state_root = _environment(tmp_path)
+    current_release = app_root / "releases" / "1.0.0a2-stable"
+    _write_release(current_release, "1.0.0a2", "current")
+    (app_root / "current").symlink_to(current_release)
+    selected_backup = backup_root / "update-accepted"
+    _write_release(selected_backup / "current", "1.0.0a1", "previous")
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    counter = tmp_path / "mv-count"
+    real_mv = subprocess.run(
+        ["bash", "-lc", "command -v mv"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    fake_mv = fake_bin / "mv"
+    fake_mv.write_text(
+        f"""#!/usr/bin/env bash
+set -Eeuo pipefail
+count=0
+[[ -f {counter!s} ]] && count="$(cat {counter!s})"
+count=$((count + 1))
+printf '%s\n' "$count" > {counter!s}
+if ((count == 2)); then
+  exit 70
+fi
+exec {real_mv} "$@"
+""",
+        encoding="utf-8",
+    )
+    fake_mv.chmod(0o755)
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+
+    completed = subprocess.run(
+        ["bash", str(ROLLBACK), "--backup", str(selected_backup)],
+        cwd=ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    restored_target = (app_root / "current").resolve()
+    assert restored_target.is_dir()
+    assert (restored_target / "marker.txt").read_text(encoding="utf-8") == "previous"
+    transactions = sorted(
+        (state_root / "triview-workspace" / "transactions").glob(
+            "*-stable-rollback.json"
+        )
+    )
+    assert len(transactions) == 1
+    transaction = json.loads(transactions[0].read_text(encoding="utf-8"))
+    assert transaction["state"] == "commit_incomplete"
 
 
 def test_update_controller_installs_official_stable_rollback_shortcut() -> None:

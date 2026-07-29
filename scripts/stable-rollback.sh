@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+REPO="${TRIVIEW_REPO:-leon337/triview-workspace-linux}"
 APP_ROOT="${TRIVIEW_APP_ROOT:-$HOME/.local/share/triview-workspace}"
 BACKUP_ROOT="${TRIVIEW_BACKUP_ROOT:-$HOME/.local/share/triview-workspace-backups}"
 DATA_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}"
@@ -29,7 +30,10 @@ TRANSACTION_FILE=""
 while (($#)); do
   case "$1" in
     --backup)
-      (($# >= 2)) || { printf 'Uso: stable-rollback.sh [--backup CAMINHO] [--dry-run]\n' >&2; exit 2; }
+      (($# >= 2)) || {
+        printf 'Uso: stable-rollback.sh [--backup CAMINHO] [--dry-run]\n' >&2
+        exit 2
+      }
       BACKUP_OVERRIDE="$2"
       shift 2
       ;;
@@ -88,7 +92,6 @@ show_result() {
     && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
     zenity "$icon" --title="$title" --text="$text" --width=560 >/dev/null 2>&1 || true
   fi
-
   if [[ -t 0 ]]; then
     printf '\nPressione ENTER para fechar.\n'
     read -r _ || true
@@ -262,8 +265,67 @@ if not callable(getattr(cli, "main", None)):
 PY
 ) || fail "diagnóstico isolado do backup falhou."
 
+resolve_stable_tag_sha() {
+  local version="$1"
+  local ref_url tag_url object_type object_sha
+  local -a ref_info tag_info
+  command -v curl >/dev/null 2>&1 || return 1
+
+  ref_url="https://api.github.com/repos/$REPO/git/ref/tags/v$version"
+  mapfile -t ref_info < <(
+    curl -fsSL -H 'Accept: application/vnd.github+json' "$ref_url" \
+      | python3 -c '
+import json, sys
+payload = json.load(sys.stdin)
+obj = payload.get("object") or {}
+print(obj.get("type", ""))
+print(obj.get("sha", ""))
+'
+  ) || return 1
+  ((${#ref_info[@]} == 2)) || return 1
+  object_type="${ref_info[0]}"
+  object_sha="${ref_info[1]}"
+
+  if [[ "$object_type" == "tag" ]]; then
+    tag_url="https://api.github.com/repos/$REPO/git/tags/$object_sha"
+    mapfile -t tag_info < <(
+      curl -fsSL -H 'Accept: application/vnd.github+json' "$tag_url" \
+        | python3 -c '
+import json, sys
+payload = json.load(sys.stdin)
+obj = payload.get("object") or {}
+print(obj.get("type", ""))
+print(obj.get("sha", ""))
+'
+    ) || return 1
+    ((${#tag_info[@]} == 2)) || return 1
+    [[ "${tag_info[0]}" == "commit" ]] || return 1
+    object_sha="${tag_info[1]}"
+  elif [[ "$object_type" != "commit" ]]; then
+    return 1
+  fi
+
+  [[ "$object_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+  printf '%s\n' "$object_sha"
+}
+
+RESTORED_REF="${TRIVIEW_STABLE_REF:-}"
+RESTORED_STATUS="stable-rollback-restored"
+if [[ -n "$RESTORED_REF" && ! "$RESTORED_REF" =~ ^[0-9a-f]{40}$ ]]; then
+  log "AVISO: SHA estável fornecido é inválido; proveniência ficará pendente."
+  RESTORED_REF=""
+  RESTORED_STATUS="stable-rollback-ref-unresolved"
+elif [[ -z "$RESTORED_REF" ]]; then
+  if ! RESTORED_REF="$(resolve_stable_tag_sha "$VERSION")"; then
+    log "AVISO: tag v$VERSION não pôde ser resolvida; o rollback continuará com proveniência pendente."
+    RESTORED_REF=""
+    RESTORED_STATUS="stable-rollback-ref-unresolved"
+  fi
+fi
+
 log "Backup selecionado: $SELECTED_BACKUP"
 log "Versão validada: $VERSION"
+log "SHA restaurado: ${RESTORED_REF:-não resolvido}"
 log "Dados persistentes serão preservados: $CATALOG_FILE"
 
 if ((DRY_RUN)); then
@@ -310,7 +372,14 @@ mkdir -p "$RESTORE_DIR"
 cp -a "$TMP_DIR/restore/." "$RESTORE_DIR/"
 touch "$RESTORE_DIR/.installed"
 
-python3 - "$RESTORE_DIR/stable-release.json" "$VERSION" "$SELECTED_BACKUP" "$PRE_ROLLBACK_BACKUP" <<'PY'
+python3 - \
+  "$RESTORE_DIR/stable-release.json" \
+  "$RESTORE_DIR/candidate-release.json" \
+  "$VERSION" \
+  "$RESTORED_REF" \
+  "$RESTORED_STATUS" \
+  "$SELECTED_BACKUP" \
+  "$PRE_ROLLBACK_BACKUP" <<'PY'
 from __future__ import annotations
 
 import datetime as dt
@@ -318,17 +387,34 @@ import json
 import pathlib
 import sys
 
-path, version, selected_backup, pre_backup = sys.argv[1:]
-payload = {
+stable_path = pathlib.Path(sys.argv[1])
+candidate_path = pathlib.Path(sys.argv[2])
+version, ref, status, selected_backup, pre_backup = sys.argv[3:]
+stable_payload = {
     "schema_version": 1,
     "event": "stable_rollback_restored",
     "recorded_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     "version": version,
+    "resolved_sha": ref,
+    "status": status,
     "selected_backup": selected_backup,
     "pre_rollback_backup": pre_backup,
 }
-pathlib.Path(path).write_text(
-    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+stable_path.write_text(
+    json.dumps(stable_payload, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+candidate_payload = {
+    "schema_version": 1,
+    "candidate_id": "stable-rollback",
+    "version": version,
+    "resolved_sha": ref,
+    "source_ref": f"v{version}",
+    "module": "triview_workspace.cli",
+    "status": status,
+}
+candidate_path.write_text(
+    json.dumps(candidate_payload, ensure_ascii=False, indent=2) + "\n",
     encoding="utf-8",
 )
 PY
@@ -338,33 +424,46 @@ TEMP_CHANNEL_FILE="$APP_ROOT/.UPDATE_CHANNEL-$STAMP"
 TEMP_ACTIVE_FILE="$APP_ROOT/.ACTIVE-CANDIDATE-$STAMP.json"
 printf '%s\n' "$VERSION" > "$TEMP_VERSION_FILE"
 printf 'stable\n' > "$TEMP_CHANNEL_FILE"
-python3 - "$TEMP_ACTIVE_FILE" "$VERSION" "$SELECTED_BACKUP" <<'PY'
+python3 - \
+  "$TEMP_ACTIVE_FILE" \
+  "$VERSION" \
+  "$RESTORED_REF" \
+  "$RESTORED_STATUS" \
+  "$SELECTED_BACKUP" <<'PY'
 from __future__ import annotations
 
 import json
 import pathlib
 import sys
 
-path, version, selected_backup = sys.argv[1:]
+path = pathlib.Path(sys.argv[1])
+version, ref, status, selected_backup = sys.argv[2:]
 payload = {
     "schema_version": 1,
     "channel": "stable",
     "candidate_id": "stable-rollback",
     "version": version,
-    "ref": "",
+    "ref": ref,
     "module": "triview_workspace.cli",
-    "status": "stable-rollback-restored",
+    "status": status,
     "selected_backup": selected_backup,
 }
-pathlib.Path(path).write_text(
+path.write_text(
     json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
     encoding="utf-8",
 )
 PY
 
 TRANSACTION_FILE="$TRANSACTIONS_DIR/$STAMP-stable-rollback.json"
-python3 - "$TRANSACTION_FILE" "$CURRENT_TARGET" "$RESTORE_DIR" "$SELECTED_BACKUP" \
-  "$PRE_ROLLBACK_BACKUP" "$VERSION" <<'PY'
+python3 - \
+  "$TRANSACTION_FILE" \
+  "$CURRENT_TARGET" \
+  "$RESTORE_DIR" \
+  "$SELECTED_BACKUP" \
+  "$PRE_ROLLBACK_BACKUP" \
+  "$VERSION" \
+  "$RESTORED_REF" \
+  "$RESTORED_STATUS" <<'PY'
 from __future__ import annotations
 
 import datetime as dt
@@ -372,7 +471,16 @@ import json
 import pathlib
 import sys
 
-path, old_current, new_current, selected_backup, pre_backup, version = sys.argv[1:]
+(
+    path,
+    old_current,
+    new_current,
+    selected_backup,
+    pre_backup,
+    version,
+    ref,
+    status,
+) = sys.argv[1:]
 payload = {
     "schema_version": 1,
     "event": "stable_rollback_transaction",
@@ -383,6 +491,8 @@ payload = {
     "selected_backup": selected_backup,
     "pre_rollback_backup": pre_backup,
     "version": version,
+    "ref": ref,
+    "provenance_status": status,
 }
 pathlib.Path(path).write_text(
     json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
@@ -423,9 +533,19 @@ temporary.replace(path)
 PY
 
 REPORT="$REPORTS_DIR/$STAMP-rollback.json"
-python3 - "$REPORT" "$CURRENT_TARGET" "$RESTORE_DIR" "$SELECTED_BACKUP" \
-  "$PRE_ROLLBACK_BACKUP" "$CATALOG_FILE" "$LOG_FILE" "$VERSION" \
-  "$TRANSACTION_FILE" "$ACTIVE_CANDIDATE_FILE" <<'PY'
+python3 - \
+  "$REPORT" \
+  "$CURRENT_TARGET" \
+  "$RESTORE_DIR" \
+  "$SELECTED_BACKUP" \
+  "$PRE_ROLLBACK_BACKUP" \
+  "$CATALOG_FILE" \
+  "$LOG_FILE" \
+  "$VERSION" \
+  "$RESTORED_REF" \
+  "$RESTORED_STATUS" \
+  "$TRANSACTION_FILE" \
+  "$ACTIVE_CANDIDATE_FILE" <<'PY'
 from __future__ import annotations
 
 import datetime as dt
@@ -442,6 +562,8 @@ import sys
     catalog,
     log_path,
     version,
+    ref,
+    status,
     transaction,
     active_candidate,
 ) = sys.argv[1:]
@@ -455,6 +577,8 @@ payload = {
     "pre_rollback_backup": pre_backup,
     "catalog_path": catalog,
     "version": version,
+    "ref": ref,
+    "provenance_status": status,
     "data_restored": False,
     "data_policy": "preserve-current-user-data",
     "atomic_current_switch": True,
@@ -472,6 +596,7 @@ RESTORE_DIR=""
 RESULT_SUMMARY="Versão restaurada: $VERSION. Dados preservados. Relatório: $REPORT"
 log "Rollback concluído."
 log "Versão ativa: $VERSION"
+log "SHA ativo: ${RESTORED_REF:-não resolvido}"
 log "Dados preservados: $CATALOG_FILE"
 log "Backup pré-rollback: $PRE_ROLLBACK_BACKUP"
 log "Transação: $TRANSACTION_FILE"

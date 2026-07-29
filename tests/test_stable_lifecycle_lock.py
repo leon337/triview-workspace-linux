@@ -9,6 +9,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 UPDATER = ROOT / "scripts" / "update.sh"
+STABLE_LAUNCH = ROOT / "scripts" / "stable-launch.sh"
+STABLE_DIAGNOSE = ROOT / "scripts" / "stable-diagnose.sh"
 ROLLBACK = ROOT / "scripts" / "stable-rollback.sh"
 
 
@@ -24,13 +26,16 @@ def test_stable_update_and_rollback_refuse_the_same_held_lifecycle_lock(
 
     wrapper = scripts / "update.sh"
     core = scripts / "update-core.sh"
+    stable_launch = scripts / "stable-launch.sh"
+    stable_diagnose = scripts / "stable-diagnose.sh"
     rollback_source = scripts / "stable-rollback.sh"
     wrapper.write_text(UPDATER.read_text(encoding="utf-8"), encoding="utf-8")
     core.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    stable_launch.write_text(STABLE_LAUNCH.read_text(encoding="utf-8"), encoding="utf-8")
+    stable_diagnose.write_text(STABLE_DIAGNOSE.read_text(encoding="utf-8"), encoding="utf-8")
     rollback_source.write_text(ROLLBACK.read_text(encoding="utf-8"), encoding="utf-8")
-    wrapper.chmod(0o755)
-    core.chmod(0o755)
-    rollback_source.chmod(0o755)
+    for path in (wrapper, core, stable_launch, stable_diagnose, rollback_source):
+        path.chmod(0o755)
 
     lock_dir = state_home / "triview-workspace"
     lock_dir.mkdir(parents=True)

@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.0a3 — Controladores e quatro atalhos estáveis
+
+- adiciona `scripts/stable-launch.sh` com instância única, ativação da janela existente, dependências X11, logs e proveniência do runtime;
+- adiciona `scripts/stable-diagnose.sh` para executar o diagnóstico caixa-preta sanitizado sobre a instalação estável;
+- instala controladores versionados de abertura, atualização, diagnóstico e rollback em `~/.local/share/triview-workspace/updater/`;
+- instala quatro comandos oficiais em `~/.local/bin` e quatro atalhos em Applications e Área de Trabalho;
+- passa a copiar os controladores da release que ficou ativa, em vez de restaurar arquivos antigos do processo que iniciou a atualização;
+- preserva os controladores após a sobrescrita do núcleo legado e após a segunda atualização;
+- adiciona testes funcionais do launcher, da instância única, da passagem de argumentos e do pacote de diagnóstico;
+- inclui launcher e diagnóstico no gatilho e no gate completo da publicação.
+
+Nenhum módulo de GUI, Browser, Xephyr, workspace ou coletor de diagnóstico fisicamente aceito foi alterado.
+
 ## 1.0.0a2 — Rollback estável verificável
 
 - adiciona `scripts/stable-rollback.sh` para restaurar backups controlados da instalação estável;

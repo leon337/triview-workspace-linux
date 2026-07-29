@@ -77,10 +77,13 @@ def test_roadmap_tracks_the_development_train() -> None:
     assert roadmap.count("Status: **planejado**") >= 3
 
 
-def test_candidate_documentation_distinguishes_stable_and_candidate() -> None:
-    index = (ROOT / "docs/README.md").read_text(encoding="utf-8").lower()
+def test_release_documentation_identifies_1_0_0a1_and_safe_channels() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "versão estável" in index
-    assert "candidato atual" in index
-    assert "`main`: estável" in readme
-    assert "TriView Workspace — LEA-202" in readme
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    updater = (ROOT / "docs/updater.md").read_text(encoding="utf-8")
+
+    assert "versão de liberação: `1.0.0a1`" in readme
+    assert "`stable` quando nenhuma escolha anterior existe" in readme
+    assert "## 1.0.0a1 — Liberação RC4 aceita" in changelog
+    assert "`stable` é o canal padrão" in updater
+    assert "O canal de testes nunca é selecionado implicitamente" in updater

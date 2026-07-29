@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import triview_workspace.gui as public_gui
 import triview_workspace.gui_hub as gui_hub
+import triview_workspace.gui_rc4_atomic as atomic_gui
 import triview_workspace.gui_sessions as gui_sessions
 
 
@@ -13,6 +15,23 @@ def test_public_gui_preserves_session_engine_and_workspace_hub_layers() -> None:
     assert gui_hub.WorkspaceWindow in chain
     assert gui_sessions.WorkspaceWindow in chain
     assert chain.index(gui_hub.WorkspaceWindow) < chain.index(gui_sessions.WorkspaceWindow)
+
+
+def test_public_main_installs_shutdown_wrapper_only_during_execution(monkeypatch) -> None:
+    previous = atomic_gui.WorkspaceWindow
+    observed: list[object] = []
+
+    def fake_main(workspace_path, data_file) -> int:
+        observed.extend((atomic_gui.WorkspaceWindow, workspace_path, data_file))
+        return 17
+
+    monkeypatch.setattr(atomic_gui, "main", fake_main)
+    workspace_path = Path("workspace.json")
+    data_file = Path("catalog.json")
+
+    assert public_gui.main(workspace_path, data_file) == 17
+    assert observed == [public_gui.WorkspaceWindow, workspace_path, data_file]
+    assert atomic_gui.WorkspaceWindow is previous
 
 
 def test_workspace_hub_action_remains_registered_in_complete_shell(monkeypatch) -> None:

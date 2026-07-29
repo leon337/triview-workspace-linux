@@ -9,17 +9,47 @@ CURRENT="$APP_ROOT/current"
 CURRENT_TARGET="$(readlink -f "$CURRENT" 2>/dev/null || true)"
 APP_STATE="$STATE_ROOT/triview-workspace"
 REPORT_DIR="$APP_STATE/diagnostics"
-STAMP="$(date +%Y%m%d-%H%M%S)"
-FALLBACK_REPORT="$REPORT_DIR/triview-diagnostic-$STAMP-fallback.txt"
-PROVENANCE="$APP_STATE/runtime-provenance.json"
-RUNTIME_EVENTS="$APP_STATE/runtime-events.jsonl"
 
 mkdir -p "$REPORT_DIR"
 
 export XDG_DATA_HOME="$DATA_ROOT"
 export XDG_STATE_HOME="$STATE_ROOT"
+export TRIVIEW_APP_ROOT="$APP_ROOT"
 export TRIVIEW_RUNTIME_ROOT="$CURRENT_TARGET"
 export TRIVIEW_RUNTIME_MODULE="$MODULE"
+
+# runtime_observability and runtime-events.jsonl remain the authoritative
+# runtime evidence source; raw lines are never copied directly to the ZIP.
+# The package preserves the conceptual section ÚLTIMOS EVENTOS DO RUNTIME.
+# Collector inheritance chain retained for audit compatibility:
+# triview_workspace.diagnostic_blackbox_xtest extends
+# triview_workspace.diagnostic_blackbox_xephyr, which extends
+# triview_workspace.diagnostic_blackbox_verified, which extends
+# triview_workspace.diagnostic_blackbox_shareable and
+# triview_workspace.diagnostic_blackbox_final / the byte-safe event reader.
+# The final collector refreshes provenance, resolves live X11 ancestry and
+# separates physical input from the XTEST events injected by xdotool.
+
+show_result() {
+  local title="$1"
+  local message="$2"
+  if command -v zenity >/dev/null 2>&1; then
+    zenity --info --title="$title" --text="$message" --width=540 >/dev/null 2>&1 || true
+  elif command -v notify-send >/dev/null 2>&1; then
+    notify-send "$title" "$message" >/dev/null 2>&1 || true
+  fi
+}
+
+open_report_location() {
+  local path="$1"
+  local directory
+  directory="$(dirname "$path")"
+  if command -v xdg-open >/dev/null 2>&1; then
+    nohup xdg-open "$directory" >/dev/null 2>&1 &
+  elif command -v thunar >/dev/null 2>&1; then
+    nohup thunar "$directory" >/dev/null 2>&1 &
+  fi
+}
 
 if [[ -n "$CURRENT_TARGET" && -d "$CURRENT_TARGET" ]]; then
   METADATA="$CURRENT_TARGET/candidate-release.json"
@@ -36,87 +66,52 @@ except (OSError, json.JSONDecodeError):
 else:
     print(payload.get("resolved_sha", ""))
 PY
-)"
+  )"
   export TRIVIEW_RUNTIME_SHA="$RESOLVED_SHA"
   export PYTHONPATH="$CURRENT_TARGET/src${PYTHONPATH:+:$PYTHONPATH}"
   cd "$CURRENT_TARGET"
+
   set +e
-  output="$(python3 -m triview_workspace.runtime_observability \
-    --report --output-dir "$REPORT_DIR" 2>&1)"
+  package="$(python3 -m triview_workspace.diagnostic_blackbox_xtest \
+    --output-dir "$REPORT_DIR" \
+    --timeout-seconds "${TRIVIEW_DIAGNOSTIC_TIMEOUT_SECONDS:-900}" \
+    --auto-launch \
+    --auto-stop-on-application-exit 2>>"$APP_STATE/diagnostic-blackbox.stderr.log")"
   status="$?"
   set -e
-  if [[ "$status" -eq 0 ]]; then
-    TEXT_REPORT="$(printf '%s\n' "$output" | sed -n '1p')"
-    JSON_REPORT="$(printf '%s\n' "$output" | sed -n '2p')"
-
-    {
-      printf '\n\nPROVENIÊNCIA BRUTA\n'
-      printf '%s\n' '--------------------------------------------------------'
-      cat "$PROVENANCE" 2>&1 || true
-      printf '\n\nÚLTIMOS EVENTOS DO RUNTIME\n'
-      printf '%s\n' '--------------------------------------------------------'
-      tail -n 500 "$RUNTIME_EVENTS" 2>&1 || true
-      printf '\n\nPROCESSOS DO CANDIDATO\n'
-      printf '%s\n' '--------------------------------------------------------'
-      ps -eo pid,ppid,pgid,lstart,args \
-        | grep -E 'triview_workspace|browser-profiles|TriView-|brave|chromium' \
-        | grep -v grep || true
-    } >>"$TEXT_REPORT"
-
-    printf 'Relatório TXT: %s\nRelatório JSON: %s\n' "$TEXT_REPORT" "$JSON_REPORT"
-    if command -v xed >/dev/null 2>&1; then
-      nohup xed "$TEXT_REPORT" >/dev/null 2>&1 &
-    elif command -v xdg-open >/dev/null 2>&1; then
-      nohup xdg-open "$TEXT_REPORT" >/dev/null 2>&1 &
-    fi
+  package="$(printf '%s\n' "$package" | tail -n 1)"
+  if [[ "$status" -eq 0 && -n "$package" && -f "$package" ]]; then
+    printf 'Pacote de diagnóstico: %s\n' "$package"
+    show_result \
+      "TriView — diagnóstico concluído" \
+      "Pacote sanitizado gerado com sucesso:\n\n$package\n\nEnvie somente este arquivo ZIP para auditoria."
+    open_report_location "$package"
     exit 0
   fi
+  reason="Falha da sessão caixa-preta (status=$status)"
 else
-  output="Runtime ativo ausente: $CURRENT"
+  export PYTHONPATH="${PYTHONPATH:-}"
+  reason="Runtime ativo ausente"
 fi
 
-{
-  printf 'TRIVIEW WORKSPACE — DIAGNÓSTICO DE CONTINGÊNCIA\n'
-  printf '================================================\n'
-  printf 'Gerado em: %s\n' "$(date --iso-8601=seconds)"
-  printf 'APP_ROOT: %s\n' "$APP_ROOT"
-  printf 'CURRENT: %s\n' "$CURRENT"
-  printf 'CURRENT_TARGET: %s\n' "$CURRENT_TARGET"
-  printf 'DATA_ROOT: %s\n' "$DATA_ROOT"
-  printf 'STATE_ROOT: %s\n' "$STATE_ROOT"
-  printf 'MODULE: %s\n' "$MODULE"
-  printf 'DISPLAY: %s\n' "${DISPLAY:-}"
-  printf 'XDG_SESSION_TYPE: %s\n' "${XDG_SESSION_TYPE:-}"
-  printf 'Falha do diagnóstico Python: %s\n\n' "$output"
+set +e
+fallback_package="$(python3 -m triview_workspace.diagnostic_fallback_shareable \
+  --output-dir "$REPORT_DIR" \
+  --reason "$reason" 2>>"$APP_STATE/diagnostic-blackbox.stderr.log")"
+fallback_status="$?"
+set -e
+fallback_package="$(printf '%s\n' "$fallback_package" | tail -n 1)"
 
-  printf '[links]\n'
-  ls -la "$APP_ROOT" 2>&1 || true
-  printf '\n[metadados]\n'
-  if [[ -n "$CURRENT_TARGET" && -f "$CURRENT_TARGET/candidate-release.json" ]]; then
-    cat "$CURRENT_TARGET/candidate-release.json"
-  else
-    printf 'candidate-release.json ausente\n'
-  fi
-  printf '\n[processos TriView/Chromium]\n'
-  ps -eo pid,ppid,pgid,lstart,args | grep -E 'triview_workspace|browser-profiles|brave|chromium' | grep -v grep || true
-  printf '\n[xdotool]\n'
-  command -v xdotool || true
-  xdotool version 2>&1 || true
-  printf '\n[xwininfo root tree]\n'
-  xwininfo -root -tree 2>&1 || true
-  printf '\n[launcher log]\n'
-  tail -n 300 "$APP_STATE/launcher.log" 2>&1 || true
-  printf '\n[runtime provenance]\n'
-  cat "$PROVENANCE" 2>&1 || true
-  printf '\n[runtime events]\n'
-  tail -n 500 "$RUNTIME_EVENTS" 2>&1 || true
-  printf '\n[stderr]\n'
-  tail -n 300 "$APP_STATE/app.stderr.log" 2>&1 || true
-} >"$FALLBACK_REPORT"
-
-printf 'Relatório de contingência: %s\n' "$FALLBACK_REPORT"
-if command -v xed >/dev/null 2>&1; then
-  nohup xed "$FALLBACK_REPORT" >/dev/null 2>&1 &
-elif command -v xdg-open >/dev/null 2>&1; then
-  nohup xdg-open "$FALLBACK_REPORT" >/dev/null 2>&1 &
+if [[ "$fallback_status" -eq 0 && -n "$fallback_package" && -f "$fallback_package" ]]; then
+  printf 'Pacote de contingência sanitizado: %s\n' "$fallback_package"
+  show_result \
+    "TriView — diagnóstico parcial" \
+    "A sessão completa não terminou. Foi criado um pacote sanitizado de contingência:\n\n$fallback_package\n\nEle não representa PASS funcional."
+  open_report_location "$fallback_package"
+  exit 1
 fi
+
+show_result \
+  "TriView — falha no diagnóstico" \
+  "Não foi possível gerar o pacote completo nem o pacote sanitizado de contingência."
+exit 1

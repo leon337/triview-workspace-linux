@@ -59,11 +59,13 @@ def test_updater_refuses_to_replace_runtime_while_candidate_is_open() -> None:
     assert "Feche o TriView Workspace antes de atualizar" in script
 
 
-def test_successful_diagnostic_includes_raw_runtime_evidence() -> None:
+def test_successful_diagnostic_includes_sanitized_runtime_evidence() -> None:
     script = DIAGNOSTIC.read_text(encoding="utf-8")
 
-    assert 'PROVENANCE="$APP_STATE/runtime-provenance.json"' in script
-    assert 'RUNTIME_EVENTS="$APP_STATE/runtime-events.jsonl"' in script
-    assert 'tail -n 500 "$RUNTIME_EVENTS"' in script
-    assert 'cat "$PROVENANCE"' in script
+    assert "diagnostic_blackbox_shareable" in script
+    assert "diagnostic_fallback_shareable" in script
+    assert "runtime_observability" in script
+    assert "runtime-events.jsonl" in script
     assert "ÚLTIMOS EVENTOS DO RUNTIME" in script
+    assert 'tail -n 500 "$RUNTIME_EVENTS"' not in script
+    assert 'cat "$PROVENANCE"' not in script

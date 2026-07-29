@@ -110,14 +110,18 @@ def test_candidate_launcher_records_exact_runtime_before_exec() -> None:
     assert "app.stderr.log" in script
 
 
-def test_candidate_diagnostic_collects_x11_processes_and_runtime_events() -> None:
+def test_candidate_diagnostic_uses_sanitized_x11_process_and_runtime_collectors() -> None:
     script = CANDIDATE_DIAGNOSTIC.read_text(encoding="utf-8")
 
     assert "runtime_observability" in script
-    assert "xwininfo -root -tree" in script
+    assert "diagnostic_blackbox_shareable" in script
+    assert "diagnostic_fallback_shareable" in script
     assert "runtime-events.jsonl" in script
     assert "candidate-release.json" in script
-    assert "ps -eo pid,ppid,pgid,lstart,args" in script
+    assert "ps -eo pid,ppid,pgid,lstart,args" not in script
+    assert "xwininfo -root -tree" not in script
+    assert 'cat "$PROVENANCE"' not in script
+    assert 'tail -n 500 "$RUNTIME_EVENTS"' not in script
 
 
 def test_candidate_rollback_requires_atomic_exchange_and_preserves_data() -> None:

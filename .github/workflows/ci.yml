@@ -29,9 +29,14 @@ jobs:
       - name: X11 wheel integration
         run: |
           xvfb-run -a env TRIVIEW_RUN_X11_INTEGRATION=1 \
-            pytest -q \
-              tests/test_browser_wheel_x11_integration.py \
-              tests/test_xtest_blackbox.py
+            pytest -q tests/test_browser_wheel_x11_integration.py
+      - name: XTEST device integration
+        run: |
+          xvfb-run -a bash -lc '
+            xinput list --short | tee /tmp/triview-xinput-list.txt
+            grep -qi "XTEST pointer" /tmp/triview-xinput-list.txt
+            grep -qi "XTEST keyboard" /tmp/triview-xinput-list.txt
+          '
       - name: Xephyr containment integration
         run: |
           xvfb-run -a env TRIVIEW_RUN_XEPHYR_INTEGRATION=1 \

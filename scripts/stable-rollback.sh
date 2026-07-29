@@ -145,7 +145,9 @@ done
 
 exec 8>"$LOCK_FILE"
 if ! flock -n 8; then
-  fail "outra operação de instalação, atualização ou rollback já está em execução."
+  RESULT_SUMMARY="outra operação de instalação, atualização ou rollback já está em execução."
+  log "ERRO: $RESULT_SUMMARY"
+  exit 2
 fi
 
 [[ -L "$CURRENT_LINK" ]] || fail "instalação ativa não encontrada em $CURRENT_LINK."

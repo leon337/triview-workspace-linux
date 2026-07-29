@@ -117,6 +117,7 @@ fallback_package="$(printf '%s\n' "$fallback_package" | tail -n 1)"
 
 if [[ "$fallback_status" -eq 0 && -n "$fallback_package" && -f "$fallback_package" ]]; then
   printf 'Pacote de contingência estável: %s\n' "$fallback_package"
+  printf 'Motivo da contingência: %s\n' "$reason"
   show_result \
     "TriView — diagnóstico parcial" \
     "A sessão completa não terminou. Foi criado um pacote sanitizado de contingência:\n\n$fallback_package\n\nMotivo: $reason\n\nEle não representa PASS funcional."
@@ -124,6 +125,7 @@ if [[ "$fallback_status" -eq 0 && -n "$fallback_package" && -f "$fallback_packag
   exit 1
 fi
 
+printf 'Falha no diagnóstico estável: %s\n' "$reason" >&2
 show_result \
   "TriView — falha no diagnóstico" \
   "Não foi possível gerar o pacote completo nem o pacote sanitizado de contingência.\n\nMotivo: $reason"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -76,3 +77,81 @@ mv -Tf "$temporary" "$TRIVIEW_APP_ROOT/current"
     assert "# release-owned-controller" not in (bootstrap / "update.sh").read_text(
         encoding="utf-8"
     )
+
+
+def test_first_cli_start_repairs_an_upgrade_started_by_1_0_0a2(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    desktop = home / "Desktop"
+    desktop.mkdir(parents=True)
+    app_root = tmp_path / "app"
+    updater = app_root / "updater"
+    updater.mkdir(parents=True)
+    (app_root / "current").symlink_to(ROOT)
+    (app_root / "UPDATE_CHANNEL").write_text("stable\n", encoding="utf-8")
+    (app_root / "VERSION").write_text("1.0.0a3\n", encoding="utf-8")
+
+    # State left by the immutable 1.0.0a2 wrapper after it switches current.
+    (updater / "update.sh").write_text("# old-1.0.0a2-controller\n", encoding="utf-8")
+    (updater / "update-core.sh").write_text("# old-1.0.0a2-core\n", encoding="utf-8")
+    (updater / "stable-rollback.sh").write_text("# old-1.0.0a2-rollback\n", encoding="utf-8")
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "HOME": str(home),
+            "TRIVIEW_APP_ROOT": str(app_root),
+            "XDG_STATE_HOME": str(tmp_path / "state"),
+            "TRIVIEW_SKIP_STABLE_ADOPTION": "0",
+        }
+    )
+    command = [
+        "python",
+        "-c",
+        "from triview_workspace.cli import adopt_stable_control_plane; "
+        "adopt_stable_control_plane()",
+    ]
+
+    subprocess.run(command, env=env, check=True, capture_output=True, text=True)
+    subprocess.run(command, env=env, check=True, capture_output=True, text=True)
+
+    for name in (
+        "update.sh",
+        "update-core.sh",
+        "stable-launch.sh",
+        "stable-diagnose.sh",
+        "stable-rollback.sh",
+    ):
+        assert (updater / name).read_bytes() == (SCRIPTS / name).read_bytes()
+
+    commands = (
+        "triview-workspace",
+        "triview-workspace-update",
+        "triview-workspace-diagnose",
+        "triview-workspace-rollback",
+    )
+    for name in commands:
+        assert (home / ".local" / "bin" / name).is_file()
+        assert (home / ".local" / "share" / "applications" / f"{name}.desktop").is_file()
+
+    for visible_name in (
+        "TriView Workspace",
+        "Atualizar TriView Workspace",
+        "Diagnosticar TriView Workspace",
+        "Restaurar TriView Workspace",
+    ):
+        assert (desktop / f"{visible_name}.desktop").is_file()
+
+    report = json.loads(
+        (
+            tmp_path
+            / "state"
+            / "triview-workspace"
+            / "stable-adoption"
+            / "latest.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert report["status"] == "adopted"
+    assert report["version"] == "1.0.0a3"
+    assert report["controllers"] == 5
+    assert report["commands"] == 4
+    assert report["shortcuts"] == 4

@@ -19,8 +19,19 @@ _atomic_gui.XephyrEmbeddedBraveBrowserBackend = (
 _AtomicWorkspaceWindow = _atomic_gui.WorkspaceWindow
 
 
+def _record_shutdown_event(event: str, **fields: object) -> None:
+    """Never let diagnostics prevent the desktop from releasing its resources."""
+
+    try:
+        record_runtime_event(event, **fields)
+    except Exception:  # noqa: BLE001
+        logging.exception("Unable to write shutdown observability event %s", event)
+
+
 class WorkspaceWindow(_AtomicWorkspaceWindow):
     """Finalize the original Session Engine before the hardened RC4 shutdown."""
+
+    _triview_clean_shutdown_hook = True
 
     def _close(self) -> None:
         if not self._closed:
@@ -29,18 +40,19 @@ class WorkspaceWindow(_AtomicWorkspaceWindow):
                 try:
                     statuses = self._runtime_statuses()
                     recovery_engine.finish(self.workspace, statuses)
-                    record_runtime_event(
-                        "session_clean_shutdown_recorded",
-                        workspace_id=self.workspace.id,
-                        open_panel_ids=sorted(statuses),
-                    )
                 except Exception as exc:  # noqa: BLE001
                     logging.exception("Unable to record clean operational shutdown")
-                    record_runtime_event(
+                    _record_shutdown_event(
                         "session_clean_shutdown_failed",
                         workspace_id=getattr(getattr(self, "workspace", None), "id", None),
                         error_type=type(exc).__name__,
                         error=str(exc),
+                    )
+                else:
+                    _record_shutdown_event(
+                        "session_clean_shutdown_recorded",
+                        workspace_id=self.workspace.id,
+                        open_panel_ids=sorted(statuses),
                     )
         super()._close()
 

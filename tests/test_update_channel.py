@@ -11,8 +11,27 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "config" / "update-channels" / "testing.json"
 UPDATER = ROOT / "scripts" / "update.sh"
 CORE = ROOT / "scripts" / "update-core.sh"
+STABLE_LAUNCH = ROOT / "scripts" / "stable-launch.sh"
+STABLE_DIAGNOSE = ROOT / "scripts" / "stable-diagnose.sh"
 ROLLBACK = ROOT / "scripts" / "stable-rollback.sh"
 PUBLISH_WORKFLOW = ROOT / ".github" / "workflows" / "publish-bootstrap-release.yml"
+
+
+def _successful_core_body() -> str:
+    return """#!/usr/bin/env bash
+set -Eeuo pipefail
+script_dir="$(dirname "$(readlink -f "$0")")"
+release="$TRIVIEW_APP_ROOT/releases/fake-stable"
+mkdir -p "$release/scripts" "$TRIVIEW_APP_ROOT"
+for name in update.sh update-core.sh stable-launch.sh stable-diagnose.sh stable-rollback.sh; do
+  cp -a "$script_dir/$name" "$release/scripts/$name"
+done
+temporary="$TRIVIEW_APP_ROOT/.current-test"
+rm -f "$temporary"
+ln -s "$release" "$temporary"
+mv -Tf "$temporary" "$TRIVIEW_APP_ROOT/current"
+printf 'ARGS:%s\n' "$*"
+"""
 
 
 def _wrapper_fixture(
@@ -23,13 +42,16 @@ def _wrapper_fixture(
     script_dir.mkdir()
     wrapper = script_dir / "update.sh"
     core = script_dir / "update-core.sh"
+    stable_launch = script_dir / "stable-launch.sh"
+    stable_diagnose = script_dir / "stable-diagnose.sh"
     rollback = script_dir / "stable-rollback.sh"
     wrapper.write_text(UPDATER.read_text(encoding="utf-8"), encoding="utf-8")
     core.write_text(core_body, encoding="utf-8")
-    rollback.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
-    wrapper.chmod(0o755)
-    core.chmod(0o755)
-    rollback.chmod(0o755)
+    stable_launch.write_text(STABLE_LAUNCH.read_text(encoding="utf-8"), encoding="utf-8")
+    stable_diagnose.write_text(STABLE_DIAGNOSE.read_text(encoding="utf-8"), encoding="utf-8")
+    rollback.write_text(ROLLBACK.read_text(encoding="utf-8"), encoding="utf-8")
+    for path in (wrapper, core, stable_launch, stable_diagnose, rollback):
+        path.chmod(0o755)
     return wrapper, core
 
 
@@ -39,7 +61,9 @@ def _wrapper_env(tmp_path: Path) -> dict[str, str]:
         {
             "HOME": str(tmp_path / "home"),
             "TRIVIEW_APP_ROOT": str(tmp_path / "app"),
+            "XDG_STATE_HOME": str(tmp_path / "state"),
             "TRIVIEW_NO_RESULT_UI": "1",
+            "TRIVIEW_NO_PAUSE": "1",
         }
     )
     return env
@@ -117,10 +141,16 @@ def test_wrapper_honors_persisted_channel(tmp_path: Path) -> None:
     assert "--stable" not in completed.stdout
 
 
-def test_wrapper_reinstalls_itself_and_second_run_is_idempotent(tmp_path: Path) -> None:
-    wrapper, core = _wrapper_fixture(tmp_path, "#!/usr/bin/env bash\nexit 0\n")
+def test_wrapper_installs_release_owned_suite_and_four_shortcuts_idempotently(
+    tmp_path: Path,
+) -> None:
+    wrapper, _core = _wrapper_fixture(tmp_path, _successful_core_body())
+    home = tmp_path / "home"
+    desktop = home / "Desktop"
+    desktop.mkdir(parents=True)
     app_root = tmp_path / "app"
     env = _wrapper_env(tmp_path)
+
     subprocess.run(
         ["bash", str(wrapper), "--stable"],
         env=env,
@@ -129,18 +159,50 @@ def test_wrapper_reinstalls_itself_and_second_run_is_idempotent(tmp_path: Path) 
         text=True,
     )
 
-    persistent_wrapper = app_root / "updater" / "update.sh"
-    persistent_core = app_root / "updater" / "update-core.sh"
-    persistent_rollback = app_root / "updater" / "stable-rollback.sh"
-    assert persistent_wrapper.read_text(encoding="utf-8") == wrapper.read_text(
-        encoding="utf-8"
-    )
-    assert persistent_core.read_text(encoding="utf-8") == core.read_text(
-        encoding="utf-8"
-    )
-    assert persistent_rollback.is_file()
-    assert (tmp_path / "home" / ".local" / "bin" / "triview-workspace-rollback").is_file()
+    persistent = app_root / "updater"
+    active_scripts = (app_root / "current").resolve() / "scripts"
+    for name in (
+        "update.sh",
+        "update-core.sh",
+        "stable-launch.sh",
+        "stable-diagnose.sh",
+        "stable-rollback.sh",
+    ):
+        assert (persistent / name).read_text(encoding="utf-8") == (
+            active_scripts / name
+        ).read_text(encoding="utf-8")
+        assert os.access(persistent / name, os.X_OK)
 
+    bin_dir = home / ".local" / "bin"
+    for name in (
+        "triview-workspace",
+        "triview-workspace-update",
+        "triview-workspace-diagnose",
+        "triview-workspace-rollback",
+    ):
+        assert (bin_dir / name).is_file()
+        assert os.access(bin_dir / name, os.X_OK)
+
+    applications = home / ".local" / "share" / "applications"
+    application_entries = {
+        "triview-workspace.desktop": "Name=TriView Workspace",
+        "triview-workspace-update.desktop": "Name=Atualizar TriView Workspace",
+        "triview-workspace-diagnose.desktop": "Name=Diagnosticar TriView Workspace",
+        "triview-workspace-rollback.desktop": "Name=Restaurar TriView Workspace",
+    }
+    for filename, expected_name in application_entries.items():
+        text = (applications / filename).read_text(encoding="utf-8")
+        assert expected_name in text
+
+    for visible_name in (
+        "TriView Workspace",
+        "Atualizar TriView Workspace",
+        "Diagnosticar TriView Workspace",
+        "Restaurar TriView Workspace",
+    ):
+        assert (desktop / f"{visible_name}.desktop").is_file()
+
+    persistent_wrapper = persistent / "update.sh"
     subprocess.run(
         ["bash", str(persistent_wrapper), "--stable"],
         env=env,
@@ -148,9 +210,15 @@ def test_wrapper_reinstalls_itself_and_second_run_is_idempotent(tmp_path: Path) 
         capture_output=True,
         text=True,
     )
-    assert persistent_wrapper.is_file()
-    assert persistent_core.is_file()
-    assert persistent_rollback.is_file()
+    for name in (
+        "update.sh",
+        "update-core.sh",
+        "stable-launch.sh",
+        "stable-diagnose.sh",
+        "stable-rollback.sh",
+    ):
+        assert (persistent / name).is_file()
+        assert os.access(persistent / name, os.X_OK)
 
 
 def test_disabled_repository_manifest_blocks_explicit_testing(tmp_path: Path) -> None:
@@ -215,7 +283,7 @@ def test_explicit_testing_accepts_only_enabled_temporary_manifest(tmp_path: Path
     assert not (tmp_path / "app" / "current").exists()
 
 
-def test_updater_repairs_desktop_shortcuts_and_shows_result() -> None:
+def test_legacy_core_result_ui_and_shortcut_compatibility_remain_available() -> None:
     text = CORE.read_text(encoding="utf-8")
 
     assert 'UPDATER_ROOT="$APP_ROOT/updater"' in text
@@ -234,11 +302,17 @@ def test_updater_repairs_desktop_shortcuts_and_shows_result() -> None:
     assert "ATUALIZAÇÃO FINALIZADA COM SUCESSO" in text
 
 
-def test_application_desktop_entry_uses_standard_directory() -> None:
-    text = CORE.read_text(encoding="utf-8")
+def test_stable_controller_uses_standard_directories_and_release_owned_scripts() -> None:
+    text = UPDATER.read_text(encoding="utf-8")
 
     assert 'APPLICATIONS_DIR="$HOME/.local/share/applications"' in text
     assert "$HOME/.local/applications" not in text
+    assert 'ACTIVE_SCRIPTS="$CURRENT_TARGET/scripts"' in text
+    assert "stable-launch.sh" in text
+    assert "stable-diagnose.sh" in text
+    assert "stable-rollback.sh" in text
+    assert "Diagnosticar TriView Workspace" in text
+    assert "Restaurar TriView Workspace" in text
 
 
 def test_release_publication_waits_for_complete_verification() -> None:
@@ -252,4 +326,9 @@ def test_release_publication_waits_for_complete_verification() -> None:
     assert "tests/test_browser_xephyr_x11_integration.py" in text
     assert "bash -n scripts/*.sh packaging/*.sh" in text
     assert "gh release create" in text
-    assert '"scripts/stable-rollback.sh"' in text
+    for path in (
+        "scripts/stable-launch.sh",
+        "scripts/stable-diagnose.sh",
+        "scripts/stable-rollback.sh",
+    ):
+        assert f'"{path}"' in text

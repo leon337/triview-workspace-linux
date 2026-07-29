@@ -21,7 +21,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            xvfb xauth xdotool xinput xserver-xephyr x11-utils
+            xvfb xauth xdotool xinput xserver-xephyr x11-utils x11-xserver-utils
       - name: Compile
         run: python -m compileall -q src tests
       - name: Validate shell scripts

@@ -4,15 +4,16 @@ Plataforma modular de áreas de trabalho para Linux.
 
 ## Estado da liberação
 
-- versão de liberação: `1.0.0a2`;
+- versão de liberação: `1.0.0a3`;
 - interface RC4 proporcional: aprovada no Linux Mint/X11;
 - Browser Panels: incorporados em displays Xephyr autenticados, sem exposição externa;
 - workspaces vivos: preservam processos, janelas, conversas, rolagem e foco durante a mesma execução;
 - scroll e teclado nos navegadores incorporados: aprovados;
-- diagnóstico caixa-preta: disponível com coleta sanitizada e pacote único;
+- diagnóstico caixa-preta: controlador estável, coleta sanitizada e pacote único;
 - Application, Terminal, PDF, Capture, Recording e Plugin Engines: integrados;
 - atualização estável: backup, validação e troca atômica;
-- rollback estável: valida backup controlado, preserva dados, troca `current` atomicamente e gera relatório.
+- rollback estável: valida backup controlado, preserva dados, troca `current` atomicamente e gera relatório;
+- quatro atalhos estáveis: abrir, atualizar, diagnosticar e restaurar.
 
 O desempenho de vários workspaces vivos continua acompanhado separadamente. A política de otimização não pode encerrar conversas silenciosamente.
 
@@ -41,6 +42,27 @@ Também é necessário Brave, Chromium ou Google Chrome compatível.
 
 Cada Browser Panel é iniciado dentro de um Xephyr autenticado e incorporado ao host do TriView antes de ficar visível. Um backend nativo de Wayland permanece fora desta liberação.
 
+## Controladores estáveis
+
+A atualização instala controladores versionados em:
+
+```text
+~/.local/share/triview-workspace/updater/
+```
+
+E os comandos oficiais em:
+
+```text
+~/.local/bin/triview-workspace
+~/.local/bin/triview-workspace-update
+~/.local/bin/triview-workspace-diagnose
+~/.local/bin/triview-workspace-rollback
+```
+
+O lançador estável garante instância única, tenta ativar a janela existente, verifica dependências X11, registra stdout/stderr e exporta a proveniência disponível do runtime.
+
+O diagnóstico estável inicia uma sessão caixa-preta, acompanha o aplicativo até o encerramento e gera um ZIP sanitizado. Quando a sessão completa falha, produz um pacote de contingência explicitamente não equivalente a PASS.
+
 ## Executar localmente
 
 ```bash
@@ -51,7 +73,13 @@ python -m pip install -e '.[dev]'
 triview-workspace
 ```
 
-Diagnóstico sem abrir a interface:
+Diagnóstico estável:
+
+```bash
+triview-workspace-diagnose
+```
+
+Diagnóstico estrutural sem abrir a interface:
 
 ```bash
 triview-workspace --diagnostic
@@ -114,4 +142,5 @@ src/triview_workspace/
 - LEA-229–246: validações físicas, instalador, atalhos e RC4;
 - LEA-247–259: scroll, sessões vivas, contenção Xephyr e diagnóstico caixa-preta;
 - LEA-260–264: integração no train, reconciliação com main, publicação e RC final;
-- LEA-265: rollback estável verificável e liberação `1.0.0a2`.
+- LEA-265–266: rollback estável verificável e RC da `1.0.0a2`;
+- LEA-267: paridade dos controladores estáveis e liberação `1.0.0a3`.

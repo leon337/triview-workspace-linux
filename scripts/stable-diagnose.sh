@@ -9,6 +9,7 @@ CURRENT="$APP_ROOT/current"
 CURRENT_TARGET="$(readlink -f "$CURRENT" 2>/dev/null || true)"
 APP_STATE="$STATE_ROOT/triview-workspace"
 REPORT_DIR="$APP_STATE/diagnostics"
+APP_LOCK="$APP_STATE/app.lock"
 
 mkdir -p "$REPORT_DIR"
 
@@ -42,7 +43,25 @@ open_report_location() {
   fi
 }
 
-if [[ -n "$CURRENT_TARGET" && -d "$CURRENT_TARGET" ]]; then
+reason=""
+if [[ -z "$CURRENT_TARGET" || ! -d "$CURRENT_TARGET" ]]; then
+  reason="Runtime estável ativo ausente"
+elif [[ ! -x "$CURRENT_TARGET/scripts/candidate-launch.sh" ]]; then
+  reason="Lançador monitorado ausente na release estável"
+elif ! command -v flock >/dev/null 2>&1; then
+  reason="flock indisponível para verificar instância única"
+else
+  exec 8>"$APP_LOCK"
+  if ! flock -n 8; then
+    reason="O TriView já está aberto. Feche a aplicação antes de iniciar o diagnóstico caixa-preta."
+  else
+    # A verificação é instantânea. O coletor precisa que o lançador monitorado
+    # adquira o mesmo lock quando iniciar a aplicação sob observação.
+    flock -u 8
+  fi
+fi
+
+if [[ -z "$reason" ]]; then
   VERSION="$(tr -d '[:space:]' < "$APP_ROOT/VERSION" 2>/dev/null || true)"
   RUNTIME_SHA="$(python3 - "$APP_ROOT/ACTIVE-CANDIDATE.json" <<'PY'
 from __future__ import annotations
@@ -83,11 +102,11 @@ PY
     exit 0
   fi
   reason="Falha da sessão caixa-preta estável (status=$status)"
-else
-  export PYTHONPATH="${PYTHONPATH:-}"
-  reason="Runtime estável ativo ausente"
 fi
 
+if [[ -n "$CURRENT_TARGET" && -d "$CURRENT_TARGET/src" ]]; then
+  export PYTHONPATH="$CURRENT_TARGET/src${PYTHONPATH:+:$PYTHONPATH}"
+fi
 set +e
 fallback_package="$(python3 -m triview_workspace.diagnostic_fallback_shareable \
   --output-dir "$REPORT_DIR" \
@@ -100,12 +119,12 @@ if [[ "$fallback_status" -eq 0 && -n "$fallback_package" && -f "$fallback_packag
   printf 'Pacote de contingência estável: %s\n' "$fallback_package"
   show_result \
     "TriView — diagnóstico parcial" \
-    "A sessão completa não terminou. Foi criado um pacote sanitizado de contingência:\n\n$fallback_package\n\nEle não representa PASS funcional."
+    "A sessão completa não terminou. Foi criado um pacote sanitizado de contingência:\n\n$fallback_package\n\nMotivo: $reason\n\nEle não representa PASS funcional."
   open_report_location "$fallback_package"
   exit 1
 fi
 
 show_result \
   "TriView — falha no diagnóstico" \
-  "Não foi possível gerar o pacote completo nem o pacote sanitizado de contingência."
+  "Não foi possível gerar o pacote completo nem o pacote sanitizado de contingência.\n\nMotivo: $reason"
 exit 1

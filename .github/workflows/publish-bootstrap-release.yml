@@ -7,6 +7,8 @@ on:
       - "pyproject.toml"
       - "scripts/update.sh"
       - "scripts/update-core.sh"
+      - "scripts/stable-launch.sh"
+      - "scripts/stable-diagnose.sh"
       - "scripts/stable-rollback.sh"
       - ".github/workflows/publish-bootstrap-release.yml"
   workflow_dispatch:
@@ -129,7 +131,7 @@ jobs:
             "$TAG"
             --target "$GITHUB_SHA"
             --title "TriView Workspace $VERSION"
-            --notes "Versão aprovada do TriView Workspace. Inclui workspaces vivos, navegadores incorporados via Xephyr, diagnóstico caixa-preta sanitizado, atualização estável e rollback verificável com preservação de dados."
+            --notes "Versão aprovada do TriView Workspace. Inclui workspaces vivos, navegadores incorporados via Xephyr, quatro atalhos estáveis, diagnóstico caixa-preta sanitizado, atualização estável e rollback verificável com preservação de dados."
           )
           if [[ -n "$existing_tag_sha" ]]; then
             release_args+=(--verify-tag)

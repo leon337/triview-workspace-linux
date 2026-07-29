@@ -110,12 +110,13 @@ def test_wrapper_honors_persisted_channel(tmp_path: Path) -> None:
     assert "--stable" not in completed.stdout
 
 
-def test_wrapper_reinstalls_itself_after_success(tmp_path: Path) -> None:
+def test_wrapper_reinstalls_itself_and_second_run_is_idempotent(tmp_path: Path) -> None:
     wrapper, core = _wrapper_fixture(tmp_path, "#!/usr/bin/env bash\nexit 0\n")
     app_root = tmp_path / "app"
+    env = _wrapper_env(tmp_path)
     subprocess.run(
         ["bash", str(wrapper), "--stable"],
-        env=_wrapper_env(tmp_path),
+        env=env,
         check=True,
         capture_output=True,
         text=True,
@@ -125,6 +126,16 @@ def test_wrapper_reinstalls_itself_after_success(tmp_path: Path) -> None:
     persistent_core = app_root / "updater" / "update-core.sh"
     assert persistent_wrapper.read_text(encoding="utf-8") == wrapper.read_text(encoding="utf-8")
     assert persistent_core.read_text(encoding="utf-8") == core.read_text(encoding="utf-8")
+
+    subprocess.run(
+        ["bash", str(persistent_wrapper), "--stable"],
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert persistent_wrapper.is_file()
+    assert persistent_core.is_file()
 
 
 def test_disabled_repository_manifest_blocks_explicit_testing(tmp_path: Path) -> None:

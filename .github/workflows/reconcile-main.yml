@@ -4,12 +4,11 @@ on:
   push:
     branches:
       - release/reconcile-main-1.0.0a1
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
   inspect:
@@ -19,6 +18,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Inspect frozen reconciliation
+        id: inspect
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -38,12 +38,37 @@ jobs:
           merge_status=$?
           set -e
 
-          echo "merge_status=$merge_status"
-          echo "--- conflicted files ---"
-          git diff --name-only --diff-filter=U || true
-          echo "--- status ---"
-          git status --short
+          conflicts="$(git diff --name-only --diff-filter=U || true)"
+          {
+            echo '## Inventário automático da reconciliação'
+            echo
+            echo "- train: \`$TRAIN_SHA\`"
+            echo "- main: \`$MAIN_SHA\`"
+            echo "- merge_status: \`$merge_status\`"
+            echo
+            echo '### Arquivos em conflito'
+            echo
+            echo '```text'
+            if [[ -n "$conflicts" ]]; then
+              printf '%s\n' "$conflicts"
+            else
+              echo '(nenhum)'
+            fi
+            echo '```'
+            echo
+            echo '### Estado completo'
+            echo
+            echo '```text'
+            git status --short
+            echo '```'
+          } > /tmp/reconciliation-report.md
 
-          if ((merge_status != 0)); then
-            exit 1
-          fi
+          cat /tmp/reconciliation-report.md
+          echo "merge_status=$merge_status" >> "$GITHUB_OUTPUT"
+      - name: Publish inventory on PR #52
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 52 --repo "$GITHUB_REPOSITORY" --body-file /tmp/reconciliation-report.md
+      - name: Fail while conflicts remain
+        if: steps.inspect.outputs.merge_status != '0'
+        run: exit 1

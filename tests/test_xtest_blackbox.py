@@ -174,6 +174,30 @@ def _read_button_release_block(
     raise AssertionError(f"ButtonRelease XI2 não observado; headers={seen_headers!r}")
 
 
+def _wait_for_xinput_window(
+    xdotool: str,
+    process: subprocess.Popen[str],
+    *,
+    timeout: float = 4.0,
+) -> str:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = subprocess.run(
+            [xdotool, "search", "--pid", str(process.pid)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2,
+        )
+        candidates = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        if candidates:
+            return candidates[-1]
+        if process.poll() is not None:
+            break
+        time.sleep(0.05)
+    raise AssertionError("janela XI2 do xinput não localizada")
+
+
 @pytest.mark.skipif(
     os.environ.get("TRIVIEW_RUN_X11_INTEGRATION") != "1",
     reason="executado somente na etapa X11 dedicada da CI",
@@ -188,15 +212,24 @@ def test_real_xdotool_wheel_is_identified_as_xtest() -> None:
     synthetic_ids = xtest_device_ids()
     assert synthetic_ids
     process = subprocess.Popen(
-        [stdbuf, "-oL", xinput, "test-xi2", "--root"],
+        [stdbuf, "-oL", xinput, "test-xi2"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
     )
     try:
-        time.sleep(0.25)
-        subprocess.run([xdotool, "click", "5"], check=True, timeout=3)
+        window_id = _wait_for_xinput_window(xdotool, process)
+        subprocess.run(
+            [xdotool, "mousemove", "--window", window_id, "40", "40"],
+            check=True,
+            timeout=3,
+        )
+        subprocess.run(
+            [xdotool, "click", "--window", window_id, "5"],
+            check=True,
+            timeout=3,
+        )
         block = _read_button_release_block(process)
         payload = annotate_xinput_origin(
             {"input_category": "mouse_wheel"},

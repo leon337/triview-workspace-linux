@@ -23,21 +23,29 @@ Antes de qualquer troca, a versão ativa e o catálogo são copiados para:
 
 A nova versão é validada em diretório isolado. O link `current` é substituído atomicamente somente depois de compilação, diagnóstico e importação do módulo principal concluírem com sucesso.
 
-## Controlador e núcleo
+## Controlador, núcleo e rollback
 
-`scripts/update.sh` é o controlador de canal. `scripts/update-core.sh` contém o atualizador legado endurecido e compatível com instalações anteriores.
+`scripts/update.sh` é o controlador de canal. `scripts/update-core.sh` contém o atualizador legado endurecido e compatível com instalações anteriores. `scripts/stable-rollback.sh` restaura backups controlados da instalação estável.
 
-Depois de uma atualização bem-sucedida, os dois arquivos são instalados em:
+Depois de uma atualização bem-sucedida, os três arquivos são instalados em:
 
 ```text
 ~/.local/share/triview-workspace/updater/update.sh
 ~/.local/share/triview-workspace/updater/update-core.sh
+~/.local/share/triview-workspace/updater/stable-rollback.sh
 ```
 
-O atalho oficial executa o controlador, mostra o resultado e grava o log em:
+Os atalhos oficiais executam os controladores persistentes. O atualizador grava log em:
 
 ```text
 ${XDG_STATE_HOME:-$HOME/.local/state}/triview-workspace/update-<data>.log
+```
+
+O rollback grava logs e relatórios em:
+
+```text
+${XDG_STATE_HOME:-$HOME/.local/state}/triview-workspace/stable-rollbacks/
+${XDG_STATE_HOME:-$HOME/.local/state}/triview-workspace/stable-rollback-reports/
 ```
 
 ## Canal stable
@@ -84,7 +92,7 @@ O workflow de publicação não cria tag ou release imediatamente após o push. 
 
 1. instalação das dependências de desenvolvimento;
 2. compilação de `src` e `tests`;
-3. validação sintática de todos os scripts shell;
+3. validação sintática de todos os scripts shell, incluindo o rollback estável;
 4. suíte pytest completa;
 5. integração real da roda em X11;
 6. presença e classificação dos dispositivos XTEST;
@@ -92,11 +100,53 @@ O workflow de publicação não cria tag ou release imediatamente após o push. 
 
 Somente quando o job `verify` termina em PASS o job `release` pode criar a tag `v<versão>` e a GitHub Release apontando para o SHA exato de `main`.
 
-## Restauração e rollback
+## Restauração e rollback estável
 
-O atualizador preserva a versão anterior e o catálogo antes da troca. Os atalhos oficiais de rollback e os scripts de restauração operam sobre esses backups sem remover os dados persistentes do usuário.
+O atalho **Restaurar TriView Workspace** executa:
 
-O diagnóstico do pacote baixado usa um catálogo temporário. Validar uma atualização não altera o último workspace selecionado.
+```bash
+triview-workspace-rollback
+```
+
+Por padrão, o controlador escolhe o backup restaurável mais recente dentro de:
+
+```text
+~/.local/share/triview-workspace-backups/
+```
+
+Também é possível selecionar explicitamente um backup controlado:
+
+```bash
+triview-workspace-rollback --backup ~/.local/share/triview-workspace-backups/update-<data>
+```
+
+Antes de qualquer alteração, o rollback:
+
+1. adquire o mesmo lock usado pelo ciclo de vida;
+2. exige que o TriView esteja fechado;
+3. rejeita caminhos fora da raiz oficial de backups;
+4. exige `pyproject.toml`, pacote Python e workspace de diagnóstico;
+5. copia o backup para diretório temporário isolado;
+6. executa compilação, diagnóstico e importação do módulo principal.
+
+Depois da validação, o rollback:
+
+1. cria um novo backup pré-rollback da versão corrente e do catálogo;
+2. copia o código restaurado para um novo diretório em `releases/`;
+3. preserva integralmente o catálogo e os demais dados atuais do usuário;
+4. substitui o link `current` atomicamente;
+5. atualiza `VERSION` e `UPDATE_CHANNEL` por escrita atômica;
+6. gera log e relatório JSON auditável.
+
+O backup pré-rollback passa a ser uma origem válida para a operação inversa. Assim, uma segunda execução pode retornar à versão que estava ativa antes do rollback, sem restaurar ou apagar dados persistentes.
+
+Para validar sem alterar o sistema:
+
+```bash
+triview-workspace-rollback --dry-run
+```
+
+O diagnóstico do pacote baixado e do backup restaurado usa catálogo temporário. Validar atualização ou rollback não altera o último workspace selecionado.
 
 ## Requisitos do sistema
 

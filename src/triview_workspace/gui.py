@@ -43,8 +43,8 @@ else:
 
         _triview_clean_shutdown_hook = True
 
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            super().__init__(*args, **kwargs)
+        def _build_header(self) -> None:
+            super()._build_header()
             install_mcf_cockpit(self)
 
         def _close(self) -> None:

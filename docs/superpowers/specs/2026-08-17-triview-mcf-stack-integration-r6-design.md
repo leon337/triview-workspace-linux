@@ -1,6 +1,6 @@
 # TriView × MCF — R6 Stack Qualification & Integration Design
 
-**Status:** design approved by LEANDRO; implementation not started.
+**Status:** design approved by LEANDRO; execution in progress.
 
 **TriView integration baseline:** `train/road-to-1.0@17f1b11a36e09463d6ad9b3fdb0be0fc337c2f99`
 

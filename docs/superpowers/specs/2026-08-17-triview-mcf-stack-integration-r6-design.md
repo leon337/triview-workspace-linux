@@ -12,6 +12,8 @@
 
 **MCF semantic baseline:** `main@5d79f488407c77f7b9f21ecfefb41ddfb3a52aef` / v1.1.0.
 
+**R6 evidence branch:** `chore/triview-mcf-stack-integration-r6`, created from the exact R5 head so it can collapse to documentation-only after R5 is integrated into `train`.
+
 ## Objective
 
 Integrate the already-qualified R2→R5 TriView × MCF stack into `train/road-to-1.0` without changing feature semantics, without touching `main`, and while preserving review boundaries and ancestry across the stacked PRs.
@@ -81,29 +83,39 @@ After R3 lands, retarget #71 from `feat/triview-mcf-cockpit-r3` to `train`. Its 
 
 After R4 lands, retarget #72 from `feat/triview-mcf-binding-r4` to `train`. Its effective diff must reduce to R5 only.
 
-## Final qualification gate
+## Final stack qualification gate
 
-After R5 lands:
+After R5 lands, before R6 documentation is integrated:
 
-- run/observe fresh full CI on the final `train` head;
+- run/observe fresh full CI on the resulting `train` head;
 - verify presence of `mcf_bridge.py`, `mcf_cockpit.py`, `mcf_binding.py`, and `mcf_continuity.py`;
-- verify the final stack content against the previously qualified R5 tree, allowing only expected merge-commit ancestry and R6 documentation differences;
-- verify no unintended files changed outside the known R2-R5 set plus R6 docs;
+- compare the production/test/documentation content inherited from R2-R5 with the previously qualified R5 tree;
+- verify no unintended files changed outside the known R2-R5 set;
 - verify `main` still points to its pre-R6 SHA;
-- record all merge SHAs, CI evidence, final train SHA, and invariant results.
+- record all four merge SHAs, CI evidence, and the qualified stack SHA.
 
-## R6 documentation
+## R6 evidence branch and documentation integration
 
-On successful qualification, create `docs/architecture/MCF_STACK_INTEGRATION_R6.md` containing:
+The branch `chore/triview-mcf-stack-integration-r6` was created from the exact R5 head before integration and initially contains only this design document beyond R5.
 
-- preflight evidence;
-- PR/head/base table;
-- merge SHAs;
-- CI runs;
-- final `train` SHA;
-- final `main` SHA proving no promotion occurred;
-- invariant checklist;
-- explicit statement that promotion to `main` requires a separate HUMAN_GATE.
+After the R5 stack qualification gate passes:
+
+1. retarget/open the R6 documentation PR against `train`;
+2. confirm its effective diff has collapsed to documentation-only;
+3. add `docs/architecture/MCF_STACK_INTEGRATION_R6.md` containing:
+   - preflight evidence;
+   - PR/head/base table;
+   - R2-R5 merge SHAs;
+   - CI runs;
+   - qualified post-R5 `train` SHA;
+   - final `main` SHA proving no promotion occurred;
+   - invariant checklist;
+   - explicit statement that promotion to `main` requires a separate HUMAN_GATE;
+4. run fresh CI for the docs-only R6 head;
+5. integrate the R6 documentation PR into `train` with a merge commit;
+6. verify final `train` CI if triggered and record the final documentation merge SHA.
+
+This fifth merge is documentation-only and does not alter product behavior.
 
 ## Failure handling
 
@@ -117,6 +129,7 @@ Stop the sequence if any of these occurs:
 - child PR diff contains parent-layer changes after retargeting;
 - CI fails;
 - final tree contains unexplained changes;
+- R6 evidence branch does not reduce to docs-only after R5 integration;
 - any operation would require squash/rebase or force-pushing a qualified branch.
 
 A stopped R6 does not auto-repair by rewriting history. Any correction becomes a new, explicit change with its own tests and review.
@@ -134,4 +147,4 @@ R6 does not:
 
 ## Success criterion
 
-R6 is complete only when `train/road-to-1.0` contains the full R2-R5 stack through sequential merge commits, final CI is green, all invariants are verified, R6 evidence is documented, and `main` remains untouched.
+R6 is complete only when `train/road-to-1.0` contains the full R2-R5 stack through sequential merge commits, the post-R5 stack qualification is green, the R6 evidence is integrated as a documentation-only follow-up, all invariants are verified, and `main` remains untouched.

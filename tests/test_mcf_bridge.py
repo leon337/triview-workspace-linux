@@ -1,0 +1,186 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from triview_workspace.mcf_bridge import McfBridge, McfRepositoryInspector, McfRuntimeClient
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _write_project_artifacts(root: Path) -> None:
+    _write_json(
+        root / ".mcf" / "intent" / "pip-r1.json",
+        {
+            "artifactType": "PROJECT_INTENT_PACKAGE",
+            "schemaVersion": "1.0",
+            "projectId": "triview",
+            "revisionId": "r1",
+            "createdAt": "2026-08-16T10:00:00+00:00",
+            "methodologyPin": {
+                "version": "v1.1.0",
+                "immutableRef": "5d79f488407c77f7b9f21ecfefb41ddfb3a52aef",
+            },
+        },
+    )
+    _write_json(
+        root / ".mcf" / "reality" / "prr-r1.json",
+        {
+            "artifactType": "PROJECT_REALITY_REPORT",
+            "schemaVersion": "1.0",
+            "projectId": "triview",
+            "revisionId": "r1",
+            "createdAt": "2026-08-16T10:05:00+00:00",
+            "methodologyPin": {
+                "version": "v1.1.0",
+                "immutableRef": "5d79f488407c77f7b9f21ecfefb41ddfb3a52aef",
+            },
+        },
+    )
+    _write_json(
+        root / ".mcf" / "receipts" / "intent-alignment-a1.json",
+        {
+            "artifactType": "INTENT_ALIGNMENT_RECEIPT",
+            "schemaVersion": "1.0",
+            "receiptId": "a1",
+            "projectId": "triview",
+            "decision": "PASS",
+            "confirmedAt": "2026-08-16T10:10:00+00:00",
+        },
+    )
+
+
+def test_inspector_reads_latest_canonical_project_artifacts(tmp_path: Path) -> None:
+    _write_project_artifacts(tmp_path)
+    _write_json(
+        tmp_path / ".mcf" / "intent" / "pip-r0.json",
+        {
+            "artifactType": "PROJECT_INTENT_PACKAGE",
+            "schemaVersion": "1.0",
+            "projectId": "triview",
+            "revisionId": "r0",
+            "createdAt": "2026-08-15T10:00:00+00:00",
+            "methodologyPin": {"version": "v1.0.0", "immutableRef": "older"},
+        },
+    )
+
+    snapshot = McfRepositoryInspector().inspect(tmp_path)
+
+    assert snapshot.is_mcf_project is True
+    assert snapshot.project_id == "triview"
+    assert snapshot.methodology_version == "v1.1.0"
+    assert snapshot.pip.status == "VALID"
+    assert snapshot.pip.revision_id == "r1"
+    assert snapshot.prr.status == "VALID"
+    assert snapshot.prr.revision_id == "r1"
+    assert snapshot.alignment.status == "VALID"
+    assert snapshot.alignment.decision == "PASS"
+
+
+def test_inspector_marks_malformed_canonical_artifact_invalid(tmp_path: Path) -> None:
+    intent = tmp_path / ".mcf" / "intent"
+    intent.mkdir(parents=True)
+    (intent / "pip-bad.json").write_text("{", encoding="utf-8")
+
+    snapshot = McfRepositoryInspector().inspect(tmp_path)
+
+    assert snapshot.is_mcf_project is True
+    assert snapshot.pip.status == "INVALID"
+    assert snapshot.pip.error is not None
+    assert snapshot.project_id is None
+
+
+def test_inspector_reports_plain_directory_as_not_mcf(tmp_path: Path) -> None:
+    snapshot = McfRepositoryInspector().inspect(tmp_path)
+
+    assert snapshot.is_mcf_project is False
+    assert snapshot.project_id is None
+    assert snapshot.methodology_version is None
+    assert snapshot.pip.status == "ABSENT"
+    assert snapshot.prr.status == "ABSENT"
+    assert snapshot.alignment.status == "ABSENT"
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self._body = json.dumps(payload).encode("utf-8")
+
+    def __enter__(self) -> _FakeResponse:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._body
+
+
+def test_runtime_client_uses_get_only_and_transient_headers() -> None:
+    captured: list[tuple[object, float]] = []
+
+    def opener(request: object, timeout: float) -> _FakeResponse:
+        captured.append((request, timeout))
+        return _FakeResponse({"missionId": "mission-1", "state": "PLANEJADO"})
+
+    client = McfRuntimeClient(
+        "https://mcf.example.test/",
+        headers={"Cookie": "session=ephemeral"},
+        timeout=3.5,
+        opener=opener,
+    )
+
+    payload = client.mission("mission 1")
+
+    assert payload["missionId"] == "mission-1"
+    assert len(captured) == 1
+    request, timeout = captured[0]
+    assert request.get_method() == "GET"  # type: ignore[attr-defined]
+    assert request.full_url == "https://mcf.example.test/v1/mcf/missions/mission%201"  # type: ignore[attr-defined]
+    assert request.get_header("Cookie") == "session=ephemeral"  # type: ignore[attr-defined]
+    assert timeout == 3.5
+
+
+def test_runtime_client_rejects_non_http_base_url() -> None:
+    with pytest.raises(ValueError, match="HTTP"):
+        McfRuntimeClient("file:///tmp/mcf")
+
+
+def test_bridge_combines_repository_and_runtime_read_only(tmp_path: Path) -> None:
+    _write_project_artifacts(tmp_path)
+
+    class FakeRuntime:
+        def mission(self, mission_id: str) -> dict[str, Any]:
+            assert mission_id == "mission-1"
+            return {"missionId": mission_id, "state": "EXECUTANDO", "phase": "R2"}
+
+        def timeline(self, mission_id: str) -> dict[str, Any]:
+            return {"missionId": mission_id, "events": [{"type": "PHASE_STARTED"}]}
+
+        def observability(self, mission_id: str) -> dict[str, Any]:
+            return {"missionId": mission_id, "blocked": False}
+
+    snapshot = McfBridge(runtime_client=FakeRuntime()).inspect(tmp_path, mission_id="mission-1")
+
+    assert snapshot.project.project_id == "triview"
+    assert snapshot.project.methodology_version == "v1.1.0"
+    assert snapshot.project.source == "REPOSITORY_CANONICAL"
+    assert snapshot.runtime is not None
+    assert snapshot.runtime.source == "MCF_RUNTIME_READ_ONLY"
+    assert snapshot.runtime.mission["state"] == "EXECUTANDO"
+    assert snapshot.runtime.timeline["events"][0]["type"] == "PHASE_STARTED"
+    assert snapshot.runtime.observability["blocked"] is False
+
+
+def test_bridge_without_runtime_keeps_runtime_projection_absent(tmp_path: Path) -> None:
+    _write_project_artifacts(tmp_path)
+
+    snapshot = McfBridge().inspect(tmp_path)
+
+    assert snapshot.project.project_id == "triview"
+    assert snapshot.runtime is None

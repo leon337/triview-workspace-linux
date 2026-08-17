@@ -309,3 +309,33 @@ def test_checkpoint_methodology_must_match_both_canonical_pip_and_prr(tmp_path: 
 
     assert evidence.methodology_pin_valid is False
     assert "METHODOLOGY_PIN_MISMATCH" in evidence.reason_codes
+
+
+def test_checkpoint_artifact_ref_digest_mismatch_unresolves_authoritative_records(
+    tmp_path: Path,
+) -> None:
+    pip_payload = {
+        "artifactType": "PROJECT_INTENT_PACKAGE",
+        "schemaVersion": "1.0",
+        "projectId": "project-1",
+        "revisionId": "pip-r1",
+    }
+    pip_path = tmp_path / ".mcf/intent/pip-r1.json"
+    pip_path.parent.mkdir(parents=True, exist_ok=True)
+    pip_path.write_text(json.dumps(pip_payload), encoding="utf-8")
+
+    payload = _checkpoint()
+    aligned_ref = payload["alignedPipRef"]
+    assert isinstance(aligned_ref, dict)
+    aligned_ref["contentDigest"] = "sha256:" + "0" * 64
+    _write_checkpoint(tmp_path, "checkpoint-1.json", payload)
+
+    evidence = McfCheckpointInspector().inspect(
+        root=tmp_path,
+        project=_project(tmp_path),
+        runtime=_runtime(_ref(".mcf/continuity/checkpoint-1.json", payload)),
+        mission_id="mission-1",
+    )
+
+    assert evidence.authoritative_records_resolved is False
+    assert "AUTHORITATIVE_RECORDS_UNRESOLVED" in evidence.reason_codes

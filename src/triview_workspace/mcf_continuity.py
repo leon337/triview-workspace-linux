@@ -18,7 +18,11 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-from triview_workspace.mcf_bridge import McfRepositorySnapshot, McfRuntimeProjection
+from triview_workspace.mcf_bridge import (
+    McfArtifactProjection,
+    McfRepositorySnapshot,
+    McfRuntimeProjection,
+)
 
 McfResumeRoute = Literal["FAST_RESUME", "RECONCILE", "RECOVER_MCF_PROJECT"]
 McfDriftStatus = Literal["EXACT", "EXPLAINABLE", "UNEXPLAINED", "UNKNOWN"]
@@ -141,36 +145,28 @@ def decide_resume_route(input: McfResumeDecisionInput) -> McfRouteDecision:
     if input.checkpoint_sha is None:
         failures.append("CHECKPOINT_SHA_ABSENT")
     if failures:
-        return McfRouteDecision(
-            route="RECOVER_MCF_PROJECT",
-            reason_codes=tuple(failures),
-            drift="UNKNOWN",
-        )
+        return McfRouteDecision("RECOVER_MCF_PROJECT", tuple(failures), "UNKNOWN")
 
     live = input.live_repository_state
     assert live is not None
     if input.checkpoint_repository != live.repository:
         return McfRouteDecision(
-            route="RECOVER_MCF_PROJECT",
-            reason_codes=("REPOSITORY_IDENTITY_MISMATCH",),
-            drift="UNEXPLAINED",
+            "RECOVER_MCF_PROJECT",
+            ("REPOSITORY_IDENTITY_MISMATCH",),
+            "UNEXPLAINED",
         )
     if input.checkpoint_branch == live.branch and input.checkpoint_sha == live.head_sha:
-        return McfRouteDecision(
-            route="FAST_RESUME",
-            reason_codes=("EXACT_LIVE_MATCH",),
-            drift="EXACT",
-        )
+        return McfRouteDecision("FAST_RESUME", ("EXACT_LIVE_MATCH",), "EXACT")
     if input.material_drift_explainable:
         return McfRouteDecision(
-            route="RECONCILE",
-            reason_codes=(input.drift_reason or "EXPLAINABLE_DRIFT",),
-            drift="EXPLAINABLE",
+            "RECONCILE",
+            (input.drift_reason or "EXPLAINABLE_DRIFT",),
+            "EXPLAINABLE",
         )
     return McfRouteDecision(
-        route="RECOVER_MCF_PROJECT",
-        reason_codes=("UNEXPLAINED_DIVERGENCE",),
-        drift="UNEXPLAINED",
+        "RECOVER_MCF_PROJECT",
+        ("UNEXPLAINED_DIVERGENCE",),
+        "UNEXPLAINED",
     )
 
 
@@ -240,11 +236,11 @@ class McfCheckpointInspector:
         target_mission = _text(mission_id)
         if target_mission is None:
             return McfCheckpointEvidence(
-                checkpoint=None,
-                checkpoint_integrity_valid=False,
-                authoritative_records_resolved=False,
-                methodology_pin_valid=False,
-                reason_codes=("MISSION_ID_ABSENT", "CHECKPOINT_ABSENT"),
+                None,
+                False,
+                False,
+                False,
+                ("MISSION_ID_ABSENT", "CHECKPOINT_ABSENT"),
             )
 
         resolved = (
@@ -253,17 +249,12 @@ class McfCheckpointInspector:
             else self._from_local_fallback(project_root, target_mission)
         )
         if isinstance(resolved, tuple):
-            return McfCheckpointEvidence(
-                checkpoint=None,
-                checkpoint_integrity_valid=False,
-                authoritative_records_resolved=False,
-                methodology_pin_valid=False,
-                reason_codes=resolved,
-            )
+            return McfCheckpointEvidence(None, False, False, False, resolved)
 
         checkpoint = resolved
         reasons: list[str] = []
         authoritative = self._authoritative_records_resolved(
+            project_root,
             project,
             checkpoint,
             target_mission,
@@ -273,11 +264,11 @@ class McfCheckpointInspector:
         if not methodology_valid:
             _append_once(reasons, "METHODOLOGY_PIN_MISMATCH")
         return McfCheckpointEvidence(
-            checkpoint=checkpoint,
-            checkpoint_integrity_valid=True,
-            authoritative_records_resolved=authoritative,
-            methodology_pin_valid=methodology_valid,
-            reason_codes=tuple(reasons),
+            checkpoint,
+            True,
+            authoritative,
+            methodology_valid,
+            tuple(reasons),
         )
 
     def _from_runtime_ref(
@@ -407,21 +398,22 @@ class McfCheckpointInspector:
         responsible_agent = _text(
             payload.get("responsibleAgent") or payload.get("destinatario")
         )
-        required = (
-            project_id,
-            mission_id,
-            methodology_version,
-            methodology_ref,
-            mission_contract_ref,
-            repository,
-            branch,
-            captured_at,
-            transferability,
-            route_hint,
-            next_action,
-            responsible_agent,
-        )
-        if not all(required):
+        if not all(
+            (
+                project_id,
+                mission_id,
+                methodology_version,
+                methodology_ref,
+                mission_contract_ref,
+                repository,
+                branch,
+                captured_at,
+                transferability,
+                route_hint,
+                next_action,
+                responsible_agent,
+            )
+        ):
             return None
         if repository_state.get("volatile") is not True:
             return None
@@ -449,24 +441,44 @@ class McfCheckpointInspector:
             project_reality_report_ref=_mapping(payload.get("projectRealityReportRef")),
         )
 
-    @staticmethod
-    def _ref_matches_projection(
+    def _artifact_ref_matches_projection(
+        self,
+        root: Path,
         ref: Mapping[str, object] | None,
+        projection: McfArtifactProjection,
         *,
         artifact_type: str,
         project_id: str,
-        revision_id: str | None,
     ) -> bool:
         if ref is None:
             return True
-        return (
-            _text(ref.get("artifactType")) == artifact_type
-            and _text(ref.get("projectId")) == project_id
-            and _text(ref.get("revisionId")) == revision_id
-        )
+        if (
+            _text(ref.get("artifactType")) != artifact_type
+            or _text(ref.get("schemaVersion")) != projection.schema_version
+            or _text(ref.get("projectId")) != project_id
+            or _text(ref.get("revisionId")) != projection.revision_id
+        ):
+            return False
+
+        raw_ref_path = _text(ref.get("path"))
+        projection_path = _text(projection.path)
+        if raw_ref_path is None or projection_path is None:
+            return False
+        resolved_ref_path = self._safe_path(root, raw_ref_path)
+        if resolved_ref_path is None or resolved_ref_path != Path(projection_path).resolve():
+            return False
+
+        expected_digest = _text(ref.get("contentDigest"))
+        if expected_digest is None:
+            return True
+        if not _DIGEST_PATTERN.fullmatch(expected_digest):
+            return False
+        payload = self._read_payload(resolved_ref_path)
+        return payload is not None and canonical_json_digest(payload) == expected_digest
 
     def _authoritative_records_resolved(
         self,
+        root: Path,
         project: McfRepositorySnapshot,
         checkpoint: McfCheckpointProjection,
         mission_id: str,
@@ -490,17 +502,19 @@ class McfCheckpointInspector:
             and project.pip.project_id == checkpoint.project_id
             and project.prr.project_id == checkpoint.project_id
             and project.alignment.project_id == checkpoint.project_id
-            and self._ref_matches_projection(
+            and self._artifact_ref_matches_projection(
+                root,
                 checkpoint.aligned_pip_ref,
+                project.pip,
                 artifact_type="PROJECT_INTENT_PACKAGE",
                 project_id=checkpoint.project_id,
-                revision_id=project.pip.revision_id,
             )
-            and self._ref_matches_projection(
+            and self._artifact_ref_matches_projection(
+                root,
                 checkpoint.project_reality_report_ref,
+                project.prr,
                 artifact_type="PROJECT_REALITY_REPORT",
                 project_id=checkpoint.project_id,
-                revision_id=project.prr.revision_id,
             )
         )
         if not records_valid:
@@ -657,10 +671,11 @@ class McfContinuityAnalyzer:
             mission_id=mission_id,
         )
         checkpoint = checkpoint_evidence.checkpoint
-        if checkpoint is None:
-            git_evidence = McfGitEvidence(None, False, None, ())
-        else:
-            git_evidence = self.git_observer.observe(project_root, checkpoint)
+        git_evidence = (
+            McfGitEvidence(None, False, None, ())
+            if checkpoint is None
+            else self.git_observer.observe(project_root, checkpoint)
+        )
 
         route = decide_resume_route(
             McfResumeDecisionInput(

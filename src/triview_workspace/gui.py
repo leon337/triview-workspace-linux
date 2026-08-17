@@ -10,6 +10,7 @@ from triview_workspace.engines.browser_xephyr_managed import (
     ManagedXephyrEmbeddedBraveBrowserBackend,
 )
 from triview_workspace.gui_hub_responsive import ResponsiveWorkspaceHubDialog
+from triview_workspace.mcf_cockpit import install_mcf_cockpit
 from triview_workspace.runtime_observability import record_runtime_event
 
 # Keep the long-lived atomic entry point while replacing its runtime factory
@@ -38,9 +39,13 @@ if getattr(_existing_window, "_triview_clean_shutdown_hook", False):
 else:
 
     class WorkspaceWindow(_existing_window):
-        """Finalize the original Session Engine before the hardened RC4 shutdown."""
+        """Finalize Session Engine state and expose the read-only MCF cockpit."""
 
         _triview_clean_shutdown_hook = True
+
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            super().__init__(*args, **kwargs)
+            install_mcf_cockpit(self)
 
         def _close(self) -> None:
             if not self._closed:

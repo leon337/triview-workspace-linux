@@ -274,7 +274,7 @@ if not re.fullmatch(r"LEA-[0-9]{3}", str(data["candidate_id"])):
     raise SystemExit("candidate_id inválido")
 if not re.fullmatch(r"[0-9a-f]{40}", str(data["ref"])):
     raise SystemExit("ref precisa ser um commit SHA completo")
-if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?", str(data["version"])):
+if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:(?:a|b|rc)[0-9]+|[-+][A-Za-z0-9.-]+)?", str(data["version"])):
     raise SystemExit("versão inválida")
 if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", str(data["module"])):
     raise SystemExit("módulo inválido")

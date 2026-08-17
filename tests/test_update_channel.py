@@ -6,6 +6,8 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "config" / "update-channels" / "testing.json"
@@ -67,6 +69,41 @@ def _wrapper_env(tmp_path: Path) -> dict[str, str]:
         }
     )
     return env
+
+
+def _run_enabled_testing_manifest_dry_run(
+    tmp_path: Path,
+    version: str,
+) -> tuple[subprocess.CompletedProcess[str], dict[str, object]]:
+    enabled_manifest = tmp_path / "testing-enabled.json"
+    data: dict[str, object] = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    data["enabled"] = True
+    data["status"] = "test-fixture-enabled"
+    data["version"] = version
+    enabled_manifest.write_text(json.dumps(data), encoding="utf-8")
+
+    home = tmp_path / "home"
+    home.mkdir()
+    env = os.environ.copy()
+    env.update(
+        {
+            "HOME": str(home),
+            "TRIVIEW_APP_ROOT": str(tmp_path / "app"),
+            "TRIVIEW_BACKUP_ROOT": str(tmp_path / "backups"),
+            "TRIVIEW_TEST_MANIFEST_FILE": str(enabled_manifest),
+            "TRIVIEW_NO_RESULT_UI": "1",
+        }
+    )
+
+    completed = subprocess.run(
+        ["bash", str(CORE), "--testing", "--dry-run"],
+        cwd=ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return completed, data
 
 
 def test_repository_testing_manifest_is_archived_and_disabled() -> None:
@@ -246,6 +283,60 @@ def test_disabled_repository_manifest_blocks_explicit_testing(tmp_path: Path) ->
 
     assert completed.returncode != 0
     assert "canal de testes bloqueado" in (completed.stdout + completed.stderr)
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "1.0.0",
+        "1.0.0-test.1",
+        "1.0.0+build.1",
+        "1.0.0a4",
+        "1.0.0b2",
+        "1.0.0rc1",
+    ],
+)
+def test_explicit_testing_accepts_approved_version_grammar(
+    tmp_path: Path,
+    version: str,
+) -> None:
+    completed, data = _run_enabled_testing_manifest_dry_run(tmp_path, version)
+    output = completed.stdout + completed.stderr
+
+    assert completed.returncode == 0
+    assert "Candidato autorizado: LEA-197" in output
+    assert f"versão {version}" in output
+    assert str(data["ref"]) in output
+    assert "/archive/refs/heads/main.tar.gz" not in output
+    assert not (tmp_path / "app" / "current").exists()
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "1.0",
+        "v1.0.0",
+        "1.0.0a",
+        "1.0.0b",
+        "1.0.0rc",
+        "1.0.0dev1",
+        "1.0.0.dev1",
+        "1.0.0post1",
+        "1.0.0.post1",
+        "1.0.0a4+build",
+        "1.0.0rc1+build",
+    ],
+)
+def test_explicit_testing_rejects_out_of_scope_version_grammar(
+    tmp_path: Path,
+    version: str,
+) -> None:
+    completed, _data = _run_enabled_testing_manifest_dry_run(tmp_path, version)
+    output = completed.stdout + completed.stderr
+
+    assert completed.returncode != 0
+    assert "versão inválida" in output
+    assert not (tmp_path / "app" / "current").exists()
 
 
 def test_explicit_testing_accepts_only_enabled_temporary_manifest(tmp_path: Path) -> None:

@@ -182,7 +182,7 @@ Run:
 pytest tests/test_update_channel.py -q
 ```
 
-Expected: the newly approved legacy forms and rejection matrix pass, while the positive cases `1.0.0a4`, `1.0.0b2`, and `1.0.0rc1` fail because the current validator reports `versão inválida`. No unrelated test in `tests/test_update_channel.py` should fail.
+Expected: the legacy accepted forms and rejection matrix pass, while the positive cases `1.0.0a4`, `1.0.0b2`, and `1.0.0rc1` fail because the current validator reports `versão inválida`. No unrelated test in `tests/test_update_channel.py` should fail.
 
 - [ ] **Step 5: Commit only the RED test delta**
 
@@ -281,15 +281,7 @@ Run:
 pytest tests/test_update_channel.py -q
 ```
 
-Expected: all tests in `tests/test_update_channel.py` pass, including:
-
-- legacy accepted forms;
-- `1.0.0a4`;
-- `1.0.0b2`;
-- `1.0.0rc1`;
-- all explicit rejection cases;
-- disabled-manifest fail-closed behavior;
-- full-SHA pinning and dry-run non-activation assertions.
+Expected: all tests in `tests/test_update_channel.py` pass, including legacy accepted forms, the three new prerelease forms, all explicit rejection cases, disabled-manifest fail-closed behavior, full-SHA pinning, and dry-run non-activation assertions.
 
 - [ ] **Step 4: Run the lifecycle-focused regression slice before the full suite**
 
@@ -307,16 +299,21 @@ pytest \
 
 Expected: PASS. Any failure outside the new version grammar is a blocker; do not broaden the implementation to fix unrelated lifecycle behavior under this remediation.
 
-- [ ] **Step 5: Prove the production delta is exactly one file and one validation rule before committing**
+- [ ] **Step 5: Prove the complete intended delta is exactly two files before committing GREEN**
 
 Run:
 
 ```bash
-git diff -- scripts/update-core.sh tests/test_update_channel.py
-git diff --name-only 678ed509ad8b9c34a4e85aa0f6e1f7d8260829ac...HEAD
+{
+  git diff --name-only 678ed509ad8b9c34a4e85aa0f6e1f7d8260829ac...HEAD
+  git diff --name-only
+} | sort -u > /tmp/triview-r7-remediation-files.txt
+cat /tmp/triview-r7-remediation-files.txt
+printf '%s\n' scripts/update-core.sh tests/test_update_channel.py > /tmp/triview-r7-remediation-expected.txt
+diff -u /tmp/triview-r7-remediation-expected.txt /tmp/triview-r7-remediation-files.txt
 ```
 
-Before the GREEN commit, the branch history may already contain the test file from RED. The complete intended remediation file set must be exactly:
+Expected: `diff` exits 0 and the complete history-plus-working-tree delta is exactly:
 
 ```text
 scripts/update-core.sh
@@ -377,7 +374,7 @@ printf 'CURRENT_RELEASE_SHA=%s\n' "$CURRENT_RELEASE_SHA"
 test "$CURRENT_RELEASE_SHA" = "678ed509ad8b9c34a4e85aa0f6e1f7d8260829ac"
 ```
 
-Expected: exact match. If the release branch moved, stop and rebase/requalification must be designed explicitly; do not force or silently replay the remediation.
+Expected: exact match. If the release branch moved, stop; rebase/requalification must be designed explicitly. Do not force or silently replay the remediation.
 
 - [ ] **Step 2: Verify the complete remediation diff is restricted to the two approved files**
 
@@ -432,15 +429,7 @@ GREEN_SHA="$(git rev-parse HEAD)"
 printf 'RED_SHA=%s\nGREEN_SHA=%s\n' "$RED_SHA" "$GREEN_SHA"
 ```
 
-Use GitHub Actions / `gh run list --commit "$RED_SHA"` and `gh run list --commit "$GREEN_SHA"` to obtain the actual RED and GREEN CI run IDs, then update the remediation PR body with:
-
-- approved minimal grammar;
-- exact RED SHA + failing CI run ID;
-- exact GREEN SHA + successful full CI run ID;
-- exact two-file diff;
-- statement that `config/update-channels/testing.json` remains disabled;
-- statement that PR #74 remains draft;
-- statement that integration is not authorized.
+Use GitHub Actions or `gh run list --commit "$RED_SHA"` and `gh run list --commit "$GREEN_SHA"` to obtain the actual RED and GREEN CI run IDs. Update only the remediation PR body with the approved minimal grammar, exact RED/CI evidence, exact GREEN/CI evidence, exact two-file diff, testing-manifest-disabled statement, PR #74 draft statement, and explicit no-integration authorization statement.
 
 Do not commit this evidence into `release/1.0.0a4`.
 
@@ -455,16 +444,7 @@ git status --short
 git diff --name-only 678ed509ad8b9c34a4e85aa0f6e1f7d8260829ac...HEAD
 ```
 
-Expected:
-
-- shell validation PASS;
-- targeted updater tests PASS;
-- clean worktree;
-- exactly two changed files;
-- latest remediation CI full matrix GREEN;
-- remediation PR still draft/unmerged;
-- release branch still at `678ed509…`;
-- `main` still at `60b7e86…`.
+Expected: shell validation PASS; targeted updater tests PASS; clean worktree; exactly two changed files; latest remediation CI full matrix GREEN; remediation PR still draft/unmerged; release branch still at `678ed509…`; `main` still at `60b7e86…`.
 
 - [ ] **Step 6: Stop at the integration HUMAN_GATE**
 
@@ -501,9 +481,10 @@ If any value differs, stop. Never force, squash, rebase, or bypass exact-head va
 
 - [ ] **Step 2: After and only after the fresh HUMAN_GATE, integrate with a merge commit protected by expected head SHA**
 
-Use GitHub merge method `merge`, not squash or rebase. Capture the returned merge commit as:
+Use GitHub merge method `merge`, not squash or rebase. After the merge, refresh the remote ref and capture the merge commit as the new candidate:
 
 ```bash
+git fetch origin release/1.0.0a4
 NEW_PRODUCT_SHA="$(git rev-parse origin/release/1.0.0a4)"
 printf 'NEW_PRODUCT_SHA=%s\n' "$NEW_PRODUCT_SHA"
 ```
@@ -527,18 +508,7 @@ Do not freeze `NEW_PRODUCT_SHA` as the renewed candidate until this exact push C
 
 - [ ] **Step 4: Update R7 evidence without confusing product SHA with evidence-head SHA**
 
-Update `docs/architecture/TRIVIEW_RELEASE_1.0.0A4_QUALIFICATION_R7.md` to record:
-
-- old product candidate `a8fd3209…` = historical/pre-remediation;
-- remediation RED/CI evidence;
-- remediation GREEN/CI evidence;
-- remediation merge commit = `NEW_PRODUCT_SHA`;
-- exact push CI for `NEW_PRODUCT_SHA`;
-- physical Linux Mint/X11 = reset to `NOT_RUN` for the renewed candidate;
-- LEA-197 5× terminal + 5× Xed = `NOT_RUN` for the renewed candidate;
-- MCF physical smoke = `NOT_RUN` for the renewed candidate;
-- pre-publication updater qualification = no longer parser-blocked, but still `NOT_RUN` until exercised through an explicitly enabled temporary controlled manifest on the physical qualification machine;
-- PR #74 remains draft.
+Update `docs/architecture/TRIVIEW_RELEASE_1.0.0A4_QUALIFICATION_R7.md` to record the old product candidate as historical/pre-remediation, the remediation RED and GREEN evidence, the remediation merge commit as `NEW_PRODUCT_SHA`, the exact push CI for that SHA, and reset all physical qualification tied to the old candidate to `NOT_RUN`. The pre-publication updater gate becomes no longer parser-blocked but remains `NOT_RUN` until exercised through an explicitly enabled temporary controlled manifest on the physical qualification machine. PR #74 remains draft.
 
 A later docs-only evidence commit may advance the branch head; it must not replace `NEW_PRODUCT_SHA` as the immutable product candidate identity.
 

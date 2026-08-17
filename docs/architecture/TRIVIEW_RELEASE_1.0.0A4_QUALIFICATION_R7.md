@@ -39,8 +39,9 @@ Only these states are used:
 | Freeze gate | PASS | train, main, MCF and latest public release matched the approved R7 baselines before candidate creation. |
 | Release identity TDD | PASS | RED `faca655db3601c4d86cc6ba81b3c154a701f4f79`; corrected identity plus legacy documentation contract; final product candidate `a8fd3209d6315cc7cc1870220b6c79e7296b45b3`. |
 | Remote CI — product candidate | PASS | GitHub Actions run `32018387686`; compile, shell validation, pytest, X11 wheel, XTEST and Xephyr all passed. |
-| Remote CI — evidence head before physical runbook | PASS | GitHub Actions run `32018584616`; full matrix passed on docs-only evidence head `c79cca3d40389a2a731bfa1c6287d8b999eeda27`. |
+| Remote CI — initial evidence head | PASS | GitHub Actions run `32018584616`; full matrix passed on docs-only evidence head `c79cca3d40389a2a731bfa1c6287d8b999eeda27`. |
 | Physical acceptance package | PASS | Fail-closed runbook prepared at `docs/work/R7_1.0.0A4_PHYSICAL_ACCEPTANCE.md`, pinned to the product candidate SHA. |
+| Remote CI — runbook/lifecycle evidence | PASS | GitHub Actions run `32020364862`; full matrix passed on docs-only evidence head `1bb7cdbd103995700e2e13ff672c382fac989f5f`. |
 | Physical Linux Mint/X11 | NOT_RUN | Must run on exact product candidate `a8fd3209d6315cc7cc1870220b6c79e7296b45b3`. |
 | LEA-197 10-run matrix | NOT_RUN | Five `x-terminal-emulator` cycles + five Xed cycles required. |
 | MCF integration smoke | NOT_RUN | Mission Cockpit, read-only detection, binding references, token non-persistence and continuity orientation must be checked physically. |
@@ -136,7 +137,7 @@ Upload test report
 
 This run is the remote-CI qualification evidence for the product candidate before physical testing.
 
-### Evidence-head GREEN
+### Initial evidence-head GREEN
 
 Commit:
 
@@ -146,7 +147,26 @@ CI:
 
 `32018584616` — `success`
 
-The evidence document itself was added docs-only and the full matrix passed again. Subsequent physical-runbook/evidence commits must remain docs-only unless the product candidate is deliberately invalidated and requalified.
+The evidence document itself was added docs-only and the full matrix passed again.
+
+### Physical runbook / lifecycle evidence GREEN
+
+Evidence head before this ledger-only update:
+
+`1bb7cdbd103995700e2e13ff672c382fac989f5f`
+
+CI:
+
+`32020364862` — `success`
+
+All workflow stages passed, including compile, shell validation, pytest, X11 wheel, XTEST and Xephyr.
+
+The diff from product candidate `a8fd3209d6315cc7cc1870220b6c79e7296b45b3` through that evidence head contains only two Markdown files:
+
+- `docs/architecture/TRIVIEW_RELEASE_1.0.0A4_QUALIFICATION_R7.md`
+- `docs/work/R7_1.0.0A4_PHYSICAL_ACCEPTANCE.md`
+
+No production code, lifecycle script, package version, release contract test or MCF integration implementation changed after the product candidate was frozen.
 
 ## Physical Linux Mint/X11 gate
 

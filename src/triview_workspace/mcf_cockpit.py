@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from triview_workspace.mcf_binding import McfWorkspaceBinder
 from triview_workspace.mcf_bridge import McfBridge, McfBridgeSnapshot, McfRuntimeClient
 from triview_workspace.ui_design import (
     FONT_FAMILY,
@@ -74,7 +75,7 @@ class McfCockpitEvent:
 
 @dataclass(frozen=True, slots=True)
 class McfCockpitModel:
-    """Presentation-only snapshot for the four R3 cockpit sections."""
+    """Presentation-only snapshot for the four R3/R4 cockpit sections."""
 
     project: dict[str, str]
     mission: dict[str, str]
@@ -86,11 +87,13 @@ class McfCockpitModel:
 
 @dataclass(frozen=True, slots=True)
 class McfCockpitContext:
-    """Ephemeral process context used to read canonical MCF state."""
+    """Ephemeral read context optionally anchored by a persisted TriView binding."""
 
     project_root: Path
     mission_id: str | None = None
     runtime_url: str | None = None
+    workspace_id: str | None = None
+    binding_persisted: bool = False
     _session_token: str | None = field(default=None, repr=False, compare=False)
 
     @property
@@ -117,6 +120,42 @@ class McfCockpitContext:
             mission_id=_optional_text(source.get(_ENV_MISSION_ID)),
             runtime_url=_optional_text(source.get(_ENV_RUNTIME_URL)),
             _session_token=_optional_text(source.get(_ENV_SESSION_TOKEN)),
+        )
+
+    @classmethod
+    def for_workspace(
+        cls,
+        workspace_id: str,
+        *,
+        binder: McfWorkspaceBinder | None = None,
+        environ: Mapping[str, str] | None = None,
+        cwd: Path | None = None,
+    ) -> McfCockpitContext:
+        """Resolve one workspace binding while keeping credentials process-only."""
+
+        target = workspace_id.strip()
+        if not target:
+            raise ValueError("workspace_id não pode ser vazio")
+        source = os.environ if environ is None else environ
+        binding = (binder or McfWorkspaceBinder()).resolve(target)
+        if binding is not None:
+            return cls(
+                project_root=binding.project_root,
+                mission_id=binding.mission_id,
+                runtime_url=binding.runtime_url,
+                workspace_id=target,
+                binding_persisted=True,
+                _session_token=_optional_text(source.get(_ENV_SESSION_TOKEN)),
+            )
+
+        fallback = cls.from_environment(source, cwd=cwd)
+        return cls(
+            project_root=fallback.project_root,
+            mission_id=fallback.mission_id,
+            runtime_url=fallback.runtime_url,
+            workspace_id=target,
+            binding_persisted=False,
+            _session_token=fallback._session_token,
         )
 
 
@@ -304,7 +343,7 @@ def _button(
 
 
 class McfCockpitDialog:
-    """Read-only Tk surface for the R3 Mission Cockpit."""
+    """Read-only Tk surface for the Mission Cockpit."""
 
     def __init__(
         self,
@@ -433,8 +472,9 @@ class McfCockpitDialog:
             row, column = divmod(index, 2)
             self._render_section(title, fields, row=row, column=column)
         runtime_mode = "RUNTIME + REPOSITÓRIO" if self.context.runtime_enabled else "REPOSITÓRIO"
+        binding_mode = "BINDING" if self.context.binding_persisted else "EFÊMERO"
         self.status_text.set(
-            f"READ_ONLY · {runtime_mode} · root={self.context.project_root}"
+            f"READ_ONLY · {runtime_mode} · {binding_mode} · root={self.context.project_root}"
         )
         self._render_timeline(model.timeline)
 
@@ -513,25 +553,46 @@ class McfCockpitDialog:
         self._render_timeline(())
 
 
-def open_mcf_cockpit(parent: tk.Misc) -> McfCockpitDialog:
-    """Open one fresh read-only cockpit using the current process context."""
+def open_mcf_cockpit(
+    parent: tk.Misc,
+    *,
+    workspace_id: str | None = None,
+    binder: McfWorkspaceBinder | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> McfCockpitDialog:
+    """Open one fresh read-only cockpit for the active workspace context."""
 
-    return McfCockpitDialog(parent)
+    context = (
+        McfCockpitContext.for_workspace(
+            workspace_id,
+            binder=binder,
+            environ=environ,
+        )
+        if workspace_id is not None
+        else McfCockpitContext.from_environment(environ)
+    )
+    return McfCockpitDialog(parent, context=context)
 
 
 def install_mcf_cockpit(
     window: object,
     *,
-    opener: Callable[[object], object] = open_mcf_cockpit,
+    opener: Callable[..., object] = open_mcf_cockpit,
 ) -> None:
-    """Register the single R3 MCF header action on a compatible TriView window."""
+    """Register R4's read-only MCF action and resolve workspace identity on click."""
 
     register = getattr(window, "register_header_action")
     parent = getattr(window, "root")
+
+    def open_active_workspace() -> object:
+        workspace = getattr(window, "workspace", None)
+        workspace_id = _optional_text(getattr(workspace, "id", None))
+        return opener(parent, workspace_id=workspace_id)
+
     register(
         "mcf-cockpit",
         "MCF",
-        lambda: opener(parent),
+        open_active_workspace,
         order=40,
     )
 

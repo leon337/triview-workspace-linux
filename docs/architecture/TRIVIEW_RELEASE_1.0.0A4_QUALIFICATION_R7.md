@@ -6,6 +6,8 @@
 
 This document is the canonical evidence ledger for qualification of the integrated TriView train. It does not authorize promotion or publication.
 
+> Exact-head CI for the commit containing the latest form of this ledger is recorded in PR #74 rather than recursively embedded here. Embedding the current commit SHA/run and recommitting the same ledger would create an endless evidence-only SHA chain.
+
 ## Candidate identity
 
 - release candidate: `1.0.0a4`
@@ -151,7 +153,7 @@ The evidence document itself was added docs-only and the full matrix passed agai
 
 ### Physical runbook / lifecycle evidence GREEN
 
-Evidence head before this ledger-only update:
+Evidence head:
 
 `1bb7cdbd103995700e2e13ff672c382fac989f5f`
 

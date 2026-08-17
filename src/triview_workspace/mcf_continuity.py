@@ -2,7 +2,7 @@
 
 This module mirrors the MCF v1.1 continuity semantics without executing resume,
 reconciliation, recovery, or any authority-bearing action. Canonical MCF files
-are only read; they are never rewritten by this module.
+and Git state are only read; they are never rewritten by this module.
 """
 
 from __future__ import annotations
@@ -10,11 +10,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Mapping
+import subprocess
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 from triview_workspace.mcf_bridge import McfRepositorySnapshot, McfRuntimeProjection
 
@@ -25,6 +27,7 @@ _ROUTES = frozenset({"FAST_RESUME", "RECONCILE", "RECOVER_MCF_PROJECT"})
 _TRANSFERABILITY = frozenset({"TRANSFERABLE", "BLOCKED_LOCAL_ONLY_STATE"})
 _SHA_PATTERN = re.compile(r"^[a-f0-9]{40,64}$")
 _DIGEST_PATTERN = re.compile(r"^sha256:[a-f0-9]{64}$")
+_GIT_TIMEOUT = 3.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +95,16 @@ class McfCheckpointEvidence:
     checkpoint_integrity_valid: bool
     authoritative_records_resolved: bool
     methodology_pin_valid: bool
+    reason_codes: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class McfGitEvidence:
+    """Read-only live Git facts and conservative drift classification."""
+
+    live_state: McfLiveRepositoryState | None
+    material_drift_explainable: bool
+    drift_reason: str | None
     reason_codes: tuple[str, ...]
 
 
@@ -219,7 +232,7 @@ class McfCheckpointInspector:
             )
 
         if runtime is not None:
-            resolved = self._from_runtime_ref(project_root, project, runtime)
+            resolved = self._from_runtime_ref(project_root, runtime)
         else:
             resolved = self._from_local_fallback(project_root, target_mission)
 
@@ -255,7 +268,6 @@ class McfCheckpointInspector:
     def _from_runtime_ref(
         self,
         root: Path,
-        project: McfRepositorySnapshot,
         runtime: McfRuntimeProjection,
     ) -> McfCheckpointProjection | tuple[str, ...]:
         mission = _mapping(runtime.mission)
@@ -511,15 +523,154 @@ class McfCheckpointInspector:
         )
 
 
+def normalize_github_repository(remote_url: str) -> str | None:
+    """Normalize common GitHub remote forms to a case-folded owner/repository id."""
+
+    raw = remote_url.strip()
+    if not raw:
+        return None
+
+    if raw.startswith("git@github.com:"):
+        path = raw.split(":", 1)[1]
+    else:
+        parsed = urlparse(raw)
+        if (parsed.hostname or "").casefold() != "github.com":
+            return None
+        path = parsed.path.lstrip("/")
+
+    if path.endswith(".git"):
+        path = path[:-4]
+    parts = [part for part in path.split("/") if part]
+    if len(parts) != 2:
+        return None
+    return f"{parts[0]}/{parts[1]}".casefold()
+
+
+GitRunner = Callable[..., subprocess.CompletedProcess[str]]
+
+
+class McfGitObserver:
+    """Observe only the Git facts required to classify continuity drift."""
+
+    def __init__(self, *, runner: GitRunner = subprocess.run) -> None:
+        self._runner = runner
+
+    def observe(
+        self,
+        root: str | Path,
+        checkpoint: McfCheckpointProjection,
+    ) -> McfGitEvidence:
+        project_root = Path(root).expanduser().resolve()
+        prefix = ["git", "-C", str(project_root)]
+
+        origin_result = self._run([*prefix, "config", "--get", "remote.origin.url"])
+        branch_result = self._run([*prefix, "rev-parse", "--abbrev-ref", "HEAD"])
+        head_result = self._run([*prefix, "rev-parse", "HEAD"])
+        status_result = self._run([*prefix, "status", "--porcelain"])
+        if any(
+            result is None or result.returncode != 0
+            for result in (origin_result, branch_result, head_result, status_result)
+        ):
+            return McfGitEvidence(None, False, None, ("LIVE_GIT_UNAVAILABLE",))
+
+        assert origin_result is not None
+        assert branch_result is not None
+        assert head_result is not None
+        assert status_result is not None
+        repository = normalize_github_repository(origin_result.stdout)
+        branch = _text(branch_result.stdout)
+        head_sha = _text(head_result.stdout)
+        if (
+            repository is None
+            or branch is None
+            or branch == "HEAD"
+            or head_sha is None
+            or not _SHA_PATTERN.fullmatch(head_sha)
+        ):
+            return McfGitEvidence(None, False, None, ("LIVE_GIT_UNAVAILABLE",))
+
+        live = McfLiveRepositoryState(
+            repository=repository,
+            branch=branch,
+            head_sha=head_sha,
+            worktree_clean=not bool(status_result.stdout.strip()),
+        )
+
+        checkpoint_repository = checkpoint.repository.casefold()
+        if checkpoint_repository != live.repository:
+            return McfGitEvidence(
+                live,
+                False,
+                None,
+                ("REPOSITORY_IDENTITY_MISMATCH",),
+            )
+        if not live.worktree_clean:
+            return McfGitEvidence(live, False, None, ("WORKTREE_DIRTY",))
+
+        checkpoint_sha = checkpoint.checkpoint_sha
+        if checkpoint_sha is None:
+            return McfGitEvidence(live, False, None, ("CHECKPOINT_SHA_ABSENT",))
+
+        if checkpoint_sha == live.head_sha:
+            if checkpoint.branch != live.branch:
+                return McfGitEvidence(live, True, "EXPLAINABLE_BRANCH_DRIFT", ())
+            return McfGitEvidence(live, False, None, ())
+
+        commit_result = self._run(
+            [*prefix, "cat-file", "-e", f"{checkpoint_sha}^{{commit}}"]
+        )
+        if commit_result is None or commit_result.returncode != 0:
+            return McfGitEvidence(
+                live,
+                False,
+                None,
+                ("CHECKPOINT_COMMIT_UNAVAILABLE",),
+            )
+
+        forward = self._run(
+            [*prefix, "merge-base", "--is-ancestor", checkpoint_sha, live.head_sha]
+        )
+        if forward is None or forward.returncode not in {0, 1}:
+            return McfGitEvidence(live, False, None, ("LIVE_GIT_UNAVAILABLE",))
+        if forward.returncode == 0:
+            return McfGitEvidence(live, True, "EXPLAINABLE_FORWARD_DRIFT", ())
+
+        backward = self._run(
+            [*prefix, "merge-base", "--is-ancestor", live.head_sha, checkpoint_sha]
+        )
+        if backward is None or backward.returncode not in {0, 1}:
+            return McfGitEvidence(live, False, None, ("LIVE_GIT_UNAVAILABLE",))
+        if backward.returncode == 0:
+            return McfGitEvidence(live, True, "EXPLAINABLE_BACKWARD_DRIFT", ())
+
+        return McfGitEvidence(live, False, None, ("UNEXPLAINED_DIVERGENCE",))
+
+    def _run(self, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+        try:
+            return self._runner(
+                args,
+                shell=False,
+                capture_output=True,
+                text=True,
+                timeout=_GIT_TIMEOUT,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+
 __all__ = [
     "McfCheckpointEvidence",
     "McfCheckpointInspector",
     "McfCheckpointProjection",
     "McfDriftStatus",
+    "McfGitEvidence",
+    "McfGitObserver",
     "McfLiveRepositoryState",
     "McfResumeDecisionInput",
     "McfResumeRoute",
     "McfRouteDecision",
     "canonical_json_digest",
     "decide_resume_route",
+    "normalize_github_repository",
 ]

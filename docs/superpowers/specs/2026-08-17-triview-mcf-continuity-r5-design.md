@@ -56,9 +56,11 @@ It owns:
 
 It does not import Tkinter and does not persist anything.
 
-### 3.2 Existing bridge remains the read composition boundary
+### 3.2 Existing bridge remains the MCF project/runtime read boundary
 
-`mcf_bridge.py` remains responsible for repository/runtime reads. R5 may extend its repository/runtime projections with the minimum information required to pass checkpoint references and continuity evidence to the pure continuity module.
+`mcf_bridge.py` remains responsible for the existing PIP/PRR/alignment and runtime projections. R5 reuses those projections rather than creating a second project/runtime inspector.
+
+`mcf_continuity.py` may perform continuity-specific reads that the bridge does not currently own: checkpoint JSON under `.mcf/continuity/` and read-only Git subprocess queries.
 
 R5 must not create a second MCF runtime client, event ledger, mission store or generic checkpoint engine.
 
@@ -73,12 +75,12 @@ The current R4 binding controls remain unchanged in authority: they may only mut
 Checkpoint resolution follows this precedence:
 
 1. a valid `continuityCheckpointRef` from the current runtime mission contract;
-2. if runtime is unavailable, a unique canonical checkpoint candidate for the bound `mission_id` under `.mcf/continuity/`;
-3. ambiguity, missing mission id or multiple equally authoritative candidates is treated as unresolved continuity evidence, never guessed.
+2. if runtime is unavailable, canonical checkpoint candidates for the bound `mission_id` under `.mcf/continuity/`, ordered by valid `repositoryState.capturedAt`;
+3. timestamp ties, malformed candidates, missing mission id, or otherwise ambiguous authority are treated as unresolved continuity evidence, never guessed.
 
 A runtime ref must use `artifactType=MCF_CHECKPOINT`, schema `1.1`, match the current project id, use a path contained by the project root, and point to a readable JSON object.
 
-A local fallback candidate must have schema `1.1`, matching `projectId` and `missionId`, and is selected only when the choice is deterministic. Historical files are never deleted or rewritten.
+A local fallback candidate must have schema `1.1`, matching `projectId` and `missionId`. Historical files are never deleted or rewritten. Local discovery is a fallback read mechanism only; a valid runtime checkpoint ref always wins.
 
 ## 5. Checkpoint integrity
 
@@ -87,6 +89,7 @@ R5 validates the subset required by the MCF v1.1 continuity contract:
 - `schemaVersion == "1.1"`;
 - non-empty `projectId`, `missionId`;
 - complete `methodologyPin.version` and `methodologyPin.immutableRef`;
+- non-empty `missionContractRef`;
 - `repositoryState.repository`, `branch`, `capturedAt` present;
 - `repositoryState.volatile is True`;
 - `checkpointSha` is either null or a 40–64 lowercase hex SHA;
@@ -101,15 +104,20 @@ A digest mismatch is `checkpoint_integrity_valid = false` and forces recovery.
 
 R5 reuses `McfRepositorySnapshot` rather than inventing a parallel project inspector.
 
-`authoritative_records_resolved` requires:
+`authoritative_records_resolved` requires all of the following:
 
 - the project is an MCF project;
 - project identity is resolved without consistency errors;
-- checkpoint project id matches the canonical project id;
-- current PIP, PRR and alignment projections are not `INVALID`;
-- if canonical PIP/PRR are present, their project identity remains consistent with the checkpoint.
+- checkpoint `projectId` matches the canonical project id;
+- checkpoint `missionId` matches the bound/configured mission id;
+- current PIP projection is `VALID`;
+- current PRR projection is `VALID`;
+- current alignment projection is `VALID` with decision `PASS`;
+- PIP, PRR and alignment project identities agree with the checkpoint project id.
 
-`methodology_pin_valid` requires the checkpoint methodology pin to agree with the current valid PIP/PRR methodology pin whenever those canonical records are present. A conflict is recovery; an absent required methodology pin is recovery.
+When checkpoint `alignedPipRef` or `projectRealityReportRef` are present, R5 also requires their project/revision identity to agree with the current selected canonical PIP/PRR. If a referenced digest is available and can be verified from the referenced local artifact, a mismatch makes authoritative resolution fail.
+
+`methodology_pin_valid` requires checkpoint `methodologyPin.version` and `immutableRef` to agree with the methodology pins of both current valid PIP and PRR. A missing or conflicting methodology pin is recovery.
 
 R5 does not manufacture PIP/PRR/alignment data and does not modify canonical records.
 
@@ -172,11 +180,15 @@ The pure result is a rebuildable view containing at minimum:
 
 Reason codes are stable machine-readable strings, for example:
 
+- `MISSION_ID_ABSENT`
 - `CHECKPOINT_ABSENT`
+- `CHECKPOINT_AMBIGUOUS`
 - `CHECKPOINT_REF_INVALID`
 - `CHECKPOINT_DIGEST_MISMATCH`
 - `CHECKPOINT_NOT_TRANSFERABLE`
 - `PROJECT_ID_MISMATCH`
+- `MISSION_ID_MISMATCH`
+- `AUTHORITATIVE_RECORDS_UNRESOLVED`
 - `METHODOLOGY_PIN_MISMATCH`
 - `LIVE_GIT_UNAVAILABLE`
 - `REPOSITORY_IDENTITY_MISMATCH`
@@ -208,7 +220,7 @@ All filesystem, JSON, digest and Git failures become evidence/reason codes in th
 
 Secrets are never included in the continuity result, exception text, persistence, tests or UI.
 
-Unsafe checkpoint paths escaping the project root are rejected.
+Unsafe checkpoint or artifact-ref paths escaping the project root are rejected.
 
 ## 12. Testing strategy
 
@@ -225,13 +237,15 @@ Tests for the pure continuity module cover:
 5. divergent history -> `RECOVER_MCF_PROJECT`;
 6. repository mismatch -> recovery;
 7. dirty worktree -> recovery;
-8. missing/invalid checkpoint -> recovery;
+8. missing/invalid/ambiguous checkpoint -> recovery;
 9. blocked transferability -> recovery;
-10. methodology mismatch -> recovery;
-11. digest mismatch -> recovery;
-12. no transcript/chat dependency;
-13. no write subprocess commands;
-14. safe path containment.
+10. unresolved PIP/PRR/alignment -> recovery;
+11. project or mission identity mismatch -> recovery;
+12. methodology mismatch -> recovery;
+13. checkpoint digest mismatch -> recovery;
+14. no transcript/chat dependency;
+15. no write subprocess commands;
+16. safe path containment.
 
 ### Integration layer
 

@@ -54,7 +54,7 @@ MAJOR.MINOR.PATCHbN
 MAJOR.MINOR.PATCHrcN
 ```
 
-where `N` is one or more decimal digits.
+where `N` is one or more decimal digits. The prerelease markers are lowercase-only: `a`, `b`, and `rc`.
 
 Examples that must become valid:
 
@@ -70,6 +70,7 @@ The remediation must not:
 
 - implement a general PEP 440 parser;
 - add a new Python dependency;
+- accept uppercase prerelease markers;
 - accept epochs;
 - accept `.devN` or `.postN` releases;
 - accept local-version suffixes combined with the new prerelease forms;
@@ -100,19 +101,13 @@ and additionally accept:
 1.0.0rc1
 ```
 
-The minimal grammar is conceptually:
+The approved minimal regular-expression contract is:
 
 ```text
-MAJOR.MINOR.PATCH(
-    aN
-  | bN
-  | rcN
-  | -LEGACY_SUFFIX
-  | +LEGACY_SUFFIX
-)?
+[0-9]+\.[0-9]+\.[0-9]+(?:a[0-9]+|b[0-9]+|rc[0-9]+|[-+][A-Za-z0-9.-]+)?
 ```
 
-The legacy suffix grammar must remain exactly as permissive as it is before this remediation.
+It preserves the existing legacy suffix grammar exactly and adds only mutually exclusive lowercase `aN`, `bN`, and `rcN` alternatives.
 
 ## Explicit rejection set
 
@@ -124,6 +119,8 @@ v1.0.0
 1.0.0a
 1.0.0b
 1.0.0rc
+1.0.0A4
+1.0.0RC1
 1.0.0dev1
 1.0.0.dev1
 1.0.0post1
@@ -140,7 +137,7 @@ The production change is restricted to the `version` validation inside `read_tes
 
 `scripts/update-core.sh`
 
-The preferred implementation is a minimal extension of the existing regular expression rather than a new parser or dependency.
+The preferred implementation is the exact minimal extension of the existing regular expression rather than a new parser or dependency.
 
 No other production file should change unless a failing regression proves that a second production change is strictly required. Such a finding must stop implementation and return to design review rather than expanding scope implicitly.
 

@@ -19,6 +19,10 @@ from triview_workspace.mcf_binding import (
     McfWorkspaceBinding,
 )
 from triview_workspace.mcf_bridge import McfBridge, McfBridgeSnapshot, McfRuntimeClient
+from triview_workspace.mcf_continuity import (
+    McfContinuityAnalyzer,
+    McfContinuityDecision,
+)
 from triview_workspace.ui_design import (
     FONT_FAMILY,
     MONO_FONT_FAMILY,
@@ -65,6 +69,23 @@ def _artifact_label(status: str, detail: str | None) -> str:
     return f"{status} · {cleaned}" if cleaned else status
 
 
+def _short_sha(value: str | None, fallback: str) -> str:
+    return value[:12] if value else fallback
+
+
+def _continuity_fields(continuity: McfContinuityDecision) -> dict[str, str]:
+    return {
+        "route": continuity.route,
+        "reason": continuity.reason_codes[0] if continuity.reason_codes else "N/A",
+        "checkpoint": _short_sha(continuity.checkpoint_sha, "AUSENTE"),
+        "live": _short_sha(continuity.live_sha, "INDISPONÍVEL"),
+        "drift": continuity.drift,
+        "transferability": continuity.transferability or "N/A",
+        "next_action": continuity.next_action or "N/A",
+        "authority": continuity.authority_notice,
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class McfCockpitEvent:
     """One compact timeline event shown without mutating runtime state."""
@@ -78,7 +99,7 @@ class McfCockpitEvent:
 
 @dataclass(frozen=True, slots=True)
 class McfCockpitModel:
-    """Presentation-only snapshot for the four R3/R4 cockpit sections."""
+    """Presentation-only snapshot for the four R3/R4/R5 cockpit sections."""
 
     project: dict[str, str]
     mission: dict[str, str]
@@ -250,7 +271,11 @@ def _active_standing_authorizations(contract: Mapping[str, Any]) -> int:
     )
 
 
-def build_cockpit_model(snapshot: McfBridgeSnapshot) -> McfCockpitModel:
+def build_cockpit_model(
+    snapshot: McfBridgeSnapshot,
+    *,
+    continuity: McfContinuityDecision | None = None,
+) -> McfCockpitModel:
     """Build a stable UI projection without manufacturing missing MCF facts."""
 
     project_snapshot = snapshot.project
@@ -271,6 +296,7 @@ def build_cockpit_model(snapshot: McfBridgeSnapshot) -> McfCockpitModel:
             else ", ".join(project_snapshot.consistency_errors)
         ),
     }
+    derived_continuity = _continuity_fields(continuity) if continuity is not None else None
 
     if snapshot.runtime is None:
         return McfCockpitModel(
@@ -290,11 +316,15 @@ def build_cockpit_model(snapshot: McfBridgeSnapshot) -> McfCockpitModel:
                 "latest_gate": "N/A",
                 "blocked": "N/A",
             },
-            continuity={
-                "checkpoint_path": "AUSENTE",
-                "checkpoint_sha": "AUSENTE",
-                "resume_route": "NÃO PROJETADA NO R3",
-            },
+            continuity=(
+                derived_continuity
+                if derived_continuity is not None
+                else {
+                    "checkpoint_path": "AUSENTE",
+                    "checkpoint_sha": "AUSENTE",
+                    "resume_route": "NÃO PROJETADA NO R3",
+                }
+            ),
             timeline=(),
         )
 
@@ -324,7 +354,7 @@ def build_cockpit_model(snapshot: McfBridgeSnapshot) -> McfCockpitModel:
         "latest_gate": _latest_gate(timeline_payload),
         "blocked": _yes_no(observability.get("blocked")),
     }
-    continuity = {
+    legacy_continuity = {
         "checkpoint_path": _clean_text(checkpoint.get("path"), "AUSENTE"),
         "checkpoint_sha": _clean_text(checkpoint.get("commitSha"), "AUSENTE"),
         "resume_route": "NÃO PROJETADA NO R3",
@@ -333,13 +363,13 @@ def build_cockpit_model(snapshot: McfBridgeSnapshot) -> McfCockpitModel:
         project=project,
         mission=mission,
         authority=authority,
-        continuity=continuity,
+        continuity=derived_continuity or legacy_continuity,
         timeline=_timeline_events(timeline_payload),
     )
 
 
 def load_cockpit_model(context: McfCockpitContext) -> McfCockpitModel:
-    """Read repository/runtime state once and return a token-free presentation model."""
+    """Read canonical evidence once and return a token-free R5 presentation model."""
 
     if context.runtime_enabled:
         assert context.runtime_url is not None
@@ -355,7 +385,13 @@ def load_cockpit_model(context: McfCockpitContext) -> McfCockpitModel:
         )
     else:
         snapshot = McfBridge().inspect(context.project_root)
-    return build_cockpit_model(snapshot)
+    continuity = McfContinuityAnalyzer().analyze(
+        root=context.project_root,
+        project=snapshot.project,
+        runtime=snapshot.runtime,
+        mission_id=context.mission_id,
+    )
+    return build_cockpit_model(snapshot, continuity=continuity)
 
 
 def _button(

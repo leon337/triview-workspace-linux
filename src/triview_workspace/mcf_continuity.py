@@ -1,8 +1,8 @@
-"""Derived, read-only MCF continuity decisions for TriView.
+"""Read-only MCF v1.1 continuity evidence and route derivation for TriView.
 
-This module mirrors the MCF v1.1 continuity semantics without executing resume,
-reconciliation, recovery, or any authority-bearing action. Canonical MCF files
-and Git state are only read; they are never rewritten by this module.
+The module observes canonical MCF checkpoint/project evidence plus live Git state,
+then mirrors the MCF v1.1 resume-route decision. It never executes recovery,
+mutates Git, writes ``.mcf`` artifacts, or creates authority.
 """
 
 from __future__ import annotations
@@ -28,12 +28,11 @@ _TRANSFERABILITY = frozenset({"TRANSFERABLE", "BLOCKED_LOCAL_ONLY_STATE"})
 _SHA_PATTERN = re.compile(r"^[a-f0-9]{40,64}$")
 _DIGEST_PATTERN = re.compile(r"^sha256:[a-f0-9]{64}$")
 _GIT_TIMEOUT = 3.0
+_AUTHORITY_NOTICE = "ORIENTATION_ONLY_CANONICAL_CHECKPOINT_WINS"
 
 
 @dataclass(frozen=True, slots=True)
 class McfLiveRepositoryState:
-    """Small live-repository fact set consumed by the pure route decision."""
-
     repository: str
     branch: str
     head_sha: str
@@ -42,8 +41,6 @@ class McfLiveRepositoryState:
 
 @dataclass(frozen=True, slots=True)
 class McfResumeDecisionInput:
-    """Explicit facts required by the MCF v1.1 continuity route contract."""
-
     checkpoint_available: bool
     live_repository_state: McfLiveRepositoryState | None
     authoritative_records_resolved: bool
@@ -59,8 +56,6 @@ class McfResumeDecisionInput:
 
 @dataclass(frozen=True, slots=True)
 class McfRouteDecision:
-    """Rebuildable orientation-only route projection."""
-
     route: McfResumeRoute
     reason_codes: tuple[str, ...]
     drift: McfDriftStatus
@@ -68,8 +63,6 @@ class McfRouteDecision:
 
 @dataclass(frozen=True, slots=True)
 class McfCheckpointProjection:
-    """Validated subset of one canonical MCF v1.1 checkpoint."""
-
     path: str
     project_id: str
     mission_id: str
@@ -89,8 +82,6 @@ class McfCheckpointProjection:
 
 @dataclass(frozen=True, slots=True)
 class McfCheckpointEvidence:
-    """Checkpoint plus conservative authority/integrity checks."""
-
     checkpoint: McfCheckpointProjection | None
     checkpoint_integrity_valid: bool
     authoritative_records_resolved: bool
@@ -100,16 +91,39 @@ class McfCheckpointEvidence:
 
 @dataclass(frozen=True, slots=True)
 class McfGitEvidence:
-    """Read-only live Git facts and conservative drift classification."""
-
     live_state: McfLiveRepositoryState | None
     material_drift_explainable: bool
     drift_reason: str | None
     reason_codes: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class McfContinuityDecision:
+    """Rebuildable R5 projection; orientation only, never an execution command."""
+
+    route: McfResumeRoute
+    reason_codes: tuple[str, ...]
+    drift: McfDriftStatus
+    checkpoint_path: str | None
+    checkpoint_sha: str | None
+    live_sha: str | None
+    checkpoint_branch: str | None
+    live_branch: str | None
+    checkpoint_repository: str | None
+    live_repository: str | None
+    transferability: str | None
+    checkpoint_route_hint: McfResumeRoute | None
+    worktree_status: str
+    authoritative_records_resolved: bool
+    methodology_pin_valid: bool
+    checkpoint_integrity_valid: bool
+    material_drift_explainable: bool
+    next_action: str
+    authority_notice: str = _AUTHORITY_NOTICE
+
+
 def decide_resume_route(input: McfResumeDecisionInput) -> McfRouteDecision:
-    """Mirror the official MCF v1.1 resume decision from explicit evidence."""
+    """Mirror ``ContinuityRecoveryService.decideResumeRoute`` from MCF v1.1."""
 
     failures: list[str] = []
     if not input.checkpoint_available:
@@ -135,28 +149,24 @@ def decide_resume_route(input: McfResumeDecisionInput) -> McfRouteDecision:
 
     live = input.live_repository_state
     assert live is not None
-
     if input.checkpoint_repository != live.repository:
         return McfRouteDecision(
             route="RECOVER_MCF_PROJECT",
             reason_codes=("REPOSITORY_IDENTITY_MISMATCH",),
             drift="UNEXPLAINED",
         )
-
     if input.checkpoint_branch == live.branch and input.checkpoint_sha == live.head_sha:
         return McfRouteDecision(
             route="FAST_RESUME",
             reason_codes=("EXACT_LIVE_MATCH",),
             drift="EXACT",
         )
-
     if input.material_drift_explainable:
         return McfRouteDecision(
             route="RECONCILE",
             reason_codes=(input.drift_reason or "EXPLAINABLE_DRIFT",),
             drift="EXPLAINABLE",
         )
-
     return McfRouteDecision(
         route="RECOVER_MCF_PROJECT",
         reason_codes=("UNEXPLAINED_DIVERGENCE",),
@@ -173,8 +183,6 @@ def _sort_json(value: object) -> object:
 
 
 def canonical_json_digest(payload: Mapping[str, object]) -> str:
-    """Hash canonical UTF-8 JSON using the MCF recursive-key ordering convention."""
-
     canonical = json.dumps(
         _sort_json(dict(payload)),
         ensure_ascii=False,
@@ -209,8 +217,16 @@ def _append_once(reasons: list[str], reason: str) -> None:
         reasons.append(reason)
 
 
+def _merge_reasons(*groups: tuple[str, ...]) -> tuple[str, ...]:
+    merged: list[str] = []
+    for group in groups:
+        for reason in group:
+            _append_once(merged, reason)
+    return tuple(merged)
+
+
 class McfCheckpointInspector:
-    """Resolve and validate canonical continuity evidence without writing it."""
+    """Resolve canonical checkpoint evidence without writing to the MCF project."""
 
     def inspect(
         self,
@@ -231,11 +247,11 @@ class McfCheckpointInspector:
                 reason_codes=("MISSION_ID_ABSENT", "CHECKPOINT_ABSENT"),
             )
 
-        if runtime is not None:
-            resolved = self._from_runtime_ref(project_root, runtime)
-        else:
-            resolved = self._from_local_fallback(project_root, target_mission)
-
+        resolved = (
+            self._from_runtime_ref(project_root, runtime)
+            if runtime is not None
+            else self._from_local_fallback(project_root, target_mission)
+        )
         if isinstance(resolved, tuple):
             return McfCheckpointEvidence(
                 checkpoint=None,
@@ -256,7 +272,6 @@ class McfCheckpointInspector:
         methodology_valid = self._methodology_pin_valid(project, checkpoint)
         if not methodology_valid:
             _append_once(reasons, "METHODOLOGY_PIN_MISMATCH")
-
         return McfCheckpointEvidence(
             checkpoint=checkpoint,
             checkpoint_integrity_valid=True,
@@ -278,7 +293,6 @@ class McfCheckpointInspector:
         ref = _mapping(raw_ref)
         if ref is None:
             return ("CHECKPOINT_REF_INVALID",)
-
         if (
             _text(ref.get("artifactType")) != "MCF_CHECKPOINT"
             or _text(ref.get("schemaVersion")) != "1.1"
@@ -288,11 +302,10 @@ class McfCheckpointInspector:
         raw_path = _text(ref.get("path"))
         if raw_path is None:
             return ("CHECKPOINT_REF_INVALID",)
-        safe_path = self._safe_path(root, raw_path)
-        if safe_path is None:
+        path = self._safe_path(root, raw_path)
+        if path is None:
             return ("UNSAFE_CHECKPOINT_PATH",)
-
-        payload = self._read_payload(safe_path)
+        payload = self._read_payload(path)
         if payload is None:
             return ("CHECKPOINT_REF_INVALID",)
 
@@ -303,15 +316,12 @@ class McfCheckpointInspector:
             if canonical_json_digest(payload) != expected_digest:
                 return ("CHECKPOINT_DIGEST_MISMATCH",)
 
-        projection = self._parse_checkpoint(safe_path, payload)
-        if projection is None:
+        checkpoint = self._parse_checkpoint(path, payload)
+        if checkpoint is None:
             return ("CHECKPOINT_INTEGRITY_INVALID",)
-
-        ref_project = _text(ref.get("projectId"))
-        if ref_project is None or ref_project != projection.project_id:
+        if _text(ref.get("projectId")) != checkpoint.project_id:
             return ("CHECKPOINT_REF_INVALID",)
-
-        return projection
+        return checkpoint
 
     def _from_local_fallback(
         self,
@@ -326,31 +336,29 @@ class McfCheckpointInspector:
         invalid_matching = False
         for path in sorted(directory.glob("*.json")):
             payload = self._read_payload(path)
-            if payload is None:
+            if payload is None or _text(payload.get("missionId")) != mission_id:
                 continue
-            payload_mission = _text(payload.get("missionId"))
-            if payload_mission != mission_id:
-                continue
-            projection = self._parse_checkpoint(path.resolve(), payload)
-            if projection is None:
+            checkpoint = self._parse_checkpoint(path.resolve(), payload)
+            if checkpoint is None:
                 invalid_matching = True
                 continue
-            timestamp = _iso_timestamp(projection.captured_at)
-            if timestamp is None:
+            captured = _iso_timestamp(checkpoint.captured_at)
+            if captured is None:
                 invalid_matching = True
                 continue
-            candidates.append((timestamp, projection))
+            candidates.append((captured, checkpoint))
 
         if not candidates:
-            if invalid_matching:
-                return ("CHECKPOINT_INTEGRITY_INVALID",)
-            return ("CHECKPOINT_ABSENT",)
-
+            return (
+                ("CHECKPOINT_INTEGRITY_INVALID",)
+                if invalid_matching
+                else ("CHECKPOINT_ABSENT",)
+            )
         newest = max(timestamp for timestamp, _ in candidates)
-        newest_candidates = [projection for timestamp, projection in candidates if timestamp == newest]
-        if len(newest_candidates) != 1:
+        latest = [checkpoint for timestamp, checkpoint in candidates if timestamp == newest]
+        if len(latest) != 1:
             return ("CHECKPOINT_AMBIGUOUS",)
-        return newest_candidates[0]
+        return latest[0]
 
     @staticmethod
     def _safe_path(root: Path, raw_path: str) -> Path | None:
@@ -370,9 +378,7 @@ class McfCheckpointInspector:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
-        if not isinstance(payload, dict):
-            return None
-        return payload
+        return payload if isinstance(payload, dict) else None
 
     @staticmethod
     def _parse_checkpoint(
@@ -393,31 +399,29 @@ class McfCheckpointInspector:
         repository = _text(repository_state.get("repository"))
         branch = _text(repository_state.get("branch"))
         captured_at = _text(repository_state.get("capturedAt"))
-        checkpoint_sha_raw = repository_state.get("checkpointSha")
-        checkpoint_sha = _text(checkpoint_sha_raw) if checkpoint_sha_raw is not None else None
+        raw_sha = repository_state.get("checkpointSha")
+        checkpoint_sha = _text(raw_sha) if raw_sha is not None else None
         transferability = _text(payload.get("transferability"))
         route_hint = _text(payload.get("resumeRouteHint"))
         next_action = _text(payload.get("nextAction") or payload.get("proxima_acao"))
         responsible_agent = _text(
             payload.get("responsibleAgent") or payload.get("destinatario")
         )
-
-        if not all(
-            (
-                project_id,
-                mission_id,
-                methodology_version,
-                methodology_ref,
-                mission_contract_ref,
-                repository,
-                branch,
-                captured_at,
-                transferability,
-                route_hint,
-                next_action,
-                responsible_agent,
-            )
-        ):
+        required = (
+            project_id,
+            mission_id,
+            methodology_version,
+            methodology_ref,
+            mission_contract_ref,
+            repository,
+            branch,
+            captured_at,
+            transferability,
+            route_hint,
+            next_action,
+            responsible_agent,
+        )
+        if not all(required):
             return None
         if repository_state.get("volatile") is not True:
             return None
@@ -427,9 +431,6 @@ class McfCheckpointInspector:
             return None
         if transferability not in _TRANSFERABILITY or route_hint not in _ROUTES:
             return None
-
-        aligned_pip_ref = _mapping(payload.get("alignedPipRef"))
-        prr_ref = _mapping(payload.get("projectRealityReportRef"))
         return McfCheckpointProjection(
             path=str(path.resolve()),
             project_id=project_id,
@@ -444,8 +445,8 @@ class McfCheckpointInspector:
             resume_route_hint=route_hint,  # type: ignore[arg-type]
             next_action=next_action,
             responsible_agent=responsible_agent,
-            aligned_pip_ref=aligned_pip_ref,
-            project_reality_report_ref=prr_ref,
+            aligned_pip_ref=_mapping(payload.get("alignedPipRef")),
+            project_reality_report_ref=_mapping(payload.get("projectRealityReportRef")),
         )
 
     @staticmethod
@@ -478,7 +479,6 @@ class McfCheckpointInspector:
         if checkpoint.mission_id != mission_id:
             _append_once(reasons, "MISSION_ID_MISMATCH")
             valid = False
-
         records_valid = (
             project.is_mcf_project
             and not project.consistency_errors
@@ -524,12 +524,9 @@ class McfCheckpointInspector:
 
 
 def normalize_github_repository(remote_url: str) -> str | None:
-    """Normalize common GitHub remote forms to a case-folded owner/repository id."""
-
     raw = remote_url.strip()
     if not raw:
         return None
-
     if raw.startswith("git@github.com:"):
         path = raw.split(":", 1)[1]
     else:
@@ -537,7 +534,6 @@ def normalize_github_repository(remote_url: str) -> str | None:
         if (parsed.hostname or "").casefold() != "github.com":
             return None
         path = parsed.path.lstrip("/")
-
     if path.endswith(".git"):
         path = path[:-4]
     parts = [part for part in path.split("/") if part]
@@ -550,7 +546,7 @@ GitRunner = Callable[..., subprocess.CompletedProcess[str]]
 
 
 class McfGitObserver:
-    """Observe only the Git facts required to classify continuity drift."""
+    """Read only the Git facts needed for conservative continuity drift analysis."""
 
     def __init__(self, *, runner: GitRunner = subprocess.run) -> None:
         self._runner = runner
@@ -562,28 +558,21 @@ class McfGitObserver:
     ) -> McfGitEvidence:
         project_root = Path(root).expanduser().resolve()
         prefix = ["git", "-C", str(project_root)]
-
-        origin_result = self._run([*prefix, "config", "--get", "remote.origin.url"])
-        branch_result = self._run([*prefix, "rev-parse", "--abbrev-ref", "HEAD"])
-        head_result = self._run([*prefix, "rev-parse", "HEAD"])
-        status_result = self._run([*prefix, "status", "--porcelain"])
-        if any(
-            result is None or result.returncode != 0
-            for result in (origin_result, branch_result, head_result, status_result)
-        ):
+        origin = self._run([*prefix, "config", "--get", "remote.origin.url"])
+        branch = self._run([*prefix, "rev-parse", "--abbrev-ref", "HEAD"])
+        head = self._run([*prefix, "rev-parse", "HEAD"])
+        status = self._run([*prefix, "status", "--porcelain"])
+        if any(result is None or result.returncode != 0 for result in (origin, branch, head, status)):
             return McfGitEvidence(None, False, None, ("LIVE_GIT_UNAVAILABLE",))
 
-        assert origin_result is not None
-        assert branch_result is not None
-        assert head_result is not None
-        assert status_result is not None
-        repository = normalize_github_repository(origin_result.stdout)
-        branch = _text(branch_result.stdout)
-        head_sha = _text(head_result.stdout)
+        assert origin is not None and branch is not None and head is not None and status is not None
+        repository = normalize_github_repository(origin.stdout)
+        branch_name = _text(branch.stdout)
+        head_sha = _text(head.stdout)
         if (
             repository is None
-            or branch is None
-            or branch == "HEAD"
+            or branch_name is None
+            or branch_name == "HEAD"
             or head_sha is None
             or not _SHA_PATTERN.fullmatch(head_sha)
         ):
@@ -591,42 +580,25 @@ class McfGitObserver:
 
         live = McfLiveRepositoryState(
             repository=repository,
-            branch=branch,
+            branch=branch_name,
             head_sha=head_sha,
-            worktree_clean=not bool(status_result.stdout.strip()),
+            worktree_clean=not bool(status.stdout.strip()),
         )
-
-        checkpoint_repository = checkpoint.repository.casefold()
-        if checkpoint_repository != live.repository:
-            return McfGitEvidence(
-                live,
-                False,
-                None,
-                ("REPOSITORY_IDENTITY_MISMATCH",),
-            )
+        if checkpoint.repository.casefold() != live.repository:
+            return McfGitEvidence(live, False, None, ("REPOSITORY_IDENTITY_MISMATCH",))
         if not live.worktree_clean:
             return McfGitEvidence(live, False, None, ("WORKTREE_DIRTY",))
-
         checkpoint_sha = checkpoint.checkpoint_sha
         if checkpoint_sha is None:
             return McfGitEvidence(live, False, None, ("CHECKPOINT_SHA_ABSENT",))
-
         if checkpoint_sha == live.head_sha:
             if checkpoint.branch != live.branch:
                 return McfGitEvidence(live, True, "EXPLAINABLE_BRANCH_DRIFT", ())
             return McfGitEvidence(live, False, None, ())
 
-        commit_result = self._run(
-            [*prefix, "cat-file", "-e", f"{checkpoint_sha}^{{commit}}"]
-        )
-        if commit_result is None or commit_result.returncode != 0:
-            return McfGitEvidence(
-                live,
-                False,
-                None,
-                ("CHECKPOINT_COMMIT_UNAVAILABLE",),
-            )
-
+        exists = self._run([*prefix, "cat-file", "-e", f"{checkpoint_sha}^{{commit}}"])
+        if exists is None or exists.returncode != 0:
+            return McfGitEvidence(live, False, None, ("CHECKPOINT_COMMIT_UNAVAILABLE",))
         forward = self._run(
             [*prefix, "merge-base", "--is-ancestor", checkpoint_sha, live.head_sha]
         )
@@ -634,7 +606,6 @@ class McfGitObserver:
             return McfGitEvidence(live, False, None, ("LIVE_GIT_UNAVAILABLE",))
         if forward.returncode == 0:
             return McfGitEvidence(live, True, "EXPLAINABLE_FORWARD_DRIFT", ())
-
         backward = self._run(
             [*prefix, "merge-base", "--is-ancestor", live.head_sha, checkpoint_sha]
         )
@@ -642,7 +613,6 @@ class McfGitObserver:
             return McfGitEvidence(live, False, None, ("LIVE_GIT_UNAVAILABLE",))
         if backward.returncode == 0:
             return McfGitEvidence(live, True, "EXPLAINABLE_BACKWARD_DRIFT", ())
-
         return McfGitEvidence(live, False, None, ("UNEXPLAINED_DIVERGENCE",))
 
     def _run(self, args: list[str]) -> subprocess.CompletedProcess[str] | None:
@@ -659,10 +629,95 @@ class McfGitObserver:
             return None
 
 
+class McfContinuityAnalyzer:
+    """Compose checkpoint + Git evidence into one orientation-only R5 decision."""
+
+    def __init__(
+        self,
+        *,
+        checkpoint_inspector: McfCheckpointInspector | None = None,
+        git_observer: McfGitObserver | None = None,
+    ) -> None:
+        self.checkpoint_inspector = checkpoint_inspector or McfCheckpointInspector()
+        self.git_observer = git_observer or McfGitObserver()
+
+    def analyze(
+        self,
+        *,
+        root: str | Path,
+        project: McfRepositorySnapshot,
+        runtime: McfRuntimeProjection | None,
+        mission_id: str | None,
+    ) -> McfContinuityDecision:
+        project_root = Path(root).expanduser().resolve()
+        checkpoint_evidence = self.checkpoint_inspector.inspect(
+            root=project_root,
+            project=project,
+            runtime=runtime,
+            mission_id=mission_id,
+        )
+        checkpoint = checkpoint_evidence.checkpoint
+        if checkpoint is None:
+            git_evidence = McfGitEvidence(None, False, None, ())
+        else:
+            git_evidence = self.git_observer.observe(project_root, checkpoint)
+
+        route = decide_resume_route(
+            McfResumeDecisionInput(
+                checkpoint_available=checkpoint is not None,
+                live_repository_state=git_evidence.live_state,
+                authoritative_records_resolved=checkpoint_evidence.authoritative_records_resolved,
+                methodology_pin_valid=checkpoint_evidence.methodology_pin_valid,
+                checkpoint_integrity_valid=checkpoint_evidence.checkpoint_integrity_valid,
+                transferability=checkpoint.transferability if checkpoint else None,
+                checkpoint_repository=checkpoint.repository if checkpoint else None,
+                checkpoint_branch=checkpoint.branch if checkpoint else None,
+                checkpoint_sha=checkpoint.checkpoint_sha if checkpoint else None,
+                material_drift_explainable=git_evidence.material_drift_explainable,
+                drift_reason=git_evidence.drift_reason,
+            )
+        )
+        live = git_evidence.live_state
+        reasons = _merge_reasons(
+            checkpoint_evidence.reason_codes,
+            git_evidence.reason_codes,
+            route.reason_codes,
+        )
+        worktree_status = (
+            "UNAVAILABLE"
+            if live is None
+            else "CLEAN"
+            if live.worktree_clean
+            else "DIRTY"
+        )
+        return McfContinuityDecision(
+            route=route.route,
+            reason_codes=reasons,
+            drift=route.drift,
+            checkpoint_path=checkpoint.path if checkpoint else None,
+            checkpoint_sha=checkpoint.checkpoint_sha if checkpoint else None,
+            live_sha=live.head_sha if live else None,
+            checkpoint_branch=checkpoint.branch if checkpoint else None,
+            live_branch=live.branch if live else None,
+            checkpoint_repository=checkpoint.repository if checkpoint else None,
+            live_repository=live.repository if live else None,
+            transferability=checkpoint.transferability if checkpoint else None,
+            checkpoint_route_hint=checkpoint.resume_route_hint if checkpoint else None,
+            worktree_status=worktree_status,
+            authoritative_records_resolved=checkpoint_evidence.authoritative_records_resolved,
+            methodology_pin_valid=checkpoint_evidence.methodology_pin_valid,
+            checkpoint_integrity_valid=checkpoint_evidence.checkpoint_integrity_valid,
+            material_drift_explainable=git_evidence.material_drift_explainable,
+            next_action=checkpoint.next_action if checkpoint else "",
+        )
+
+
 __all__ = [
     "McfCheckpointEvidence",
     "McfCheckpointInspector",
     "McfCheckpointProjection",
+    "McfContinuityAnalyzer",
+    "McfContinuityDecision",
     "McfDriftStatus",
     "McfGitEvidence",
     "McfGitObserver",

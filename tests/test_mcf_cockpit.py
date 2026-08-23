@@ -17,6 +17,7 @@ from triview_workspace.mcf_bridge import (
 )
 from triview_workspace.mcf_cockpit import (
     McfCockpitContext,
+    McfCockpitDialog,
     build_cockpit_model,
     install_mcf_cockpit,
 )
@@ -455,3 +456,25 @@ def test_installer_resolves_active_workspace_at_click_time() -> None:
         (window.root, "workspace-a"),
         (window.root, "workspace-b"),
     ]
+
+
+def test_cockpit_body_scroll_supports_linux_and_mousewheel_events() -> None:
+    calls: list[tuple[int, str]] = []
+
+    class FakeCanvas:
+        def yview_scroll(self, units: int, mode: str) -> None:
+            calls.append((units, mode))
+
+    @dataclass
+    class Event:
+        num: int | None = None
+        delta: int = 0
+
+    dialog = object.__new__(McfCockpitDialog)
+    dialog.body_canvas = FakeCanvas()  # type: ignore[assignment]
+
+    assert dialog._scroll_body(Event(num=4)) == "break"  # type: ignore[arg-type]
+    assert dialog._scroll_body(Event(num=5)) == "break"  # type: ignore[arg-type]
+    assert dialog._scroll_body(Event(delta=240)) == "break"  # type: ignore[arg-type]
+    assert dialog._scroll_body(Event(delta=-120)) == "break"  # type: ignore[arg-type]
+    assert calls == [(-3, "units"), (3, "units"), (-2, "units"), (1, "units")]

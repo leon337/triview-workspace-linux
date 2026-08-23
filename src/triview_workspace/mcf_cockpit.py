@@ -706,22 +706,55 @@ class McfCockpitDialog:
         body = tk.Frame(self.window, background=PALETTE.app)
         body.pack(fill="both", expand=True, padx=14, pady=14)
         body.columnconfigure(0, weight=1)
-        body.columnconfigure(1, weight=1)
-        body.rowconfigure(0, weight=0)
-        body.rowconfigure(1, weight=0)
-        body.rowconfigure(2, weight=1)
-        self.sections = tk.Frame(body, background=PALETTE.app)
-        self.sections.grid(row=0, column=0, columnspan=2, sticky="nsew")
+        body.rowconfigure(0, weight=1)
+
+        self.body_canvas = tk.Canvas(
+            body,
+            background=PALETTE.app,
+            bd=0,
+            highlightthickness=0,
+        )
+        body_scrollbar = tk.Scrollbar(
+            body,
+            orient="vertical",
+            command=self.body_canvas.yview,
+        )
+        self.body_canvas.configure(yscrollcommand=body_scrollbar.set)
+        self.body_canvas.grid(row=0, column=0, sticky="nsew")
+        body_scrollbar.grid(row=0, column=1, sticky="ns", padx=(8, 0))
+
+        scrollable_content = tk.Frame(self.body_canvas, background=PALETTE.app)
+        scrollable_content.columnconfigure(0, weight=1)
+        content_window = self.body_canvas.create_window(
+            (0, 0),
+            window=scrollable_content,
+            anchor="nw",
+        )
+
+        def update_scroll_region(_event: tk.Event[tk.Misc]) -> None:
+            self.body_canvas.configure(scrollregion=self.body_canvas.bbox("all"))
+
+        def fit_content_width(event: tk.Event[tk.Misc]) -> None:
+            self.body_canvas.itemconfigure(content_window, width=event.width)
+
+        scrollable_content.bind("<Configure>", update_scroll_region)
+        self.body_canvas.bind("<Configure>", fit_content_width)
+        self.window.bind("<MouseWheel>", self._scroll_body)
+        self.window.bind("<Button-4>", self._scroll_body)
+        self.window.bind("<Button-5>", self._scroll_body)
+
+        self.sections = tk.Frame(scrollable_content, background=PALETTE.app)
+        self.sections.grid(row=0, column=0, sticky="nsew")
         self.sections.columnconfigure(0, weight=1)
         self.sections.columnconfigure(1, weight=1)
 
         timeline_shell = tk.Frame(
-            body,
+            scrollable_content,
             background=PALETTE.surface,
             highlightbackground=PALETTE.border,
             highlightthickness=1,
         )
-        timeline_shell.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(12, 0))
+        timeline_shell.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
         tk.Label(
             timeline_shell,
             text="TIMELINE",
@@ -751,6 +784,19 @@ class McfCockpitDialog:
         scrollbar.configure(command=self.timeline_text.yview)
 
         self.refresh()
+
+    def _scroll_body(self, event: tk.Event[tk.Misc]) -> str:
+        if getattr(event, "num", None) == 4:
+            units = -3
+        elif getattr(event, "num", None) == 5:
+            units = 3
+        else:
+            delta = int(getattr(event, "delta", 0))
+            if delta == 0:
+                return "break"
+            units = -max(1, abs(delta) // 120) if delta > 0 else max(1, abs(delta) // 120)
+        self.body_canvas.yview_scroll(units, "units")
+        return "break"
 
     def _toggle_binding(self) -> None:
         try:
@@ -784,12 +830,12 @@ class McfCockpitDialog:
             child.destroy()
         section_data = (
             ("PROJECT", model.project),
+            ("CAPABILITY REGISTRY · READ ONLY", model.capability_registry),
             ("MISSION", model.mission),
             ("AUTHORITY", model.authority),
             ("CONTINUITY", model.continuity),
             ("CONTEXT FABRIC", model.context_fabric),
             ("CONTEXT RECEIPT", model.context_receipt),
-            ("CAPABILITY REGISTRY · READ ONLY", model.capability_registry),
         )
         for index, (title, fields) in enumerate(section_data):
             row, column = divmod(index, 2)

@@ -9,13 +9,12 @@ lifecycle: ACTIVE
 
 snapshot:
   current_workstream: capability-registry-read-only-cockpit-lab
-  current_status: CAPABILITY_REGISTRY_READ_ONLY_HEADLESS_PASS
-  next_action: Run cross-repository E2E against a committed MCF capability endpoint, then X11
+  current_status: CAPABILITY_REGISTRY_READ_ONLY_CROSS_REPO_AND_FOCUSED_MINT_X11_PASS
+  next_action: Review the remote lab branch under a separate merge gate
   blockers:
-    - The MCF capability endpoint needs a committed authorized lab baseline
-    - Physical Linux Mint/X11 acceptance for the 1.0.0a4 candidate remains pending
+    - The full product-candidate R7 matrix remains separate from the focused cockpit smoke
 
 sources:
   current_state: docs/architecture/TRIVIEW_CAPABILITY_REGISTRY_LAB.md
 
-observed_at: "2026-08-23T04:00:12-03:00"
+observed_at: "2026-08-23T04:22:02-03:00"

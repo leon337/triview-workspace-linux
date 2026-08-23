@@ -9,13 +9,12 @@ lifecycle: ACTIVE
 
 snapshot:
   current_workstream: context-fabric-lab-integration
-  current_status: CF0_CF1_READ_ONLY_LAB_IMPLEMENTED_HEADLESS_PASS
-  next_action: Integrate with the MCF lab endpoint and run the physical Linux Mint/X11 gate
+  current_status: CF0_CF1_READ_ONLY_CROSS_REPO_E2E_PASS
+  next_action: Run the physical Linux Mint/X11 gate before any candidate promotion
   blockers:
-    - The MCF Registry entry and recovery endpoint must be integrated on an authorized lab line
     - Physical Linux Mint/X11 acceptance for the 1.0.0a4 candidate remains pending
 
 sources:
   current_state: docs/architecture/TRIVIEW_CONTEXT_FABRIC_LAB.md
 
-observed_at: "2026-08-23T03:31:10-03:00"
+observed_at: "2026-08-23T03:36:43-03:00"

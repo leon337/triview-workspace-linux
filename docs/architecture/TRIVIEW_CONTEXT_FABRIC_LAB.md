@@ -2,16 +2,17 @@
 
 ## Status
 
-`HEADLESS_PASS__PHYSICAL_NOT_RUN`
+`CROSS_REPO_E2E_PASS__PHYSICAL_NOT_RUN`
 
 This branch is an isolated lab integration based on
 `origin/release/1.0.0a4@4089eed90a4672f8f68e396f9861e70552b1b115`.
 It does not promote or replace the immutable `1.0.0a4` physical candidate and it
 does not change `main`.
 
-The TriView consumer is implemented on this isolated branch. Integration against
-the real MCF Registry and recovery endpoint remains a separate cross-repository
-lab gate.
+The TriView consumer is implemented on this isolated branch. A local
+cross-repository lab run against the real MCF Registry and recovery endpoint
+passed without enabling mission runtime or modifying either canonical input. The
+branches remain unmerged and undeployed.
 
 ## Ownership
 
@@ -74,11 +75,15 @@ It may not:
 
 ## Qualification boundary
 
-The isolated headless suite passed with `403 passed, 2 skipped`. A synthetic local
+The isolated headless suite passed with `404 passed, 2 skipped`. A synthetic local
 HTTP server proved the exact GET query, strict Receipt projection, explicit 503
 fallback, credential non-persistence, and byte-for-byte preservation of the
 Registry and Capsule inputs. The two skips are the dedicated physical X11 cases;
 they are not counted as PASS.
+
+The real cross-repository E2E also passed using only the dedicated Context Fabric
+credential and one GET request. Its sanitized evidence is recorded in
+[the cross-repository lab report](TRIVIEW_CONTEXT_FABRIC_CROSS_REPO_E2E.md).
 
 These tests prove only the software contract. The physical Linux Mint/X11 matrix,
 Mission Cockpit visual smoke, stable update and rollback gates remain `NOT_RUN`

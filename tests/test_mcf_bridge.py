@@ -6,6 +6,10 @@ from typing import Any
 
 import pytest
 
+from triview_workspace.mcf_capability_registry import (
+    McfCapabilityRegistryProjection,
+    McfCapabilityRegistryRepositoryReader,
+)
 from triview_workspace.mcf_bridge import McfBridge, McfRepositoryInspector, McfRuntimeClient
 
 
@@ -165,6 +169,55 @@ def _context_receipt(project_id: str = "triview") -> dict[str, Any]:
     }
 
 
+def _capability_entry() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "capability": {
+            "id": "mcf.context.recovery.read",
+            "provider_project_id": "multiagent-collaboration-framework",
+            "consumer_project_ids": ["triview"],
+            "mode": "READ_ONLY",
+        },
+        "contract": {
+            "protocol": "MCF_CONTEXT_RECOVERY_HTTP_V1",
+            "allowed_operations": ["context.recover"],
+            "prohibited_operations": ["mission.execute"],
+        },
+        "scope": {"environments": ["lab"], "resources": ["context/projects/*.yaml"]},
+        "governance": {
+            "authorization_state": "AUTHORIZED",
+            "required_gate": "DEDICATED_CONTEXT_READ_TOKEN",
+            "expiration": None,
+        },
+        "lifecycle": {
+            "implementation_state": "IMPLEMENTED",
+            "connection_state": "CONNECTED",
+            "runtime_state": "ACTIVE",
+            "verification_state": "VERIFIED",
+            "last_verified_at": "2026-08-23T06:30:22Z",
+        },
+        "evidence": [{"source_ref": "controller.ts", "source_revision": "d5bbcfd"}],
+        "freshness": "LIVE_REQUIRED",
+    }
+
+
+def _capability_snapshot(project_id: str = "triview") -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "retrieved_at": "2026-08-23T06:50:00Z",
+        "project_id": project_id,
+        "read_only": True,
+        "evidence_only": True,
+        "entries": [_capability_entry()],
+        "sources": [
+            {
+                "source_ref": "context/capabilities/mcf-context-recovery-read.yaml",
+                "source_revision": "d6bdcff",
+            }
+        ],
+    }
+
+
 def test_runtime_client_uses_get_only_and_transient_headers() -> None:
     captured: list[tuple[object, float]] = []
 
@@ -224,6 +277,39 @@ def test_runtime_client_bounds_context_response_before_json_parsing() -> None:
 
     with pytest.raises(ValueError, match="size limit"):
         client.context_recovery("triview")
+
+
+def test_runtime_client_requests_capability_registry_by_get_only() -> None:
+    captured: list[object] = []
+
+    def opener(request: object, _timeout: float) -> _FakeResponse:
+        captured.append(request)
+        return _FakeResponse(_capability_snapshot())
+
+    client = McfRuntimeClient(
+        "https://mcf.example.test/",
+        headers={"x-mcf-context-token": "ephemeral-read-token"},
+        opener=opener,
+    )
+
+    payload = client.capability_registry("triview")
+
+    assert payload["evidence_only"] is True
+    request = captured[0]
+    assert request.get_method() == "GET"  # type: ignore[attr-defined]
+    assert request.full_url == (  # type: ignore[attr-defined]
+        "https://mcf.example.test/v1/mcf/context/capabilities?project_id=triview"
+    )
+    assert request.get_header(  # type: ignore[attr-defined]
+        "X-mcf-context-token"
+    ) == "ephemeral-read-token"
+
+
+def test_runtime_client_rejects_invalid_capability_project_id() -> None:
+    client = McfRuntimeClient("https://mcf.example.test")
+
+    with pytest.raises(ValueError, match="stable lowercase"):
+        client.capability_registry("TriView")
 
 
 def test_bridge_combines_repository_and_runtime_read_only(tmp_path: Path) -> None:
@@ -311,4 +397,82 @@ def test_bridge_labels_context_runtime_failure_as_repository_fallback(tmp_path: 
     assert snapshot.context_mode == "REPOSITORY_FALLBACK"
     assert snapshot.context_error == (
         "CONTEXT_RUNTIME_READ_FAILED:TimeoutError:synthetic timeout"
+    )
+
+
+def test_bridge_prefers_strict_remote_capabilities_over_repository_fallback(
+    tmp_path: Path,
+) -> None:
+    _write_project_artifacts(tmp_path)
+
+    class FakeCapabilities:
+        def capability_registry(self, project_id: str | None = None) -> dict[str, Any]:
+            assert project_id == "triview"
+            return _capability_snapshot()
+
+    snapshot = McfBridge(capability_client=FakeCapabilities()).inspect(
+        tmp_path,
+        list_capabilities=True,
+    )
+
+    assert snapshot.runtime is None
+    assert snapshot.capability_mode == "MCF_RUNTIME_GET"
+    assert snapshot.capability_error is None
+    assert snapshot.capability_registry is not None
+    assert snapshot.capability_registry.source == "MCF_CAPABILITY_REGISTRY_GET_READ_ONLY"
+    assert snapshot.capability_registry.entries[0].runtime_state == "ACTIVE"
+
+
+def test_bridge_keeps_repository_capabilities_on_remote_failure(tmp_path: Path) -> None:
+    _write_project_artifacts(tmp_path)
+    registry_root = tmp_path / "registry"
+    capability_path = registry_root / "context/capabilities/recovery.yaml"
+    capability_path.parent.mkdir(parents=True)
+    capability_path.write_text(json.dumps(_capability_entry()), encoding="utf-8")
+
+    class FailingCapabilities:
+        def capability_registry(self, project_id: str | None = None) -> dict[str, Any]:
+            assert project_id == "triview"
+            raise TimeoutError("synthetic timeout")
+
+    snapshot = McfBridge(
+        capability_repository_reader=McfCapabilityRegistryRepositoryReader(
+            registry_root=registry_root
+        ),
+        capability_client=FailingCapabilities(),
+    ).inspect(tmp_path, list_capabilities=True)
+
+    assert snapshot.capability_mode == "REPOSITORY_FALLBACK"
+    assert snapshot.capability_error == (
+        "CAPABILITY_RUNTIME_READ_FAILED:TimeoutError:synthetic timeout"
+    )
+    assert snapshot.capability_registry is not None
+    assert snapshot.capability_registry.status == "VALID"
+    assert snapshot.capability_registry.source == (
+        "MCF_CAPABILITY_REGISTRY_REPOSITORY_READ_ONLY"
+    )
+    assert [entry.capability_id for entry in snapshot.capability_registry.entries] == [
+        "mcf.context.recovery.read"
+    ]
+
+
+def test_bridge_rejects_capability_snapshot_for_another_project(tmp_path: Path) -> None:
+    _write_project_artifacts(tmp_path)
+
+    class WrongProjectCapabilities:
+        def capability_registry(self, project_id: str | None = None) -> dict[str, Any]:
+            assert project_id == "triview"
+            return _capability_snapshot("multiagent-collaboration-framework")
+
+    snapshot = McfBridge(capability_client=WrongProjectCapabilities()).inspect(
+        tmp_path,
+        list_capabilities=True,
+    )
+
+    assert snapshot.capability_mode == "REPOSITORY_FALLBACK"
+    assert snapshot.capability_registry is not None
+    assert snapshot.capability_registry.status == "ABSENT"
+    assert snapshot.capability_error == (
+        "CAPABILITY_RUNTIME_READ_FAILED:ValueError:"
+        "Capability snapshot project_id differs from repository identity"
     )

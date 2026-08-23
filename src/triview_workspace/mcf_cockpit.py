@@ -18,6 +18,10 @@ from triview_workspace.mcf_binding import (
     McfWorkspaceBinder,
     McfWorkspaceBinding,
 )
+from triview_workspace.mcf_capability_registry import (
+    McfCapabilityEntryProjection,
+    McfCapabilityRegistryRepositoryReader,
+)
 from triview_workspace.mcf_bridge import (
     McfBridge,
     McfBridgeSnapshot,
@@ -44,6 +48,8 @@ _ENV_CONTEXT_READ_TOKEN = "TRIVIEW_MCF_CONTEXT_READ_TOKEN"
 _ENV_REGISTRY_ROOT = "TRIVIEW_MCF_REGISTRY_ROOT"
 _GATE_EVENTS = frozenset({"GATE_REQUIRED", "GATE_APPROVED", "GATE_REJECTED"})
 _MAX_TIMELINE_EVENTS = 12
+_MAX_CAPABILITY_DISPLAY_ENTRIES = 8
+_MAX_CAPABILITY_SUMMARY_CHARS = 2048
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
@@ -159,6 +165,98 @@ def _context_receipt_fields(snapshot: McfBridgeSnapshot) -> dict[str, str]:
     }
 
 
+def _bounded_join(values: list[str], *, fallback: str = "N/A") -> str:
+    if not values:
+        return fallback
+    result: list[str] = []
+    length = 0
+    for value in values:
+        separator = 2 if result else 0
+        if length + separator + len(value) > _MAX_CAPABILITY_SUMMARY_CHARS:
+            result.append("…")
+            break
+        result.append(value)
+        length += separator + len(value)
+    return "; ".join(result)
+
+
+def _capability_state(entry: McfCapabilityEntryProjection) -> str:
+    return (
+        f"{entry.capability_id} · "
+        f"IMPLEMENTED={entry.implementation_state} · "
+        f"CONNECTED={entry.connection_state} · "
+        f"AUTHORIZED={entry.authorization_state} · "
+        f"VERIFIED={entry.verification_state} · "
+        f"RUNTIME={entry.runtime_state}"
+    )
+
+
+def _capability_gaps(entry: McfCapabilityEntryProjection) -> tuple[str, ...]:
+    gaps: list[str] = []
+    if entry.implementation_state != "IMPLEMENTED":
+        gaps.append("NOT_IMPLEMENTED")
+    if entry.connection_state != "CONNECTED":
+        gaps.append("NOT_CONNECTED")
+    if entry.authorization_state != "AUTHORIZED":
+        gaps.append("NOT_AUTHORIZED")
+    if entry.verification_state != "VERIFIED":
+        gaps.append(entry.verification_state)
+    if entry.runtime_state != "ACTIVE":
+        gaps.append(f"RUNTIME_{entry.runtime_state}")
+    return tuple(gaps)
+
+
+def _capability_registry_fields(snapshot: McfBridgeSnapshot) -> dict[str, str]:
+    registry = snapshot.capability_registry
+    if registry is None:
+        return {
+            "mode": snapshot.capability_mode,
+            "status": "ABSENT",
+            "state_model": "IMPLEMENTED ≠ CONNECTED ≠ AUTHORIZED ≠ VERIFIED",
+            "entries": "0",
+            "retrieved_at": "N/A",
+            "freshness": "N/A",
+            "required_gates": "N/A",
+            "blockers": "N/A",
+            "finding": snapshot.capability_error or "CAPABILITY_REGISTRY_NOT_INSPECTED",
+        }
+
+    entries = registry.entries
+    visible = entries[:_MAX_CAPABILITY_DISPLAY_ENTRIES]
+    fields = {
+        "mode": snapshot.capability_mode,
+        "status": registry.status,
+        "state_model": "IMPLEMENTED ≠ CONNECTED ≠ AUTHORIZED ≠ VERIFIED",
+        "entries": str(len(entries)),
+        "retrieved_at": registry.retrieved_at or "REPOSITORY_ONLY_NON_LIVE",
+        "freshness": _bounded_join(sorted({entry.freshness for entry in entries})),
+        "sources": str(len(registry.sources)),
+    }
+    for index, entry in enumerate(visible, start=1):
+        fields[f"capability_{index}"] = _capability_state(entry)
+    fields["entries_hidden"] = str(max(0, len(entries) - len(visible)))
+    fields["required_gates"] = _bounded_join(
+        [
+            f"{entry.capability_id} → {entry.required_gate}"
+            for entry in entries
+            if entry.required_gate is not None
+        ]
+    )
+    fields["blockers"] = _bounded_join(
+        [
+            f"{entry.capability_id} → {', '.join(gaps)}"
+            for entry in entries
+            if (gaps := _capability_gaps(entry))
+        ]
+    )
+    fields["finding"] = (
+        snapshot.capability_error
+        or ", ".join(registry.error_codes)
+        or "EVIDENCE_ONLY_NO_ACTIONS"
+    )
+    return fields
+
+
 @dataclass(frozen=True, slots=True)
 class McfCockpitEvent:
     """One compact timeline event shown without mutating runtime state."""
@@ -180,6 +278,7 @@ class McfCockpitModel:
     continuity: dict[str, str]
     context_fabric: dict[str, str]
     context_receipt: dict[str, str]
+    capability_registry: dict[str, str]
     timeline: tuple[McfCockpitEvent, ...]
     mode: str = "READ_ONLY"
 
@@ -386,6 +485,7 @@ def build_cockpit_model(
     }
     context_fabric = _context_fabric_fields(snapshot)
     context_receipt = _context_receipt_fields(snapshot)
+    capability_registry = _capability_registry_fields(snapshot)
     derived_continuity = _continuity_fields(continuity) if continuity is not None else None
 
     if snapshot.runtime is None:
@@ -417,6 +517,7 @@ def build_cockpit_model(
             ),
             context_fabric=context_fabric,
             context_receipt=context_receipt,
+            capability_registry=capability_registry,
             timeline=(),
         )
 
@@ -458,6 +559,7 @@ def build_cockpit_model(
         continuity=derived_continuity or legacy_continuity,
         context_fabric=context_fabric,
         context_receipt=context_receipt,
+        capability_registry=capability_registry,
         timeline=_timeline_events(timeline_payload),
     )
 
@@ -490,11 +592,16 @@ def load_cockpit_model(context: McfCockpitContext) -> McfCockpitModel:
         repository_inspector=repository_inspector,
         runtime_client=runtime_client,
         context_client=context_client,
+        capability_repository_reader=McfCapabilityRegistryRepositoryReader(
+            registry_root=context.registry_root
+        ),
+        capability_client=context_client,
     ).inspect(
         context.project_root,
         mission_id=context.mission_id if context.runtime_enabled else None,
         recover_context=context.context_runtime_enabled,
         requires_current_operational_state=False,
+        list_capabilities=True,
     )
     continuity = McfContinuityAnalyzer().analyze(
         root=context.project_root,
@@ -682,6 +789,7 @@ class McfCockpitDialog:
             ("CONTINUITY", model.continuity),
             ("CONTEXT FABRIC", model.context_fabric),
             ("CONTEXT RECEIPT", model.context_receipt),
+            ("CAPABILITY REGISTRY · READ ONLY", model.capability_registry),
         )
         for index, (title, fields) in enumerate(section_data):
             row, column = divmod(index, 2)

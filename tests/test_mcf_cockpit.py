@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from triview_workspace.mcf_capability_registry import (
+    McfCapabilityEntryProjection,
+    McfCapabilityEvidenceProjection,
+    McfCapabilityRegistryProjection,
+)
 from triview_workspace.mcf_binding import McfWorkspaceBinding
 from triview_workspace.mcf_bridge import (
     McfArtifactProjection,
@@ -117,6 +122,43 @@ def _runtime_projection() -> McfRuntimeProjection:
     )
 
 
+def _capability_entry(
+    capability_id: str,
+    *,
+    connection: str,
+    authorization: str,
+    runtime: str,
+    verification: str,
+    gate: str,
+) -> McfCapabilityEntryProjection:
+    return McfCapabilityEntryProjection(
+        capability_id=capability_id,
+        provider_project_id="multiagent-collaboration-framework",
+        consumer_project_ids=("triview",),
+        mode="READ_ONLY",
+        protocol="MCF_CONTEXT_HTTP_V1",
+        allowed_operations=("context.read",),
+        prohibited_operations=("context.write",),
+        environments=("lab",),
+        resources=("context/capabilities",),
+        authorization_state=authorization,
+        required_gate=gate,
+        expiration=None,
+        implementation_state="IMPLEMENTED",
+        connection_state=connection,
+        runtime_state=runtime,
+        verification_state=verification,
+        last_verified_at="2026-08-23T06:30:22Z",
+        evidence=(
+            McfCapabilityEvidenceProjection(
+                source_ref="context/capabilities/fixture.yaml",
+                source_revision="fixture-revision",
+            ),
+        ),
+        freshness="LIVE_REQUIRED",
+    )
+
+
 def test_cockpit_model_projects_repository_only_state(tmp_path: Path) -> None:
     model = build_cockpit_model(
         McfBridgeSnapshot(project=_project_snapshot(tmp_path), runtime=None)
@@ -132,7 +174,65 @@ def test_cockpit_model_projects_repository_only_state(tmp_path: Path) -> None:
     assert model.authority["latest_gate"] == "N/A"
     assert model.continuity["checkpoint_path"] == "AUSENTE"
     assert model.continuity["resume_route"] == "NÃO PROJETADA NO R3"
+    assert model.capability_registry["mode"] == "REPOSITORY_ONLY"
+    assert model.capability_registry["status"] == "ABSENT"
     assert model.timeline == ()
+
+
+def test_cockpit_keeps_capability_states_gates_and_blockers_visibly_distinct(
+    tmp_path: Path,
+) -> None:
+    disconnected = _capability_entry(
+        "cloud.workspace.g2a.read",
+        connection="DISCONNECTED",
+        authorization="NOT_AUTHORIZED",
+        runtime="UNKNOWN",
+        verification="HISTORICALLY_VERIFIED",
+        gate="DEDICATED_FORCED_COMMAND_SSH_READ_TRANSPORT",
+    )
+    active = _capability_entry(
+        "mcf.context.recovery.read",
+        connection="CONNECTED",
+        authorization="AUTHORIZED",
+        runtime="ACTIVE",
+        verification="VERIFIED",
+        gate="DEDICATED_CONTEXT_READ_TOKEN",
+    )
+    model = build_cockpit_model(
+        McfBridgeSnapshot(
+            project=_project_snapshot(tmp_path),
+            runtime=None,
+            capability_registry=McfCapabilityRegistryProjection(
+                status="VALID",
+                project_id="triview",
+                retrieved_at="2026-08-23T06:50:00Z",
+                entries=(disconnected, active),
+                sources=disconnected.evidence + active.evidence,
+                source="MCF_CAPABILITY_REGISTRY_GET_READ_ONLY",
+            ),
+            capability_mode="MCF_RUNTIME_GET",
+        )
+    )
+
+    capabilities = model.capability_registry
+    assert capabilities["state_model"] == (
+        "IMPLEMENTED ≠ CONNECTED ≠ AUTHORIZED ≠ VERIFIED"
+    )
+    assert capabilities["capability_1"] == (
+        "cloud.workspace.g2a.read · IMPLEMENTED=IMPLEMENTED · "
+        "CONNECTED=DISCONNECTED · AUTHORIZED=NOT_AUTHORIZED · "
+        "VERIFIED=HISTORICALLY_VERIFIED · RUNTIME=UNKNOWN"
+    )
+    assert "cloud.workspace.g2a.read → NOT_CONNECTED, NOT_AUTHORIZED" in capabilities[
+        "blockers"
+    ]
+    assert "HISTORICALLY_VERIFIED" in capabilities["blockers"]
+    assert "mcf.context.recovery.read" not in capabilities["blockers"]
+    assert "DEDICATED_FORCED_COMMAND_SSH_READ_TRANSPORT" in capabilities[
+        "required_gates"
+    ]
+    assert capabilities["finding"] == "EVIDENCE_ONLY_NO_ACTIONS"
+    assert model.mode == "READ_ONLY"
 
 
 def test_cockpit_model_projects_mission_authority_continuity_and_timeline(

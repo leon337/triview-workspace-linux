@@ -174,6 +174,8 @@ def test_cockpit_context_reads_runtime_configuration_without_exposing_token(
             "TRIVIEW_MCF_MISSION_ID": "mission-1",
             "TRIVIEW_MCF_RUNTIME_URL": "https://mcf.example.test/",
             "TRIVIEW_MCF_SESSION_TOKEN": "secret-token",
+            "TRIVIEW_MCF_CONTEXT_READ_TOKEN": "context-read-token",
+            "TRIVIEW_MCF_REGISTRY_ROOT": str(tmp_path / "mcf-registry"),
         },
         cwd=tmp_path.parent,
     )
@@ -182,7 +184,10 @@ def test_cockpit_context_reads_runtime_configuration_without_exposing_token(
     assert context.mission_id == "mission-1"
     assert context.runtime_url == "https://mcf.example.test/"
     assert context.runtime_enabled is True
+    assert context.context_runtime_enabled is True
+    assert context.registry_root == (tmp_path / "mcf-registry").resolve()
     assert "secret-token" not in repr(context)
+    assert "context-read-token" not in repr(context)
 
 
 def test_cockpit_context_disables_runtime_when_configuration_is_incomplete(
@@ -199,6 +204,34 @@ def test_cockpit_context_disables_runtime_when_configuration_is_incomplete(
 
     assert context.project_root == tmp_path.resolve()
     assert context.runtime_enabled is False
+    assert context.context_runtime_enabled is False
+
+
+def test_cockpit_context_keeps_mission_and_context_credentials_independent(
+    tmp_path: Path,
+) -> None:
+    mission_only = McfCockpitContext.from_environment(
+        {
+            "TRIVIEW_MCF_PROJECT_ROOT": str(tmp_path),
+            "TRIVIEW_MCF_MISSION_ID": "mission-1",
+            "TRIVIEW_MCF_RUNTIME_URL": "https://mcf.example.test",
+            "TRIVIEW_MCF_SESSION_TOKEN": "mission-only",
+        }
+    )
+    context_only = McfCockpitContext.from_environment(
+        {
+            "TRIVIEW_MCF_PROJECT_ROOT": str(tmp_path),
+            "TRIVIEW_MCF_RUNTIME_URL": "https://mcf.example.test",
+            "TRIVIEW_MCF_CONTEXT_READ_TOKEN": "context-only",
+        }
+    )
+
+    assert mission_only.runtime_enabled is True
+    assert mission_only.context_runtime_enabled is False
+    assert context_only.runtime_enabled is False
+    assert context_only.context_runtime_enabled is True
+    assert "mission-only" not in repr(mission_only)
+    assert "context-only" not in repr(context_only)
 
 
 def test_cockpit_context_defaults_project_root_to_current_directory(tmp_path: Path) -> None:
@@ -208,6 +241,8 @@ def test_cockpit_context_defaults_project_root_to_current_directory(tmp_path: Pa
     assert context.mission_id is None
     assert context.runtime_url is None
     assert context.runtime_enabled is False
+    assert context.context_runtime_enabled is False
+    assert context.registry_root is None
 
 
 def test_workspace_binding_overrides_non_secret_environment_but_token_remains_ephemeral(
@@ -236,6 +271,7 @@ def test_workspace_binding_overrides_non_secret_environment_but_token_remains_ep
             "TRIVIEW_MCF_MISSION_ID": "fallback-mission",
             "TRIVIEW_MCF_RUNTIME_URL": "https://fallback.example.test/",
             "TRIVIEW_MCF_SESSION_TOKEN": "ephemeral-token",
+            "TRIVIEW_MCF_CONTEXT_READ_TOKEN": "ephemeral-context-token",
         },
         cwd=tmp_path,
     )
@@ -246,7 +282,9 @@ def test_workspace_binding_overrides_non_secret_environment_but_token_remains_ep
     assert context.mission_id == "bound-mission"
     assert context.runtime_url == "https://bound.example.test/"
     assert context.runtime_enabled is True
+    assert context.context_runtime_enabled is True
     assert "ephemeral-token" not in repr(context)
+    assert "ephemeral-context-token" not in repr(context)
 
 
 def test_unbound_workspace_preserves_r3_environment_fallback(tmp_path: Path) -> None:

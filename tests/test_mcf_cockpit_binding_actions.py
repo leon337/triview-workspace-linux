@@ -40,6 +40,7 @@ def test_bind_workspace_context_passes_only_non_secret_reference_fields(tmp_path
         workspace_id="workspace-a",
         binding_persisted=False,
         _session_token="must-never-reach-binder",
+        _context_read_token="context-must-never-reach-binder",
     )
 
     result = bind_workspace_context(context, FakeBinder())  # type: ignore[arg-type]
@@ -54,6 +55,7 @@ def test_bind_workspace_context_passes_only_non_secret_reference_fields(tmp_path
         )
     ]
     assert "must-never-reach-binder" not in repr(calls)
+    assert "context-must-never-reach-binder" not in repr(calls)
 
 
 def test_unbind_workspace_context_removes_only_workspace_reference(tmp_path: Path) -> None:

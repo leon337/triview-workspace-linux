@@ -11,7 +11,6 @@ import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -22,6 +21,10 @@ _CANONICAL_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _REPOSITORY_PATH = re.compile(
     r"^(?![A-Za-z]:)(?!/)(?!.*\\)(?!.*(?:^|/)\.\.?(?:/|$))"
     r"(?!.*//)(?!.*[\x00-\x1F\x7F])(?=.*\S)[^/]+(?:/[^/]+)*$"
+)
+_RFC_3339_DATE_TIME = re.compile(
+    r"^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})"
+    r"(?:\.\d+)?(?:[Zz]|([+-])(\d{2}):(\d{2}))$"
 )
 _REGISTRY_LIFECYCLES = frozenset(
     {"DISCOVERABLE", "CANDIDATE", "REGISTERED", "SUSPENDED", "ARCHIVED"}
@@ -174,11 +177,25 @@ def _text(value: object, *, maximum: int, code: str, pattern: re.Pattern[str] | 
 
 def _date_time(value: object, *, code: str) -> str:
     text = _text(value, maximum=128, code=code)
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise _fail(code) from exc
-    if parsed.tzinfo is None:
+    match = _RFC_3339_DATE_TIME.fullmatch(text)
+    if match is None:
+        raise _fail(code)
+    year, month, day, hour, minute, second = (
+        int(part) for part in match.groups()[:6]
+    )
+    offset_hour = int(match.group(8) or 0)
+    offset_minute = int(match.group(9) or 0)
+    leap_year = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+    days_by_month = (31, 29 if leap_year else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    if not (
+        1 <= month <= 12
+        and 1 <= day <= days_by_month[month - 1]
+        and hour <= 23
+        and minute <= 59
+        and second <= 59
+        and offset_hour <= 23
+        and offset_minute <= 59
+    ):
         raise _fail(code)
     return text
 

@@ -224,6 +224,20 @@ def test_receipt_parser_accepts_only_sanitized_read_only_evidence() -> None:
     assert not hasattr(projection.claims[0], "value")
 
 
+def test_receipt_parser_uses_the_mcf_rfc3339_profile() -> None:
+    receipt = _receipt()
+    receipt["recovered_at"] = "2026-08-23t06:09:19z"
+
+    projection = McfContextRecoveryReceiptParser().parse(receipt)
+
+    assert projection.recovered_at == "2026-08-23t06:09:19z"
+
+    for invalid in ("2026-08-23 06:09:19+00:00", "2026-02-30T06:09:19Z"):
+        receipt["recovered_at"] = invalid
+        with pytest.raises(McfContextFabricError, match="^RECEIPT_RECOVERED_AT_INVALID$"):
+            McfContextRecoveryReceiptParser().parse(receipt)
+
+
 @pytest.mark.parametrize(
     ("field", "value", "code"),
     [

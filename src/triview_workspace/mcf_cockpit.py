@@ -18,6 +18,10 @@ from triview_workspace.mcf_binding import (
     McfWorkspaceBinder,
     McfWorkspaceBinding,
 )
+from triview_workspace.mcf_capability_registry import (
+    McfCapabilityEntryProjection,
+    McfCapabilityRegistryRepositoryReader,
+)
 from triview_workspace.mcf_bridge import (
     McfBridge,
     McfBridgeSnapshot,
@@ -44,6 +48,8 @@ _ENV_CONTEXT_READ_TOKEN = "TRIVIEW_MCF_CONTEXT_READ_TOKEN"
 _ENV_REGISTRY_ROOT = "TRIVIEW_MCF_REGISTRY_ROOT"
 _GATE_EVENTS = frozenset({"GATE_REQUIRED", "GATE_APPROVED", "GATE_REJECTED"})
 _MAX_TIMELINE_EVENTS = 12
+_MAX_CAPABILITY_DISPLAY_ENTRIES = 8
+_MAX_CAPABILITY_SUMMARY_CHARS = 2048
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
@@ -159,6 +165,98 @@ def _context_receipt_fields(snapshot: McfBridgeSnapshot) -> dict[str, str]:
     }
 
 
+def _bounded_join(values: list[str], *, fallback: str = "N/A") -> str:
+    if not values:
+        return fallback
+    result: list[str] = []
+    length = 0
+    for value in values:
+        separator = 2 if result else 0
+        if length + separator + len(value) > _MAX_CAPABILITY_SUMMARY_CHARS:
+            result.append("…")
+            break
+        result.append(value)
+        length += separator + len(value)
+    return "; ".join(result)
+
+
+def _capability_state(entry: McfCapabilityEntryProjection) -> str:
+    return (
+        f"{entry.capability_id} · "
+        f"IMPLEMENTED={entry.implementation_state} · "
+        f"CONNECTED={entry.connection_state} · "
+        f"AUTHORIZED={entry.authorization_state} · "
+        f"VERIFIED={entry.verification_state} · "
+        f"RUNTIME={entry.runtime_state}"
+    )
+
+
+def _capability_gaps(entry: McfCapabilityEntryProjection) -> tuple[str, ...]:
+    gaps: list[str] = []
+    if entry.implementation_state != "IMPLEMENTED":
+        gaps.append("NOT_IMPLEMENTED")
+    if entry.connection_state != "CONNECTED":
+        gaps.append("NOT_CONNECTED")
+    if entry.authorization_state != "AUTHORIZED":
+        gaps.append("NOT_AUTHORIZED")
+    if entry.verification_state != "VERIFIED":
+        gaps.append(entry.verification_state)
+    if entry.runtime_state != "ACTIVE":
+        gaps.append(f"RUNTIME_{entry.runtime_state}")
+    return tuple(gaps)
+
+
+def _capability_registry_fields(snapshot: McfBridgeSnapshot) -> dict[str, str]:
+    registry = snapshot.capability_registry
+    if registry is None:
+        return {
+            "mode": snapshot.capability_mode,
+            "status": "ABSENT",
+            "state_model": "IMPLEMENTED ≠ CONNECTED ≠ AUTHORIZED ≠ VERIFIED",
+            "entries": "0",
+            "retrieved_at": "N/A",
+            "freshness": "N/A",
+            "required_gates": "N/A",
+            "blockers": "N/A",
+            "finding": snapshot.capability_error or "CAPABILITY_REGISTRY_NOT_INSPECTED",
+        }
+
+    entries = registry.entries
+    visible = entries[:_MAX_CAPABILITY_DISPLAY_ENTRIES]
+    fields = {
+        "mode": snapshot.capability_mode,
+        "status": registry.status,
+        "state_model": "IMPLEMENTED ≠ CONNECTED ≠ AUTHORIZED ≠ VERIFIED",
+        "entries": str(len(entries)),
+        "retrieved_at": registry.retrieved_at or "REPOSITORY_ONLY_NON_LIVE",
+        "freshness": _bounded_join(sorted({entry.freshness for entry in entries})),
+        "sources": str(len(registry.sources)),
+    }
+    for index, entry in enumerate(visible, start=1):
+        fields[f"capability_{index}"] = _capability_state(entry)
+    fields["entries_hidden"] = str(max(0, len(entries) - len(visible)))
+    fields["required_gates"] = _bounded_join(
+        [
+            f"{entry.capability_id} → {entry.required_gate}"
+            for entry in entries
+            if entry.required_gate is not None
+        ]
+    )
+    fields["blockers"] = _bounded_join(
+        [
+            f"{entry.capability_id} → {', '.join(gaps)}"
+            for entry in entries
+            if (gaps := _capability_gaps(entry))
+        ]
+    )
+    fields["finding"] = (
+        snapshot.capability_error
+        or ", ".join(registry.error_codes)
+        or "EVIDENCE_ONLY_NO_ACTIONS"
+    )
+    return fields
+
+
 @dataclass(frozen=True, slots=True)
 class McfCockpitEvent:
     """One compact timeline event shown without mutating runtime state."""
@@ -180,6 +278,7 @@ class McfCockpitModel:
     continuity: dict[str, str]
     context_fabric: dict[str, str]
     context_receipt: dict[str, str]
+    capability_registry: dict[str, str]
     timeline: tuple[McfCockpitEvent, ...]
     mode: str = "READ_ONLY"
 
@@ -386,6 +485,7 @@ def build_cockpit_model(
     }
     context_fabric = _context_fabric_fields(snapshot)
     context_receipt = _context_receipt_fields(snapshot)
+    capability_registry = _capability_registry_fields(snapshot)
     derived_continuity = _continuity_fields(continuity) if continuity is not None else None
 
     if snapshot.runtime is None:
@@ -417,6 +517,7 @@ def build_cockpit_model(
             ),
             context_fabric=context_fabric,
             context_receipt=context_receipt,
+            capability_registry=capability_registry,
             timeline=(),
         )
 
@@ -458,6 +559,7 @@ def build_cockpit_model(
         continuity=derived_continuity or legacy_continuity,
         context_fabric=context_fabric,
         context_receipt=context_receipt,
+        capability_registry=capability_registry,
         timeline=_timeline_events(timeline_payload),
     )
 
@@ -490,11 +592,16 @@ def load_cockpit_model(context: McfCockpitContext) -> McfCockpitModel:
         repository_inspector=repository_inspector,
         runtime_client=runtime_client,
         context_client=context_client,
+        capability_repository_reader=McfCapabilityRegistryRepositoryReader(
+            registry_root=context.registry_root
+        ),
+        capability_client=context_client,
     ).inspect(
         context.project_root,
         mission_id=context.mission_id if context.runtime_enabled else None,
         recover_context=context.context_runtime_enabled,
         requires_current_operational_state=False,
+        list_capabilities=True,
     )
     continuity = McfContinuityAnalyzer().analyze(
         root=context.project_root,
@@ -599,22 +706,55 @@ class McfCockpitDialog:
         body = tk.Frame(self.window, background=PALETTE.app)
         body.pack(fill="both", expand=True, padx=14, pady=14)
         body.columnconfigure(0, weight=1)
-        body.columnconfigure(1, weight=1)
-        body.rowconfigure(0, weight=0)
-        body.rowconfigure(1, weight=0)
-        body.rowconfigure(2, weight=1)
-        self.sections = tk.Frame(body, background=PALETTE.app)
-        self.sections.grid(row=0, column=0, columnspan=2, sticky="nsew")
+        body.rowconfigure(0, weight=1)
+
+        self.body_canvas = tk.Canvas(
+            body,
+            background=PALETTE.app,
+            bd=0,
+            highlightthickness=0,
+        )
+        body_scrollbar = tk.Scrollbar(
+            body,
+            orient="vertical",
+            command=self.body_canvas.yview,
+        )
+        self.body_canvas.configure(yscrollcommand=body_scrollbar.set)
+        self.body_canvas.grid(row=0, column=0, sticky="nsew")
+        body_scrollbar.grid(row=0, column=1, sticky="ns", padx=(8, 0))
+
+        scrollable_content = tk.Frame(self.body_canvas, background=PALETTE.app)
+        scrollable_content.columnconfigure(0, weight=1)
+        content_window = self.body_canvas.create_window(
+            (0, 0),
+            window=scrollable_content,
+            anchor="nw",
+        )
+
+        def update_scroll_region(_event: tk.Event[tk.Misc]) -> None:
+            self.body_canvas.configure(scrollregion=self.body_canvas.bbox("all"))
+
+        def fit_content_width(event: tk.Event[tk.Misc]) -> None:
+            self.body_canvas.itemconfigure(content_window, width=event.width)
+
+        scrollable_content.bind("<Configure>", update_scroll_region)
+        self.body_canvas.bind("<Configure>", fit_content_width)
+        self.window.bind("<MouseWheel>", self._scroll_body)
+        self.window.bind("<Button-4>", self._scroll_body)
+        self.window.bind("<Button-5>", self._scroll_body)
+
+        self.sections = tk.Frame(scrollable_content, background=PALETTE.app)
+        self.sections.grid(row=0, column=0, sticky="nsew")
         self.sections.columnconfigure(0, weight=1)
         self.sections.columnconfigure(1, weight=1)
 
         timeline_shell = tk.Frame(
-            body,
+            scrollable_content,
             background=PALETTE.surface,
             highlightbackground=PALETTE.border,
             highlightthickness=1,
         )
-        timeline_shell.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(12, 0))
+        timeline_shell.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
         tk.Label(
             timeline_shell,
             text="TIMELINE",
@@ -644,6 +784,19 @@ class McfCockpitDialog:
         scrollbar.configure(command=self.timeline_text.yview)
 
         self.refresh()
+
+    def _scroll_body(self, event: tk.Event[tk.Misc]) -> str:
+        if getattr(event, "num", None) == 4:
+            units = -3
+        elif getattr(event, "num", None) == 5:
+            units = 3
+        else:
+            delta = int(getattr(event, "delta", 0))
+            if delta == 0:
+                return "break"
+            units = -max(1, abs(delta) // 120) if delta > 0 else max(1, abs(delta) // 120)
+        self.body_canvas.yview_scroll(units, "units")
+        return "break"
 
     def _toggle_binding(self) -> None:
         try:
@@ -677,6 +830,7 @@ class McfCockpitDialog:
             child.destroy()
         section_data = (
             ("PROJECT", model.project),
+            ("CAPABILITY REGISTRY · READ ONLY", model.capability_registry),
             ("MISSION", model.mission),
             ("AUTHORITY", model.authority),
             ("CONTINUITY", model.continuity),

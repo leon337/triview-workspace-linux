@@ -8,13 +8,13 @@ purpose: >-
 lifecycle: ACTIVE
 
 snapshot:
-  current_workstream: context-fabric-lab-integration
-  current_status: CF0_CF1_READ_ONLY_CROSS_REPO_E2E_PASS
-  next_action: Run the physical Linux Mint/X11 gate before any candidate promotion
+  current_workstream: capability-registry-read-only-cockpit-lab
+  current_status: CAPABILITY_REGISTRY_READ_ONLY_CROSS_REPO_AND_FOCUSED_MINT_X11_PASS
+  next_action: Open and review the lab PR to release/1.0.0a4 under a separate merge gate
   blockers:
-    - Physical Linux Mint/X11 acceptance for the 1.0.0a4 candidate remains pending
+    - The full product-candidate R7 matrix remains separate from the focused cockpit smoke
 
 sources:
-  current_state: docs/architecture/TRIVIEW_CONTEXT_FABRIC_LAB.md
+  current_state: docs/architecture/TRIVIEW_CAPABILITY_REGISTRY_LAB.md
 
-observed_at: "2026-08-23T03:36:43-03:00"
+observed_at: "2026-08-23T18:58:55-03:00"

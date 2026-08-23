@@ -7,6 +7,7 @@ state. Canonical ``.mcf`` artifacts and the MCF runtime remain the source of tru
 from __future__ import annotations
 
 import json
+import re
 import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -15,6 +16,11 @@ from pathlib import Path
 from typing import Any, Literal, Protocol
 from urllib.parse import quote, urlencode, urlparse
 
+from triview_workspace.mcf_capability_registry import (
+    McfCapabilityRegistryProjection,
+    McfCapabilityRegistryRepositoryReader,
+    McfCapabilityRegistrySnapshotParser,
+)
 from triview_workspace.mcf_context_fabric import (
     McfContextFabricProjection,
     McfContextFabricRepositoryReader,
@@ -23,6 +29,7 @@ from triview_workspace.mcf_context_fabric import (
 )
 
 ArtifactStatus = Literal["ABSENT", "VALID", "INVALID"]
+_CAPABILITY_PROJECT_ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,6 +323,19 @@ class McfRuntimeClient:
         )
         return self._get(f"/v1/mcf/context/recovery?{query}")
 
+    def capability_registry(self, project_id: str | None = None) -> dict[str, Any]:
+        path = "/v1/mcf/context/capabilities"
+        if project_id is None:
+            return self._get(path)
+        cleaned = project_id.strip()
+        if (
+            not cleaned
+            or len(cleaned) > 128
+            or _CAPABILITY_PROJECT_ID.fullmatch(cleaned) is None
+        ):
+            raise ValueError("project_id must be a stable lowercase project identifier")
+        return self._get(f"{path}?{urlencode({'project_id': cleaned})}")
+
     def _get(self, path: str) -> dict[str, Any]:
         request = urllib.request.Request(
             f"{self.base_url}{path}",
@@ -359,6 +379,10 @@ class McfContextRecoveryReader(Protocol):
     ) -> dict[str, Any]: ...
 
 
+class McfCapabilityRegistryReader(Protocol):
+    def capability_registry(self, project_id: str | None = None) -> dict[str, Any]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class McfRuntimeProjection:
     mission: dict[str, Any]
@@ -374,6 +398,9 @@ class McfBridgeSnapshot:
     context_receipt: McfContextRecoveryReceiptProjection | None = None
     context_error: str | None = None
     context_mode: str = "REPOSITORY_ONLY"
+    capability_registry: McfCapabilityRegistryProjection | None = None
+    capability_error: str | None = None
+    capability_mode: str = "REPOSITORY_ONLY"
 
 
 class McfBridge:
@@ -386,11 +413,19 @@ class McfBridge:
         runtime_client: McfRuntimeReader | None = None,
         context_client: McfContextRecoveryReader | None = None,
         receipt_parser: McfContextRecoveryReceiptParser | None = None,
+        capability_repository_reader: McfCapabilityRegistryRepositoryReader | None = None,
+        capability_client: McfCapabilityRegistryReader | None = None,
+        capability_parser: McfCapabilityRegistrySnapshotParser | None = None,
     ) -> None:
         self.repository_inspector = repository_inspector or McfRepositoryInspector()
         self.runtime_client = runtime_client
         self.context_client = context_client
         self.receipt_parser = receipt_parser or McfContextRecoveryReceiptParser()
+        self.capability_repository_reader = (
+            capability_repository_reader or McfCapabilityRegistryRepositoryReader()
+        )
+        self.capability_client = capability_client
+        self.capability_parser = capability_parser or McfCapabilityRegistrySnapshotParser()
 
     def inspect(
         self,
@@ -399,6 +434,7 @@ class McfBridge:
         mission_id: str | None = None,
         recover_context: bool = False,
         requires_current_operational_state: bool = False,
+        list_capabilities: bool = False,
     ) -> McfBridgeSnapshot:
         project = self.repository_inspector.inspect(root)
         runtime: McfRuntimeProjection | None = None
@@ -437,10 +473,44 @@ class McfBridge:
                 else:
                     context_receipt = parsed
                     context_mode = "MCF_RUNTIME_GET"
+
+        capability_registry: McfCapabilityRegistryProjection | None = None
+        capability_error: str | None = None
+        capability_mode = "REPOSITORY_ONLY"
+        if list_capabilities:
+            capability_registry = self.capability_repository_reader.inspect(
+                project_id=project.project_id
+            )
+            if self.capability_client is not None:
+                if project.project_id is None:
+                    capability_error = "CAPABILITY_PROJECT_ID_UNRESOLVED"
+                    capability_mode = "REPOSITORY_FALLBACK"
+                else:
+                    try:
+                        payload = self.capability_client.capability_registry(
+                            project.project_id
+                        )
+                        parsed_capabilities = self.capability_parser.parse(payload)
+                        if parsed_capabilities.project_id != project.project_id:
+                            raise ValueError(
+                                "Capability snapshot project_id differs from repository identity"
+                            )
+                    except Exception as exc:  # noqa: BLE001
+                        capability_error = (
+                            "CAPABILITY_RUNTIME_READ_FAILED:"
+                            f"{type(exc).__name__}:{exc}"
+                        )
+                        capability_mode = "REPOSITORY_FALLBACK"
+                    else:
+                        capability_registry = parsed_capabilities
+                        capability_mode = "MCF_RUNTIME_GET"
         return McfBridgeSnapshot(
             project=project,
             runtime=runtime,
             context_receipt=context_receipt,
             context_error=context_error,
             context_mode=context_mode,
+            capability_registry=capability_registry,
+            capability_error=capability_error,
+            capability_mode=capability_mode,
         )

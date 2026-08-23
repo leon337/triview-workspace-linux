@@ -123,6 +123,7 @@ O rollback valida compilação, diagnóstico e módulo principal antes da troca,
 - [Histórico de versões](docs/product/RELEASE_HISTORY.md)
 - [Arquitetura](docs/architecture/README.md)
 - [Context Fabric no laboratório](docs/architecture/TRIVIEW_CONTEXT_FABRIC_LAB.md)
+- [Capability Registry no laboratório](docs/architecture/TRIVIEW_CAPABILITY_REGISTRY_LAB.md)
 - [Responsabilidades dos Engines](docs/architecture/ENGINES.md)
 - [Trem LEA-197–205](docs/factory/DEVELOPMENT_TRAIN_LEA-197-205.md)
 - [Estratégia de atualização](docs/updater.md)

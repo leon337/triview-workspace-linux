@@ -18,11 +18,17 @@ from triview_workspace.mcf_binding import (
     McfWorkspaceBinder,
     McfWorkspaceBinding,
 )
-from triview_workspace.mcf_bridge import McfBridge, McfBridgeSnapshot, McfRuntimeClient
+from triview_workspace.mcf_bridge import (
+    McfBridge,
+    McfBridgeSnapshot,
+    McfRepositoryInspector,
+    McfRuntimeClient,
+)
 from triview_workspace.mcf_continuity import (
     McfContinuityAnalyzer,
     McfContinuityDecision,
 )
+from triview_workspace.mcf_context_fabric import McfContextFabricRepositoryReader
 from triview_workspace.ui_design import (
     FONT_FAMILY,
     MONO_FONT_FAMILY,
@@ -34,6 +40,7 @@ _ENV_PROJECT_ROOT = "TRIVIEW_MCF_PROJECT_ROOT"
 _ENV_MISSION_ID = "TRIVIEW_MCF_MISSION_ID"
 _ENV_RUNTIME_URL = "TRIVIEW_MCF_RUNTIME_URL"
 _ENV_SESSION_TOKEN = "TRIVIEW_MCF_SESSION_TOKEN"
+_ENV_REGISTRY_ROOT = "TRIVIEW_MCF_REGISTRY_ROOT"
 _GATE_EVENTS = frozenset({"GATE_REQUIRED", "GATE_APPROVED", "GATE_REJECTED"})
 _MAX_TIMELINE_EVENTS = 12
 
@@ -54,6 +61,21 @@ def _optional_text(value: object) -> str | None:
         return None
     cleaned = str(value).strip()
     return cleaned or None
+
+
+def _registry_root(source: Mapping[str, str]) -> Path | None:
+    configured = _optional_text(source.get(_ENV_REGISTRY_ROOT))
+    return Path(configured).expanduser().resolve() if configured is not None else None
+
+
+def _context_binder(registry_root: Path | None) -> McfWorkspaceBinder:
+    return McfWorkspaceBinder(
+        inspector=McfRepositoryInspector(
+            context_fabric_reader=McfContextFabricRepositoryReader(
+                registry_root=registry_root
+            )
+        )
+    )
 
 
 def _yes_no(value: object) -> str:
@@ -86,6 +108,56 @@ def _continuity_fields(continuity: McfContinuityDecision) -> dict[str, str]:
     }
 
 
+def _context_fabric_fields(snapshot: McfBridgeSnapshot) -> dict[str, str]:
+    projection = snapshot.project.context_fabric
+    if projection is None:
+        return {
+            "status": "ABSENT",
+            "project_id": "N/A",
+            "registry": "AUSENTE",
+            "capsule": "AUSENTE",
+            "operational_freshness": "N/A",
+            "identity_freshness": "N/A",
+            "snapshot_status": "N/A",
+            "observed_at": "N/A",
+            "finding": "CONTEXT_FABRIC_NOT_INSPECTED",
+        }
+    return {
+        "status": projection.status,
+        "project_id": projection.project_id or "N/A",
+        "registry": projection.registry_path or "AUSENTE",
+        "capsule": projection.capsule_path or "AUSENTE",
+        "operational_freshness": projection.operational_freshness or "N/A",
+        "identity_freshness": projection.project_identity_freshness or "N/A",
+        "snapshot_status": projection.current_status or "N/A",
+        "observed_at": projection.observed_at or "N/A",
+        "finding": ", ".join(projection.error_codes) or "OK",
+    }
+
+
+def _context_receipt_fields(snapshot: McfBridgeSnapshot) -> dict[str, str]:
+    receipt = snapshot.context_receipt
+    return {
+        "mode": snapshot.context_mode,
+        "recovery_state": receipt.recovery_state if receipt is not None else "N/A",
+        "receipt_id": receipt.receipt_id if receipt is not None else "N/A",
+        "evidence_only": _yes_no(receipt.evidence_only if receipt is not None else None),
+        "freshness": (
+            ", ".join(receipt.freshness) if receipt is not None and receipt.freshness else "N/A"
+        ),
+        "live_verification_required": _yes_no(
+            receipt.requires_live_verification if receipt is not None else None
+        ),
+        "sources": str(len(receipt.sources)) if receipt is not None else "0",
+        "claims": str(len(receipt.claims)) if receipt is not None else "0",
+        "warning": (
+            receipt.warnings[0]
+            if receipt is not None and receipt.warnings
+            else snapshot.context_error or "N/A"
+        ),
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class McfCockpitEvent:
     """One compact timeline event shown without mutating runtime state."""
@@ -99,12 +171,14 @@ class McfCockpitEvent:
 
 @dataclass(frozen=True, slots=True)
 class McfCockpitModel:
-    """Presentation-only snapshot for the four R3/R4/R5 cockpit sections."""
+    """Presentation-only snapshot for MCF and Context Fabric cockpit sections."""
 
     project: dict[str, str]
     mission: dict[str, str]
     authority: dict[str, str]
     continuity: dict[str, str]
+    context_fabric: dict[str, str]
+    context_receipt: dict[str, str]
     timeline: tuple[McfCockpitEvent, ...]
     mode: str = "READ_ONLY"
 
@@ -116,6 +190,7 @@ class McfCockpitContext:
     project_root: Path
     mission_id: str | None = None
     runtime_url: str | None = None
+    registry_root: Path | None = None
     workspace_id: str | None = None
     binding_persisted: bool = False
     _session_token: str | None = field(default=None, repr=False, compare=False)
@@ -123,6 +198,10 @@ class McfCockpitContext:
     @property
     def runtime_enabled(self) -> bool:
         return bool(self.mission_id and self.runtime_url and self._session_token)
+
+    @property
+    def context_runtime_enabled(self) -> bool:
+        return bool(self.runtime_url and self._session_token)
 
     @classmethod
     def from_environment(
@@ -143,6 +222,7 @@ class McfCockpitContext:
             project_root=project_root,
             mission_id=_optional_text(source.get(_ENV_MISSION_ID)),
             runtime_url=_optional_text(source.get(_ENV_RUNTIME_URL)),
+            registry_root=_registry_root(source),
             _session_token=_optional_text(source.get(_ENV_SESSION_TOKEN)),
         )
 
@@ -161,12 +241,14 @@ class McfCockpitContext:
         if not target:
             raise ValueError("workspace_id não pode ser vazio")
         source = os.environ if environ is None else environ
-        binding = (binder or McfWorkspaceBinder()).resolve(target)
+        registry_root = _registry_root(source)
+        binding = (binder or _context_binder(registry_root)).resolve(target)
         if binding is not None:
             return cls(
                 project_root=binding.project_root,
                 mission_id=binding.mission_id,
                 runtime_url=binding.runtime_url,
+                registry_root=registry_root,
                 workspace_id=target,
                 binding_persisted=True,
                 _session_token=_optional_text(source.get(_ENV_SESSION_TOKEN)),
@@ -177,6 +259,7 @@ class McfCockpitContext:
             project_root=fallback.project_root,
             mission_id=fallback.mission_id,
             runtime_url=fallback.runtime_url,
+            registry_root=fallback.registry_root,
             workspace_id=target,
             binding_persisted=False,
             _session_token=fallback._session_token,
@@ -296,6 +379,8 @@ def build_cockpit_model(
             else ", ".join(project_snapshot.consistency_errors)
         ),
     }
+    context_fabric = _context_fabric_fields(snapshot)
+    context_receipt = _context_receipt_fields(snapshot)
     derived_continuity = _continuity_fields(continuity) if continuity is not None else None
 
     if snapshot.runtime is None:
@@ -325,6 +410,8 @@ def build_cockpit_model(
                     "resume_route": "NÃO PROJETADA NO R3",
                 }
             ),
+            context_fabric=context_fabric,
+            context_receipt=context_receipt,
             timeline=(),
         )
 
@@ -364,6 +451,8 @@ def build_cockpit_model(
         mission=mission,
         authority=authority,
         continuity=derived_continuity or legacy_continuity,
+        context_fabric=context_fabric,
+        context_receipt=context_receipt,
         timeline=_timeline_events(timeline_payload),
     )
 
@@ -371,20 +460,29 @@ def build_cockpit_model(
 def load_cockpit_model(context: McfCockpitContext) -> McfCockpitModel:
     """Read canonical evidence once and return a token-free R5 presentation model."""
 
-    if context.runtime_enabled:
+    repository_inspector = McfRepositoryInspector(
+        context_fabric_reader=McfContextFabricRepositoryReader(
+            registry_root=context.registry_root
+        )
+    )
+    runtime_client: McfRuntimeClient | None = None
+    if context.context_runtime_enabled:
         assert context.runtime_url is not None
-        assert context.mission_id is not None
         assert context._session_token is not None
         runtime_client = McfRuntimeClient(
             context.runtime_url,
             headers={"Authorization": f"Bearer {context._session_token}"},
         )
-        snapshot = McfBridge(runtime_client=runtime_client).inspect(
-            context.project_root,
-            mission_id=context.mission_id,
-        )
-    else:
-        snapshot = McfBridge().inspect(context.project_root)
+    snapshot = McfBridge(
+        repository_inspector=repository_inspector,
+        runtime_client=runtime_client if context.runtime_enabled else None,
+        context_client=runtime_client,
+    ).inspect(
+        context.project_root,
+        mission_id=context.mission_id if context.runtime_enabled else None,
+        recover_context=context.context_runtime_enabled,
+        requires_current_operational_state=False,
+    )
     continuity = McfContinuityAnalyzer().analyze(
         root=context.project_root,
         project=snapshot.project,
@@ -430,7 +528,7 @@ class McfCockpitDialog:
     ) -> None:
         self.context = context or McfCockpitContext.from_environment(environ)
         self.loader = loader
-        self.binder = binder or McfWorkspaceBinder()
+        self.binder = binder or _context_binder(self.context.registry_root)
         self.environ = os.environ if environ is None else environ
         self.window = tk.Toplevel(parent)
         self.window.title("MCF Mission Cockpit — somente leitura")
@@ -569,6 +667,8 @@ class McfCockpitDialog:
             ("MISSION", model.mission),
             ("AUTHORITY", model.authority),
             ("CONTINUITY", model.continuity),
+            ("CONTEXT FABRIC", model.context_fabric),
+            ("CONTEXT RECEIPT", model.context_receipt),
         )
         for index, (title, fields) in enumerate(section_data):
             row, column = divmod(index, 2)
@@ -576,7 +676,8 @@ class McfCockpitDialog:
         runtime_mode = "RUNTIME + REPOSITÓRIO" if self.context.runtime_enabled else "REPOSITÓRIO"
         binding_mode = "BINDING" if self.context.binding_persisted else "EFÊMERO"
         self.status_text.set(
-            f"READ_ONLY · {runtime_mode} · {binding_mode} · root={self.context.project_root}"
+            f"READ_ONLY · {runtime_mode} · {model.context_receipt['mode']} · "
+            f"{binding_mode} · root={self.context.project_root}"
         )
         self._render_timeline(model.timeline)
 
@@ -664,7 +765,8 @@ def open_mcf_cockpit(
 ) -> McfCockpitDialog:
     """Open one fresh read-only cockpit for the active workspace context."""
 
-    active_binder = binder or McfWorkspaceBinder()
+    source = os.environ if environ is None else environ
+    active_binder = binder or _context_binder(_registry_root(source))
     context = (
         McfCockpitContext.for_workspace(
             workspace_id,

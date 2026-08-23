@@ -45,7 +45,7 @@ metadata.
 GET /v1/mcf/context/recovery?project_hint=<project_id>&requires_current_operational_state=false
 ```
 
-The base URL and bearer token are process inputs. The response parser accepts
+The base URL and dedicated read token are process inputs. The response parser accepts
 only a strict `ContextRecoveryReceipt` with `read_only=true`,
 `material_action=false`, and `evidence_only=true`. Claim values are not copied to
 the presentation model.
@@ -58,9 +58,10 @@ warnings, and one explicit source mode:
 - `REPOSITORY_FALLBACK`: the GET, project resolution, or Receipt validation failed.
 
 `TRIVIEW_MCF_REGISTRY_ROOT` injects the MCF checkout/root used for Registry
-lookup. `TRIVIEW_MCF_RUNTIME_URL` and `TRIVIEW_MCF_SESSION_TOKEN` inject the
-read-only runtime connection. The token remains excluded from repr, UI models,
-and persisted workspace bindings.
+lookup. `TRIVIEW_MCF_RUNTIME_URL` and `TRIVIEW_MCF_CONTEXT_READ_TOKEN` inject the
+read-only Context Fabric connection. Its `x-mcf-context-token` credential is
+separate from the mission runtime's `TRIVIEW_MCF_SESSION_TOKEN` bearer credential.
+Both remain excluded from repr, UI models, and persisted workspace bindings.
 
 It may not:
 

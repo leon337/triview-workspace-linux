@@ -40,6 +40,7 @@ _ENV_PROJECT_ROOT = "TRIVIEW_MCF_PROJECT_ROOT"
 _ENV_MISSION_ID = "TRIVIEW_MCF_MISSION_ID"
 _ENV_RUNTIME_URL = "TRIVIEW_MCF_RUNTIME_URL"
 _ENV_SESSION_TOKEN = "TRIVIEW_MCF_SESSION_TOKEN"
+_ENV_CONTEXT_READ_TOKEN = "TRIVIEW_MCF_CONTEXT_READ_TOKEN"
 _ENV_REGISTRY_ROOT = "TRIVIEW_MCF_REGISTRY_ROOT"
 _GATE_EVENTS = frozenset({"GATE_REQUIRED", "GATE_APPROVED", "GATE_REJECTED"})
 _MAX_TIMELINE_EVENTS = 12
@@ -194,6 +195,7 @@ class McfCockpitContext:
     workspace_id: str | None = None
     binding_persisted: bool = False
     _session_token: str | None = field(default=None, repr=False, compare=False)
+    _context_read_token: str | None = field(default=None, repr=False, compare=False)
 
     @property
     def runtime_enabled(self) -> bool:
@@ -201,7 +203,7 @@ class McfCockpitContext:
 
     @property
     def context_runtime_enabled(self) -> bool:
-        return bool(self.runtime_url and self._session_token)
+        return bool(self.runtime_url and self._context_read_token)
 
     @classmethod
     def from_environment(
@@ -224,6 +226,7 @@ class McfCockpitContext:
             runtime_url=_optional_text(source.get(_ENV_RUNTIME_URL)),
             registry_root=_registry_root(source),
             _session_token=_optional_text(source.get(_ENV_SESSION_TOKEN)),
+            _context_read_token=_optional_text(source.get(_ENV_CONTEXT_READ_TOKEN)),
         )
 
     @classmethod
@@ -252,6 +255,7 @@ class McfCockpitContext:
                 workspace_id=target,
                 binding_persisted=True,
                 _session_token=_optional_text(source.get(_ENV_SESSION_TOKEN)),
+                _context_read_token=_optional_text(source.get(_ENV_CONTEXT_READ_TOKEN)),
             )
 
         fallback = cls.from_environment(source, cwd=cwd)
@@ -263,6 +267,7 @@ class McfCockpitContext:
             workspace_id=target,
             binding_persisted=False,
             _session_token=fallback._session_token,
+            _context_read_token=fallback._context_read_token,
         )
 
 
@@ -466,17 +471,25 @@ def load_cockpit_model(context: McfCockpitContext) -> McfCockpitModel:
         )
     )
     runtime_client: McfRuntimeClient | None = None
-    if context.context_runtime_enabled:
+    if context.runtime_enabled:
         assert context.runtime_url is not None
         assert context._session_token is not None
         runtime_client = McfRuntimeClient(
             context.runtime_url,
             headers={"Authorization": f"Bearer {context._session_token}"},
         )
+    context_client: McfRuntimeClient | None = None
+    if context.context_runtime_enabled:
+        assert context.runtime_url is not None
+        assert context._context_read_token is not None
+        context_client = McfRuntimeClient(
+            context.runtime_url,
+            headers={"x-mcf-context-token": context._context_read_token},
+        )
     snapshot = McfBridge(
         repository_inspector=repository_inspector,
-        runtime_client=runtime_client if context.runtime_enabled else None,
-        context_client=runtime_client,
+        runtime_client=runtime_client,
+        context_client=context_client,
     ).inspect(
         context.project_root,
         mission_id=context.mission_id if context.runtime_enabled else None,
@@ -748,8 +761,9 @@ class McfCockpitDialog:
 
     def _render_error(self, error: Exception) -> None:
         safe = str(error)
-        if self.context._session_token:
-            safe = safe.replace(self.context._session_token, "[REDACTED]")
+        for secret in (self.context._session_token, self.context._context_read_token):
+            if secret:
+                safe = safe.replace(secret, "[REDACTED]")
         for child in self.sections.winfo_children():
             child.destroy()
         self.status_text.set(f"READ_ONLY · FALHA DE LEITURA · {safe}")

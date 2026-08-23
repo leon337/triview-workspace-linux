@@ -106,10 +106,16 @@ def _write_pair(project_root: Path, registry_root: Path) -> tuple[Path, Path]:
 
 class _ContextHandler(BaseHTTPRequestHandler):
     status = 200
-    requests: list[tuple[str, str | None]] = []
+    requests: list[tuple[str, str | None, str | None]] = []
 
     def do_GET(self) -> None:  # noqa: N802
-        type(self).requests.append((self.path, self.headers.get("Authorization")))
+        type(self).requests.append(
+            (
+                self.path,
+                self.headers.get("x-mcf-context-token"),
+                self.headers.get("Authorization"),
+            )
+        )
         body = json.dumps(_receipt()).encode("utf-8")
         self.send_response(type(self).status)
         self.send_header("Content-Type", "application/json")
@@ -147,7 +153,7 @@ def test_cockpit_consumes_context_receipt_end_to_end_without_repository_writes(
             project_root=project_root,
             registry_root=registry_root,
             runtime_url=runtime_url,
-            _session_token="ephemeral-e2e-token",
+            _context_read_token="ephemeral-e2e-token",
         )
 
         model = load_cockpit_model(context)
@@ -177,14 +183,15 @@ def test_cockpit_consumes_context_receipt_end_to_end_without_repository_writes(
 
     handler = server.RequestHandlerClass
     assert len(handler.requests) == 1
-    raw_path, authorization = handler.requests[0]
+    raw_path, context_token, authorization = handler.requests[0]
     parsed = urlparse(raw_path)
     assert parsed.path == "/v1/mcf/context/recovery"
     assert parse_qs(parsed.query) == {
         "project_hint": ["triview-workspace-linux"],
         "requires_current_operational_state": ["false"],
     }
-    assert authorization == "Bearer ephemeral-e2e-token"
+    assert context_token == "ephemeral-e2e-token"
+    assert authorization is None
 
 
 def test_cockpit_falls_back_explicitly_when_context_endpoint_is_unavailable(
@@ -200,7 +207,7 @@ def test_cockpit_falls_back_explicitly_when_context_endpoint_is_unavailable(
                 project_root=project_root,
                 registry_root=registry_root,
                 runtime_url=runtime_url,
-                _session_token="ephemeral-fallback-token",
+                _context_read_token="ephemeral-fallback-token",
             )
         )
     finally:

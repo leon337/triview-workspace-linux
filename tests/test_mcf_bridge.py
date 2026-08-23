@@ -117,8 +117,52 @@ class _FakeResponse:
     def __exit__(self, *_args: object) -> None:
         return None
 
-    def read(self) -> bytes:
-        return self._body
+    def read(self, amount: int = -1) -> bytes:
+        return self._body if amount < 0 else self._body[:amount]
+
+
+def _context_receipt(project_id: str = "triview") -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "receipt_id": "context-recovery-001",
+        "project_id": project_id,
+        "recovery_state": "RECOVERED",
+        "recovered_at": "2026-08-23T06:09:19Z",
+        "read_only": True,
+        "material_action": False,
+        "sources": [
+            {
+                "role": "REGISTRY",
+                "source_ref": "context/projects/triview.yaml",
+                "source_revision": "registry-sha",
+            },
+            {
+                "role": "CAPSULE",
+                "source_ref": ".mcf/project-capsule.yaml",
+                "source_revision": "capsule-sha",
+                "observed_at": "2026-08-23T03:09:19-03:00",
+            },
+        ],
+        "claims": [
+            {
+                "claim_key": "project.id",
+                "type": "IDENTITY",
+                "value": project_id,
+                "owner": "MCF_PROJECT_REGISTRY",
+                "source_ref": "context/projects/triview.yaml",
+                "freshness": "DURABLE",
+                "provenance": [
+                    {
+                        "source_ref": "context/projects/triview.yaml",
+                        "source_revision": "registry-sha",
+                    }
+                ],
+                "requires_live_verification": False,
+            }
+        ],
+        "warnings": [],
+        "evidence_only": True,
+    }
 
 
 def test_runtime_client_uses_get_only_and_transient_headers() -> None:
@@ -149,6 +193,37 @@ def test_runtime_client_uses_get_only_and_transient_headers() -> None:
 def test_runtime_client_rejects_non_http_base_url() -> None:
     with pytest.raises(ValueError, match="HTTP"):
         McfRuntimeClient("file:///tmp/mcf")
+
+
+def test_runtime_client_requests_context_recovery_by_get_only() -> None:
+    captured: list[object] = []
+
+    def opener(request: object, _timeout: float) -> _FakeResponse:
+        captured.append(request)
+        return _FakeResponse(_context_receipt("triview workspace"))
+
+    client = McfRuntimeClient("https://mcf.example.test", opener=opener)
+
+    payload = client.context_recovery("triview workspace")
+
+    assert payload["evidence_only"] is True
+    request = captured[0]
+    assert request.get_method() == "GET"  # type: ignore[attr-defined]
+    assert request.full_url == (  # type: ignore[attr-defined]
+        "https://mcf.example.test/v1/mcf/context/recovery?"
+        "project_hint=triview+workspace&requires_current_operational_state=false"
+    )
+
+
+def test_runtime_client_bounds_context_response_before_json_parsing() -> None:
+    client = McfRuntimeClient(
+        "https://mcf.example.test",
+        max_response_bytes=32,
+        opener=lambda _request, _timeout: _FakeResponse({"payload": "x" * 64}),
+    )
+
+    with pytest.raises(ValueError, match="size limit"):
+        client.context_recovery("triview")
 
 
 def test_bridge_combines_repository_and_runtime_read_only(tmp_path: Path) -> None:
@@ -184,3 +259,56 @@ def test_bridge_without_runtime_keeps_runtime_projection_absent(tmp_path: Path) 
 
     assert snapshot.project.project_id == "triview"
     assert snapshot.runtime is None
+
+
+def test_bridge_parses_context_receipt_without_creating_runtime_authority(tmp_path: Path) -> None:
+    _write_project_artifacts(tmp_path)
+
+    class FakeContext:
+        def context_recovery(
+            self,
+            project_hint: str,
+            *,
+            requires_current_operational_state: bool = False,
+        ) -> dict[str, Any]:
+            assert project_hint == "triview"
+            assert requires_current_operational_state is False
+            return _context_receipt()
+
+    snapshot = McfBridge(context_client=FakeContext()).inspect(
+        tmp_path,
+        recover_context=True,
+    )
+
+    assert snapshot.runtime is None
+    assert snapshot.context_mode == "MCF_RUNTIME_GET"
+    assert snapshot.context_error is None
+    assert snapshot.context_receipt is not None
+    assert snapshot.context_receipt.recovery_state == "RECOVERED"
+    assert snapshot.context_receipt.evidence_only is True
+
+
+def test_bridge_labels_context_runtime_failure_as_repository_fallback(tmp_path: Path) -> None:
+    _write_project_artifacts(tmp_path)
+
+    class FailingContext:
+        def context_recovery(
+            self,
+            _project_hint: str,
+            *,
+            requires_current_operational_state: bool = False,
+        ) -> dict[str, Any]:
+            assert requires_current_operational_state is False
+            raise TimeoutError("synthetic timeout")
+
+    snapshot = McfBridge(context_client=FailingContext()).inspect(
+        tmp_path,
+        recover_context=True,
+    )
+
+    assert snapshot.project.project_id == "triview"
+    assert snapshot.context_receipt is None
+    assert snapshot.context_mode == "REPOSITORY_FALLBACK"
+    assert snapshot.context_error == (
+        "CONTEXT_RUNTIME_READ_FAILED:TimeoutError:synthetic timeout"
+    )

@@ -15,9 +15,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-import yaml
-from yaml.tokens import AliasToken, AnchorToken
-
 ContextFabricStatus = Literal["ABSENT", "PARTIAL", "VALID", "INVALID"]
 
 _PROJECT_ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
@@ -242,6 +239,11 @@ def _read_yaml(root: Path, relative_path: str, *, maximum_bytes: int, code: str)
         raise _fail(f"{code}_UNAVAILABLE") from exc
     if size > maximum_bytes:
         raise _fail(f"{code}_TOO_LARGE")
+    try:
+        import yaml
+        from yaml.tokens import AliasToken, AnchorToken
+    except ImportError as exc:
+        raise _fail("CONTEXT_FABRIC_YAML_RUNTIME_UNAVAILABLE") from exc
     try:
         raw = path.read_text(encoding="utf-8")
         tokens = yaml.scan(raw, Loader=yaml.SafeLoader)

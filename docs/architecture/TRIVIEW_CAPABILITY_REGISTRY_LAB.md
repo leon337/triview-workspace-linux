@@ -144,10 +144,15 @@ then removed as temporary data before branch publication:
 
 ## Real MCF endpoint evidence
 
-The real local cross-repository E2E passed against committed MCF SHA
+The real local cross-repository E2E was repeated from TriView checkpoint
+`4758ba52b6ecdcec753edbadaa1d8bafd0a3a8cf` against remote MCF checkpoint
+`c7455fcfdb51cd1d36883dda900c5ecbf2835ae4`, which contains the functional
+public-projection fix in
 `d03f1b3a8f4612414decc18238b437f103c28c7d`. A disposable test-mode server bound
 only to `127.0.0.1:3112`, used an allowlisted Registry configuration and a
-dedicated synthetic context-read token, and was stopped immediately afterward.
+dedicated synthetic context-read token. Its global rate-limit guard used a
+migrated disposable PostgreSQL container bound only to `127.0.0.1:65432`.
+Both processes and ports were removed immediately afterward.
 
 The first run against the preceding MCF SHA failed closed because its public
 `sources` objects leaked the non-contract field `resolved_path`. TriView rejected
@@ -156,10 +161,10 @@ that response as `CAPABILITY_SNAPSHOT_SOURCE_UNKNOWN_FIELDS` and visibly retaine
 anti-`resolved_path` regression test; TriView's strict parser did not need to be
 weakened.
 
-On the corrected SHA, the real `load_cockpit_model` path proved:
+On the corrected checkpoint, the real `load_cockpit_model` path proved:
 
-- the server log contained exactly one recovery GET and one capability GET, both
-  HTTP 200, and no mutating route;
+- the final traced invocation contained exactly one recovery GET and one
+  capability GET, both HTTP 200, and no mutating request;
 - Capability Registry mode was `MCF_RUNTIME_GET`, status was `VALID`, and finding
   was `EVIDENCE_ONLY_NO_ACTIONS`;
 - the server-side `project_id=triview-workspace-linux` filter returned exactly
@@ -171,9 +176,14 @@ On the corrected SHA, the real `load_cockpit_model` path proved:
   representation, repository, or evidence output;
 - the aggregate MCF Registry/Capability/schema digest remained
   `4391619883270f068cf65d5d51e1e5037d8ab878084a057418f79552f1472a5c`;
-- the aggregate TriView `.mcf` digest remained
-  `b888a0293a5eac3e2dc9e805b39866e09469a7964fe3cdec00ba1b99781d8ccd`;
-- the MCF worktree remained clean at the authorized SHA and port 3112 was closed.
+- the aggregate TriView `.mcf` digest at the tested checkpoint remained
+  `fa0a8a7f40df919925d5d84837841bad93b201f044b444d2741d33c81c7ebd8f`;
+- both worktrees remained clean at their tested checkpoints, ports 3112 and
+  65432 were closed, and the disposable database container was absent.
+
+The complete headless suite was then repeated with an explicit UTC test timezone
+and no display variables: `419 passed, 2 skipped`. Compile and shell syntax gates
+also passed. The two skips remain the separately gated X11 integration cases.
 
 ## Remaining gates
 

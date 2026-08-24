@@ -2,12 +2,29 @@
 
 ## Status
 
-`HEADLESS_PASS__FOCUSED_MINT_X11_PASS__REAL_MCF_E2E_PASS`
+`CAP_REGISTRY_REAL_MCF_E2E_FOCUSED_MINT_X11_PASS__PR77_MERGED_RELEASE__MCF_PR160_MAIN_STAGING_VERIFIED`
 
-This isolated TriView branch is based on
-`origin/release/1.0.0a4@553cce592a130ff08b9c5f828c2e7e5f37b27435`.
-It consumes Capability Registry evidence without becoming a capability provider,
-authority service, connection manager, or executor.
+TriView PR [#77](https://github.com/leon337/triview-workspace-linux/pull/77) merged the
+Capability Registry cockpit feature tree
+`a072cf9714c1a9a0f99cfd3feb9ceefa6705442b` into
+`release/1.0.0a4@5013ffebd1c7efe8fb7cfd2d41f16e5efec49194`. The release branch consumes
+Capability Registry evidence without becoming a capability provider, authority
+service, connection manager, or executor.
+
+## Post-main semantic reconciliation
+
+MCF PR [#160](https://github.com/leon337/multiagent-collaboration-framework/pull/160)
+merged the integrated ecosystem boundary into `main` at
+`efe5164290d56f22023f07de073e2ad7c027fb95`. The staging workflow then reported
+that exact SHA healthy in run
+[#32685810702](https://github.com/leon337/multiagent-collaboration-framework/actions/runs/32685810702).
+This reconciles the Capsule with the merged MCF source and exact-SHA staging state; it
+does not claim a new TriView deployment or a rerun of the full physical R7 matrix.
+
+The real MCF Capability Registry E2E and focused Linux Mint/X11 cockpit smoke below
+remain PASS evidence for the merged feature content. The cockpit remains strictly
+GET-only and evidence-only, with no connect, authorize, execute, revoke, or write
+control.
 
 ## Read boundary
 
@@ -191,5 +208,8 @@ also passed. The two skips remain the separately gated X11 integration cases.
   matrix remains a separate release gate and is not claimed by this lab evidence.
 - The two dedicated X11 integration tests remain skipped in the normal headless
   suite; this focused physical observation does not relabel them.
-- Publishing this lab branch does not authorize merge, deploy, release, or
-  promotion.
+- Promotion PR [#74](https://github.com/leon337/triview-workspace-linux/pull/74)
+  remains draft. It still requires the complete physical R7 evidence, its own checks,
+  and the applicable human gate before any promotion or publication.
+- PR #77 merging this read-only cockpit into `release/1.0.0a4` does not authorize
+  `main`, deployment, release publication, capability mutation, or R7 promotion.

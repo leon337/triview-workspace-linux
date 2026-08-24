@@ -8,13 +8,17 @@ purpose: >-
 lifecycle: ACTIVE
 
 snapshot:
-  current_workstream: capability-registry-read-only-cockpit-lab
-  current_status: CAPABILITY_REGISTRY_READ_ONLY_CROSS_REPO_AND_FOCUSED_MINT_X11_PASS
-  next_action: Open and review the lab PR to release/1.0.0a4 under a separate merge gate
+  current_workstream: post-mcf-main-capability-registry-capsule-sync
+  current_status: CAP_REGISTRY_REAL_MCF_E2E_FOCUSED_MINT_X11_PASS__PR77_MERGED_RELEASE__MCF_PR160_MAIN_STAGING_VERIFIED
+  next_action: >-
+    Preserve the GET-only and evidence-only cockpit with no connect, authorize,
+    execute, revoke, or write control; keep promotion PR #74 draft and complete
+    the remaining full physical R7 qualification under its separate release gate.
   blockers:
     - The full product-candidate R7 matrix remains separate from the focused cockpit smoke
+    - Promotion PR #74 remains draft and requires its own completed physical evidence and human gate
 
 sources:
   current_state: docs/architecture/TRIVIEW_CAPABILITY_REGISTRY_LAB.md
 
-observed_at: "2026-08-23T18:58:55-03:00"
+observed_at: "2026-08-24T03:27:14Z"

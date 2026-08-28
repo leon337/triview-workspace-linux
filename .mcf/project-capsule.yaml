@@ -20,7 +20,7 @@ snapshot:
     - Physical Linux Mint/X11 R7 acceptance remains NOT_RUN
     - LEA-197 requires five Terminal and five Xed runs with zero cross-window capture
     - The physical MCF cockpit smoke, controlled update, and rollback gates remain NOT_RUN
-    - Issue #26 and the final HUMAN_GATE remain blocking promotion
+    - Issue 26 and the final HUMAN_GATE remain blocking promotion
 
 sources:
   current_state: docs/product/TRIVIEW-1.0.0A4-PROMOTION-GATE-20260828.md

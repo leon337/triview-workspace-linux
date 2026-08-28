@@ -1,0 +1,28 @@
+schema_version: 1
+project_id: triview-workspace-linux
+
+purpose: >-
+  Modular Linux workspace platform that hosts independent browser, application,
+  terminal, document, capture, recording, and governed agent context surfaces.
+
+lifecycle: ACTIVE
+
+snapshot:
+  current_workstream: ecosystem-promotion-gate-sync-post-mcf-main-20260828
+  current_status: >-
+    RELEASE_1_0_0A4_PROMOTION_GATED__PR74_DRAFT_CLEAN__MCF_MAIN_0B900EE_POST_PR180_PR184_PR185
+  next_action: >-
+    Reconcile this documentation and Capsule first, preserving the GET-only and
+    evidence-only cockpit with no connect, authorize, execute, revoke, or write
+    control; then complete the separate full physical R7 qualification before a
+    fresh human-gated promotion decision for PR #74.
+  blockers:
+    - Physical Linux Mint/X11 R7 acceptance remains NOT_RUN
+    - LEA-197 requires five Terminal and five Xed runs with zero cross-window capture
+    - The physical MCF cockpit smoke, controlled update, and rollback gates remain NOT_RUN
+    - Issue 26 and the final HUMAN_GATE remain blocking promotion
+
+sources:
+  current_state: docs/product/TRIVIEW-1.0.0A4-PROMOTION-GATE-20260828.md
+
+observed_at: "2026-08-28T14:25:06-03:00"

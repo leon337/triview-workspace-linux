@@ -4,7 +4,7 @@ Plataforma modular de áreas de trabalho para Linux.
 
 ## Estado da liberação
 
-- versão de liberação: `1.0.0a3`;
+- versão de liberação: `1.0.0a4`;
 - interface RC4 proporcional: aprovada no Linux Mint/X11;
 - Browser Panels: incorporados em displays Xephyr autenticados, sem exposição externa;
 - workspaces vivos: preservam processos, janelas, conversas, rolagem e foco durante a mesma execução;
@@ -13,7 +13,13 @@ Plataforma modular de áreas de trabalho para Linux.
 - Application, Terminal, PDF, Capture, Recording e Plugin Engines: integrados;
 - atualização estável: backup, validação e troca atômica;
 - rollback estável: valida backup controlado, preserva dados, troca `current` atomicamente e gera relatório;
-- quatro atalhos estáveis: abrir, atualizar, diagnosticar e restaurar.
+- quatro atalhos estáveis: abrir, atualizar, diagnosticar e restaurar;
+- integração MCF: bridge nativo read-only para projeção de artefatos canônicos e runtime GET-only;
+- Mission Cockpit: projeto, missão, autoridade, continuidade e timeline em uma superfície TriView;
+- binding MCF: referências projeto-workspace persistidas pelo TriView fora do schema universal de workspace;
+- continuidade MCF: `FAST_RESUME`, `RECONCILE` e `RECOVER_MCF_PROJECT` são exibidos como orientação, sem execução pelo TriView.
+
+A `1.0.0a4` é candidata à qualificação física final no Linux Mint/X11; esta identificação não declara a promoção para `main` nem publicação concluída.
 
 O desempenho de vários workspaces vivos continua acompanhado separadamente. A política de otimização não pode encerrar conversas silenciosamente.
 
@@ -116,6 +122,8 @@ O rollback valida compilação, diagnóstico e módulo principal antes da troca,
 - [Roadmap](docs/product/ROADMAP.md)
 - [Histórico de versões](docs/product/RELEASE_HISTORY.md)
 - [Arquitetura](docs/architecture/README.md)
+- [Context Fabric no laboratório](docs/architecture/TRIVIEW_CONTEXT_FABRIC_LAB.md)
+- [Capability Registry no laboratório](docs/architecture/TRIVIEW_CAPABILITY_REGISTRY_LAB.md)
 - [Responsabilidades dos Engines](docs/architecture/ENGINES.md)
 - [Trem LEA-197–205](docs/factory/DEVELOPMENT_TRAIN_LEA-197-205.md)
 - [Estratégia de atualização](docs/updater.md)

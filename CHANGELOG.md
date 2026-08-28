@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.0a4 — Integração TriView × MCF e estabilização do train
+
+- integra o bridge MCF read-only, Mission Cockpit, binding projeto-workspace e continuidade/reconcile visual;
+- preserva o MCF como fonte canônica de missão, autoridade, PIP/PRR, checkpoint e evidência;
+- mantém credenciais fora da persistência TriView;
+- incorpora as correções de Session Engine e Workspace Hub já qualificadas no train;
+- mantém as rotas `FAST_RESUME`, `RECONCILE` e `RECOVER_MCF_PROJECT` apenas como orientação visual;
+- não implementa o backlog V2 de isolamento multiagente.
+
+A `1.0.0a4` permanece candidata até concluir CI de release, aceite físico Linux Mint/X11, atualização/rollback e HUMAN_GATE de promoção. Esta seção não declara publicação concluída.
+
 ## 1.0.0a3 — Controladores e quatro atalhos estáveis
 
 - adiciona `scripts/stable-launch.sh` com instância única, ativação da janela existente, dependências X11, logs e proveniência do runtime;

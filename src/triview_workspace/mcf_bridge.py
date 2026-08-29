@@ -30,6 +30,7 @@ from triview_workspace.mcf_context_fabric import (
 
 ArtifactStatus = Literal["ABSENT", "VALID", "INVALID"]
 _CAPABILITY_PROJECT_ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+_MISSION_CONTROL_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,6 +305,19 @@ class McfRuntimeClient:
     def observability(self, mission_id: str) -> dict[str, Any]:
         return self._get(f"/v1/mcf/observability/missions/{self._mission_id(mission_id)}")
 
+    def mission_control_latest(self, repository: str) -> dict[str, Any]:
+        """Read one composed latest-mission snapshot from the dedicated boundary."""
+
+        cleaned = repository.strip()
+        if (
+            not cleaned
+            or len(cleaned) > 256
+            or _MISSION_CONTROL_REPOSITORY.fullmatch(cleaned) is None
+        ):
+            raise ValueError("repository must use the canonical owner/repository format")
+        query = urlencode({"repository": cleaned.lower()})
+        return self._get(f"/v1/mcf/mission-control/latest?{query}")
+
     def context_recovery(
         self,
         project_hint: str,
@@ -328,11 +342,7 @@ class McfRuntimeClient:
         if project_id is None:
             return self._get(path)
         cleaned = project_id.strip()
-        if (
-            not cleaned
-            or len(cleaned) > 128
-            or _CAPABILITY_PROJECT_ID.fullmatch(cleaned) is None
-        ):
+        if not cleaned or len(cleaned) > 128 or _CAPABILITY_PROJECT_ID.fullmatch(cleaned) is None:
             raise ValueError("project_id must be a stable lowercase project identifier")
         return self._get(f"{path}?{urlencode({'project_id': cleaned})}")
 
@@ -368,6 +378,40 @@ class McfRuntimeReader(Protocol):
     def timeline(self, mission_id: str) -> dict[str, Any]: ...
 
     def observability(self, mission_id: str) -> dict[str, Any]: ...
+
+
+class McfMissionControlSnapshotReader:
+    """Expose one already-composed Mission Control response as a runtime reader."""
+
+    def __init__(self, payload: Mapping[str, Any]) -> None:
+        mission = payload.get("mission")
+        timeline = payload.get("timeline")
+        observability = payload.get("observability")
+        if not all(isinstance(item, Mapping) for item in (mission, timeline, observability)):
+            raise ValueError("Mission Control snapshot is incomplete")
+        mission_id = str(mission.get("id", "")).strip()  # type: ignore[union-attr]
+        if not mission_id:
+            raise ValueError("Mission Control snapshot has no mission id")
+        self.mission_id = mission_id
+        self._mission = dict(mission)  # type: ignore[arg-type]
+        self._timeline = dict(timeline)  # type: ignore[arg-type]
+        self._observability = dict(observability)  # type: ignore[arg-type]
+
+    def _verify(self, mission_id: str) -> None:
+        if mission_id.strip() != self.mission_id:
+            raise ValueError("Mission Control snapshot id does not match the requested mission")
+
+    def mission(self, mission_id: str) -> dict[str, Any]:
+        self._verify(mission_id)
+        return dict(self._mission)
+
+    def timeline(self, mission_id: str) -> dict[str, Any]:
+        self._verify(mission_id)
+        return dict(self._timeline)
+
+    def observability(self, mission_id: str) -> dict[str, Any]:
+        self._verify(mission_id)
+        return dict(self._observability)
 
 
 class McfContextRecoveryReader(Protocol):
@@ -487,9 +531,7 @@ class McfBridge:
                     capability_mode = "REPOSITORY_FALLBACK"
                 else:
                     try:
-                        payload = self.capability_client.capability_registry(
-                            project.project_id
-                        )
+                        payload = self.capability_client.capability_registry(project.project_id)
                         parsed_capabilities = self.capability_parser.parse(payload)
                         if parsed_capabilities.project_id != project.project_id:
                             raise ValueError(
@@ -497,8 +539,7 @@ class McfBridge:
                             )
                     except Exception as exc:  # noqa: BLE001
                         capability_error = (
-                            "CAPABILITY_RUNTIME_READ_FAILED:"
-                            f"{type(exc).__name__}:{exc}"
+                            f"CAPABILITY_RUNTIME_READ_FAILED:{type(exc).__name__}:{exc}"
                         )
                         capability_mode = "REPOSITORY_FALLBACK"
                     else:

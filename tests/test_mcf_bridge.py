@@ -6,11 +6,15 @@ from typing import Any
 
 import pytest
 
+from triview_workspace.mcf_bridge import (
+    McfBridge,
+    McfMissionControlSnapshotReader,
+    McfRepositoryInspector,
+    McfRuntimeClient,
+)
 from triview_workspace.mcf_capability_registry import (
-    McfCapabilityRegistryProjection,
     McfCapabilityRegistryRepositoryReader,
 )
-from triview_workspace.mcf_bridge import McfBridge, McfRepositoryInspector, McfRuntimeClient
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -300,9 +304,12 @@ def test_runtime_client_requests_capability_registry_by_get_only() -> None:
     assert request.full_url == (  # type: ignore[attr-defined]
         "https://mcf.example.test/v1/mcf/context/capabilities?project_id=triview"
     )
-    assert request.get_header(  # type: ignore[attr-defined]
-        "X-mcf-context-token"
-    ) == "ephemeral-read-token"
+    assert (
+        request.get_header(  # type: ignore[attr-defined]
+            "X-mcf-context-token"
+        )
+        == "ephemeral-read-token"
+    )
 
 
 def test_runtime_client_rejects_invalid_capability_project_id() -> None:
@@ -310,6 +317,51 @@ def test_runtime_client_rejects_invalid_capability_project_id() -> None:
 
     with pytest.raises(ValueError, match="stable lowercase"):
         client.capability_registry("TriView")
+
+
+def test_runtime_client_reads_latest_mission_control_snapshot_by_get_only() -> None:
+    captured: list[object] = []
+    payload = {
+        "mission": {"id": "mission-1"},
+        "timeline": {"events": []},
+        "observability": {"blocked": False},
+    }
+
+    def opener(request: object, _timeout: float) -> _FakeResponse:
+        captured.append(request)
+        return _FakeResponse(payload)
+
+    client = McfRuntimeClient(
+        "https://mcf.example.test/",
+        headers={"Authorization": "Bearer transient-mission-control-token"},
+        opener=opener,
+    )
+
+    assert client.mission_control_latest("Leon337/MCF") == payload
+    request = captured[0]
+    assert request.get_method() == "GET"  # type: ignore[attr-defined]
+    assert request.full_url == (  # type: ignore[attr-defined]
+        "https://mcf.example.test/v1/mcf/mission-control/latest?repository=leon337%2Fmcf"
+    )
+    assert request.get_header("Authorization") == (  # type: ignore[attr-defined]
+        "Bearer transient-mission-control-token"
+    )
+
+
+def test_mission_control_snapshot_reader_reuses_one_consistent_snapshot() -> None:
+    payload = {
+        "mission": {"id": "mission-1", "state": "EXECUTING"},
+        "timeline": {"events": [{"eventType": "MISSION_CREATED"}]},
+        "observability": {"blocked": False},
+    }
+    reader = McfMissionControlSnapshotReader(payload)
+
+    assert reader.mission_id == "mission-1"
+    assert reader.mission("mission-1")["state"] == "EXECUTING"
+    assert reader.timeline("mission-1")["events"]
+    assert reader.observability("mission-1")["blocked"] is False
+    with pytest.raises(ValueError, match="does not match"):
+        reader.mission("another-mission")
 
 
 def test_bridge_combines_repository_and_runtime_read_only(tmp_path: Path) -> None:
@@ -395,9 +447,7 @@ def test_bridge_labels_context_runtime_failure_as_repository_fallback(tmp_path: 
     assert snapshot.project.project_id == "triview"
     assert snapshot.context_receipt is None
     assert snapshot.context_mode == "REPOSITORY_FALLBACK"
-    assert snapshot.context_error == (
-        "CONTEXT_RUNTIME_READ_FAILED:TimeoutError:synthetic timeout"
-    )
+    assert snapshot.context_error == ("CONTEXT_RUNTIME_READ_FAILED:TimeoutError:synthetic timeout")
 
 
 def test_bridge_prefers_strict_remote_capabilities_over_repository_fallback(
@@ -448,9 +498,7 @@ def test_bridge_keeps_repository_capabilities_on_remote_failure(tmp_path: Path) 
     )
     assert snapshot.capability_registry is not None
     assert snapshot.capability_registry.status == "VALID"
-    assert snapshot.capability_registry.source == (
-        "MCF_CAPABILITY_REGISTRY_REPOSITORY_READ_ONLY"
-    )
+    assert snapshot.capability_registry.source == ("MCF_CAPABILITY_REGISTRY_REPOSITORY_READ_ONLY")
     assert [entry.capability_id for entry in snapshot.capability_registry.entries] == [
         "mcf.context.recovery.read"
     ]

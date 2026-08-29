@@ -3,17 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from triview_workspace.mcf_capability_registry import (
-    McfCapabilityEntryProjection,
-    McfCapabilityEvidenceProjection,
-    McfCapabilityRegistryProjection,
-)
 from triview_workspace.mcf_binding import McfWorkspaceBinding
 from triview_workspace.mcf_bridge import (
     McfArtifactProjection,
     McfBridgeSnapshot,
     McfRepositorySnapshot,
     McfRuntimeProjection,
+)
+from triview_workspace.mcf_capability_registry import (
+    McfCapabilityEntryProjection,
+    McfCapabilityEvidenceProjection,
+    McfCapabilityRegistryProjection,
 )
 from triview_workspace.mcf_cockpit import (
     McfCockpitContext,
@@ -216,22 +216,16 @@ def test_cockpit_keeps_capability_states_gates_and_blockers_visibly_distinct(
     )
 
     capabilities = model.capability_registry
-    assert capabilities["state_model"] == (
-        "IMPLEMENTED ≠ CONNECTED ≠ AUTHORIZED ≠ VERIFIED"
-    )
+    assert capabilities["state_model"] == ("IMPLEMENTED ≠ CONNECTED ≠ AUTHORIZED ≠ VERIFIED")
     assert capabilities["capability_1"] == (
         "cloud.workspace.g2a.read · IMPLEMENTED=IMPLEMENTED · "
         "CONNECTED=DISCONNECTED · AUTHORIZED=NOT_AUTHORIZED · "
         "VERIFIED=HISTORICALLY_VERIFIED · RUNTIME=UNKNOWN"
     )
-    assert "cloud.workspace.g2a.read → NOT_CONNECTED, NOT_AUTHORIZED" in capabilities[
-        "blockers"
-    ]
+    assert "cloud.workspace.g2a.read → NOT_CONNECTED, NOT_AUTHORIZED" in capabilities["blockers"]
     assert "HISTORICALLY_VERIFIED" in capabilities["blockers"]
     assert "mcf.context.recovery.read" not in capabilities["blockers"]
-    assert "DEDICATED_FORCED_COMMAND_SSH_READ_TRANSPORT" in capabilities[
-        "required_gates"
-    ]
+    assert "DEDICATED_FORCED_COMMAND_SSH_READ_TRANSPORT" in capabilities["required_gates"]
     assert capabilities["finding"] == "EVIDENCE_ONLY_NO_ACTIONS"
     assert model.mode == "READ_ONLY"
 
@@ -276,6 +270,8 @@ def test_cockpit_context_reads_runtime_configuration_without_exposing_token(
             "TRIVIEW_MCF_RUNTIME_URL": "https://mcf.example.test/",
             "TRIVIEW_MCF_SESSION_TOKEN": "secret-token",
             "TRIVIEW_MCF_CONTEXT_READ_TOKEN": "context-read-token",
+            "TRIVIEW_MCF_MISSION_CONTROL_REPOSITORY": "leon337/multiagent-collaboration-framework",
+            "TRIVIEW_MCF_MISSION_CONTROL_TOKEN": "mission-control-token",
             "TRIVIEW_MCF_REGISTRY_ROOT": str(tmp_path / "mcf-registry"),
         },
         cwd=tmp_path.parent,
@@ -286,9 +282,12 @@ def test_cockpit_context_reads_runtime_configuration_without_exposing_token(
     assert context.runtime_url == "https://mcf.example.test/"
     assert context.runtime_enabled is True
     assert context.context_runtime_enabled is True
+    assert context.mission_control_enabled is True
+    assert context.mission_control_repository == ("leon337/multiagent-collaboration-framework")
     assert context.registry_root == (tmp_path / "mcf-registry").resolve()
     assert "secret-token" not in repr(context)
     assert "context-read-token" not in repr(context)
+    assert "mission-control-token" not in repr(context)
 
 
 def test_cockpit_context_disables_runtime_when_configuration_is_incomplete(
@@ -306,6 +305,7 @@ def test_cockpit_context_disables_runtime_when_configuration_is_incomplete(
     assert context.project_root == tmp_path.resolve()
     assert context.runtime_enabled is False
     assert context.context_runtime_enabled is False
+    assert context.mission_control_enabled is False
 
 
 def test_cockpit_context_keeps_mission_and_context_credentials_independent(
@@ -478,3 +478,33 @@ def test_cockpit_body_scroll_supports_linux_and_mousewheel_events() -> None:
     assert dialog._scroll_body(Event(delta=240)) == "break"  # type: ignore[arg-type]
     assert dialog._scroll_body(Event(delta=-120)) == "break"  # type: ignore[arg-type]
     assert calls == [(-3, "units"), (3, "units"), (-2, "units"), (1, "units")]
+
+
+def test_cockpit_auto_refresh_is_enabled_only_for_mission_control(tmp_path: Path) -> None:
+    scheduled: list[tuple[int, object]] = []
+    cancelled: list[str] = []
+
+    class FakeWindow:
+        def after(self, delay: int, command: object) -> str:
+            scheduled.append((delay, command))
+            return "job-1"
+
+        def after_cancel(self, job: str) -> None:
+            cancelled.append(job)
+
+    dialog = object.__new__(McfCockpitDialog)
+    dialog.window = FakeWindow()  # type: ignore[assignment]
+    dialog._auto_refresh_job = None
+    dialog.context = McfCockpitContext(
+        project_root=tmp_path,
+        runtime_url="https://mcf.example.test",
+        mission_control_repository="leon337/multiagent-collaboration-framework",
+        _mission_control_token="transient-token",
+    )
+
+    dialog._schedule_auto_refresh()
+    dialog._schedule_auto_refresh()
+
+    assert scheduled[0][0] == 3_000
+    assert len(scheduled) == 2
+    assert cancelled == ["job-1"]

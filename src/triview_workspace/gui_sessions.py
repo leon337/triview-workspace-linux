@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import tkinter as tk
+from collections.abc import Mapping
 from pathlib import Path
 from tkinter import messagebox
 
@@ -21,6 +23,16 @@ from triview_workspace.gui_layouts import (
     _configure_logging,
 )
 from triview_workspace.infrastructure import WorkspaceRepository, load_workspace_bundle
+
+
+_AUTO_RESTORE_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def auto_restore_enabled(source: Mapping[str, str] | None = None) -> bool:
+    """Return True only when automatic session restore is explicitly enabled."""
+
+    values = os.environ if source is None else source
+    return str(values.get("TRIVIEW_AUTO_RESTORE", "")).strip().lower() in _AUTO_RESTORE_TRUE_VALUES
 
 
 class WorkspaceWindow(LayoutWorkspaceWindow):
@@ -141,7 +153,8 @@ class WorkspaceWindow(LayoutWorkspaceWindow):
         ]
         if not panel_names:
             return
-        confirmed = messagebox.askyesno(
+        automatic = auto_restore_enabled()
+        confirmed = automatic or messagebox.askyesno(
             "Restaurar sessão anterior",
             "A sessão anterior foi "
             f"{shutdown}.\n\nPainéis disponíveis para restauração:\n- "
@@ -162,7 +175,8 @@ class WorkspaceWindow(LayoutWorkspaceWindow):
                 lambda item=card: self._open_panel(item.panel, item),
             )
             delay += 350
-        self.status_text.set("Restauração explícita da sessão iniciada")
+        restore_mode = "automática" if automatic else "explícita"
+        self.status_text.set(f"Restauração {restore_mode} da sessão iniciada")
 
     def _show_runtime_state_warning(self) -> None:
         message = self.runtime_state_repository.last_recovery_message
@@ -221,5 +235,6 @@ __all__ = [
     "PanelCard",
     "PanelEditorDialog",
     "WorkspaceWindow",
+    "auto_restore_enabled",
     "main",
 ]

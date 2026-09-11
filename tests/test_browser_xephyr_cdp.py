@@ -32,5 +32,5 @@ def test_cdp_mapping_rejects_invalid_or_duplicate_ports() -> None:
         parse_cdp_port_map('{"a":80}')
     with pytest.raises(ValueError, match="duplicate"):
         parse_cdp_port_map('{"a":9221,"b":9221}')
-    with pytest.raises(ValueError, match="TRIVIEW_CDP_PORTS"):
+    with pytest.raises(TypeError, match="TRIVIEW_CDP_PORTS"):
         parse_cdp_port_map('[]')

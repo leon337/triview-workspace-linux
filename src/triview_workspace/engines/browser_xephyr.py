@@ -7,6 +7,7 @@ first map cannot become a top-level window on the user's desktop.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import secrets
@@ -14,6 +15,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,11 +30,11 @@ from triview_workspace.engines.browser import (
 from triview_workspace.engines.browser_embedded import terminate_process_group
 from triview_workspace.runtime_observability import record_runtime_event
 
-
 XEPHYR_BROWSER_BACKEND_NAME = "XephyrEmbeddedBraveBrowserBackend"
 _DEFAULT_SIZE = (800, 600)
 _DISPLAY_MIN = 120
 _DISPLAY_MAX = 220
+_ENV_CDP_PORTS = "TRIVIEW_CDP_PORTS"
 
 
 @dataclass(slots=True)
@@ -50,6 +52,49 @@ class NestedX11Runtime:
 
 def _safe_exact_pattern(value: str) -> str:
     return rf"^{re.escape(value)}$"
+
+
+def parse_cdp_port_map(raw: str | None) -> dict[str, int]:
+    """Parse an explicit panel->CDP-port map; CDP stays disabled when absent."""
+
+    if raw is None or not raw.strip():
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{_ENV_CDP_PORTS} must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise TypeError(f"{_ENV_CDP_PORTS} must be a JSON object")
+
+    result: dict[str, int] = {}
+    used_ports: set[int] = set()
+    for panel_id, port in payload.items():
+        if not isinstance(panel_id, str) or not panel_id.strip():
+            raise ValueError(f"{_ENV_CDP_PORTS} panel ids must be non-empty strings")
+        if isinstance(port, bool) or not isinstance(port, int) or not 1024 <= port <= 65535:
+            raise ValueError(f"{_ENV_CDP_PORTS} ports must be integers from 1024 to 65535")
+        if port in used_ports:
+            raise ValueError(f"{_ENV_CDP_PORTS} contains duplicate port {port}")
+        used_ports.add(port)
+        result[panel_id.strip()] = port
+    return result
+
+
+def cdp_args_for_panel(
+    panel_id: str,
+    *,
+    source: Mapping[str, str] | None = None,
+) -> tuple[str, ...]:
+    """Return loopback-only CDP flags for one explicitly mapped panel."""
+
+    environ = os.environ if source is None else source
+    port = parse_cdp_port_map(environ.get(_ENV_CDP_PORTS)).get(panel_id)
+    if port is None:
+        return ()
+    return (
+        "--remote-debugging-address=127.0.0.1",
+        f"--remote-debugging-port={port}",
+    )
 
 
 class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
@@ -169,6 +214,7 @@ class XephyrEmbeddedBraveBrowserBackend(X11BraveBrowserBackend):
                 "--no-default-browser-check",
                 "--ozone-platform=x11",
                 "--disable-session-crashed-bubble",
+                *cdp_args_for_panel(request.panel_id),
                 f"--class={request.window_class}",
                 f"--name={request.window_class}",
                 "--window-position=0,0",
